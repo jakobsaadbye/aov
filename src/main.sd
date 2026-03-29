@@ -1,0 +1,218 @@
+import "raylib";
+import "mem";
+import "fmt";
+import "rlights";
+import "rlgl";
+import "rlmath";
+
+CameraInput :: struct {
+    zoom: float;
+    rotation: Vector3;
+    movement: Vector3;
+    speed: float;
+}
+
+Game :: struct {
+    disableCameraMovement: bool;
+    tempStorage: Arena;
+    sun: Light;
+}
+
+White      :: Color{ 255, 255, 255, 255 };
+Blue       :: Color{ 0, 0, 255, 255 };
+Red        :: Color{ 230, 41, 55, 255 };
+Maroon     :: Color{ 190, 33, 55, 255 };
+Gray       :: Color{ 30, 30, 30, 255 };
+DarkGray   :: Color{ 40, 40, 40, 255 };
+GrassGreen :: Color{ 19, 109, 21, 255};
+
+WindowWidth  :: 1920;
+WindowHeight :: 1080;
+
+GRID_SIZE :: 64;
+TILE_REPEAT :: 16;
+
+main :: () {
+    InitWindow(WindowWidth, WindowHeight, xx "Allan over vejen");
+    DisableCursor();
+    SetTargetFPS(60);
+
+    game := Game{
+        disableCameraMovement = true,
+        tempStorage = NewArena(4 * Kilobyte),
+    };
+
+    camera := Camera3D{
+        position = {-20, 12, 0},
+        target = {-4, 1.5, 0},
+        up = {0, 1, 0},
+        fovy = 45,
+        projection = .perspective,
+    };
+
+    // Load basic lighting shader
+    lightShader: Shader = LoadShader(xx "../data/shaders/lighting.vs", xx "../data/shaders/lighting.fs");
+
+    // Get some required shader locations
+    lightShader.locs[ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(lightShader, xx "viewPos");
+
+    // Ambient light level (some basic lighting)
+    ambientLoc: int = GetShaderLocation(lightShader, xx "ambient");
+    SetShaderValue(lightShader, ambientLoc, [0.4, 0.4, 0.4, 1.0].data, .VEC4);
+
+    // Create lights
+    game.sun = CreateLight(.directional, { -10, 25, -2 }, {0, 0, 0}, {180, 180, 160, 255}, lightShader);
+    
+    // Setup the ground floor
+    groundTexture := LoadTexture(xx "../data/textures/grid/Gray/Prototype_Grid_Gray_02-256x256.png");
+    
+    groundMesh := GenMeshPlane(GRID_SIZE, GRID_SIZE, 1, 1);
+
+    // The generated mesh has 4 vertices; patch the UVs to [0, TILE_REPEAT]
+    // GenMeshPlane stores texcoords as { u, v } floats, 2 floats per vertex
+    // Vertex order (looking down): BL, BR, TL, TR
+    groundUvs: [8]float = [
+        0,           0,
+        TILE_REPEAT, 0,
+        0,           TILE_REPEAT,
+        TILE_REPEAT, TILE_REPEAT,
+    ];
+
+    // Copy into the mesh texcoords buffer and re-upload
+    for i in 0..8 {
+        groundMesh.texcoords[i] = groundUvs[i];
+    }
+
+    // index 1 = texcoord buffer
+    UpdateMeshBuffer(groundMesh, 1, groundUvs.data, 8 * sizeof(float), 0);
+
+    // Create a material using the grid texture
+    groundMaterial := LoadMaterialDefault();
+    groundMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = groundTexture;
+
+    // groundModel := LoadModelFromMesh(mesh);
+    // groundModel.materials[0].shader = lightShader;
+    // groundModel.materials[0].maps[0].texture = groundTexture;
+
+    
+    while !WindowShouldClose() {
+        game.tempStorage.clear();
+
+        //
+        // Input
+        //
+        camInput := GetCameraInput();
+
+        //
+        // Update
+        //
+        UpdateCameraPro(&camera, camInput.movement, camInput.rotation, camInput.zoom);
+
+        // Update the shader with the camera view vector (points towards { 0.0f, 0.0f, 0.0f })
+        SetShaderValue(lightShader, lightShader.locs[ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW], &camera.position, .VEC3);
+
+        // Update light values (actually, only enable/disable them)
+        UpdateLightValues(lightShader, game.sun );
+
+        //
+        // Drawing
+        //
+        BeginDrawing();
+
+        ClearBackground(Gray);
+
+        BeginMode3D(camera);
+
+            BeginShaderMode(lightShader);
+                DrawMesh(groundMesh, groundMaterial, MatrixIdentity());
+                DrawCube(Vector3{0, 0, 0}, 2, 4, 2, WHITE);
+            EndShaderMode();
+
+            // Draw spheres to show where the lights are
+            DrawSphereEx(game.sun.position, 0.2, 8, 8, game.sun.color);
+            
+        EndMode3D();
+
+        DrawFPS(WindowWidth - 120, 30);
+
+        // Draw stats
+        {
+            Width :: 200;
+            Pad :: 20;
+            FontSize :: 16;
+
+            rect := Rectangle{WindowWidth - Width - Pad, Pad, Width, 300};
+            DrawRectangleRec(rect, DarkGray);
+
+            camX := game.tempStorage.allocate(16);
+            camY := game.tempStorage.allocate(16);
+            camZ := game.tempStorage.allocate(16);
+            rotX := game.tempStorage.allocate(16);
+            rotY := game.tempStorage.allocate(16);
+            rotZ := game.tempStorage.allocate(16);
+
+            sprintf(camX, xx "X = %lf", camera.position.x);
+            sprintf(camY, xx "Y = %lf", camera.position.y);
+            sprintf(camZ, xx "Z = %lf", camera.position.z);
+            sprintf(rotX, xx "RX = %lf", camera.target.x);
+            sprintf(rotY, xx "RY = %lf", camera.target.y);
+            sprintf(rotZ, xx "RZ = %lf", camera.target.z);
+
+            DrawText(camX, rect.x as int, rect.y as int, FontSize, White);
+            DrawText(camY, rect.x as int, 1*FontSize + rect.y as int, FontSize, White);
+            DrawText(camZ, rect.x as int, 2*FontSize + rect.y as int, FontSize, White);
+            DrawText(rotX, rect.x as int, 3*FontSize + rect.y as int, FontSize, White);
+            DrawText(rotY, rect.x as int, 4*FontSize + rect.y as int, FontSize, White);
+            DrawText(rotZ, rect.x as int, 5*FontSize + rect.y as int, FontSize, White);
+        }
+
+        EndDrawing();
+    }
+
+    CloseWindow();
+}
+
+GetCameraInput :: () -> CameraInput {
+    dt := GetFrameTime();
+
+    zoom     := 0.0;
+    rotation := Vector3{0, 0, 0};
+    movement := Vector3{0, 0, 0};
+    speed    := 1.0;
+
+    // Zoom
+    mouseWheel := GetMouseWheelMoveV();
+    if mouseWheel.y != 0 {
+        zoom -= mouseWheel.y;
+    }
+
+    // Rotation
+    mouseDelta := GetMouseDelta();
+    rotation.x += mouseDelta.x * 0.125;
+    rotation.y += mouseDelta.y * 0.125;
+
+    // Movement
+    if IsKeyDown(.left_shift) {
+        speed = 2.0;
+    }
+
+    if IsKeyDown(.w) {
+        movement.x += 10 * speed * dt;
+    }
+    if IsKeyDown(.s) {
+        movement.x -= 10 * speed * dt;
+    }
+    if IsKeyDown(.a) {
+        movement.y -= 10 * speed * dt;
+    }
+    if IsKeyDown(.d) {
+        movement.y += 10 * speed * dt;
+    }
+
+    return CameraInput{
+        zoom,
+        rotation,
+        movement,
+        speed,
+    };
+}
