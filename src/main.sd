@@ -3,7 +3,17 @@ import "mem";
 import "fmt";
 import "rlights";
 import "rlgl";
-import "rlmath";
+import "raymath";
+
+White      :: Color{ 255, 255, 255, 255 };
+Gray       :: Color{ 30, 30, 30, 255 };
+DarkGray   :: Color{ 40, 40, 40, 255 };
+
+WindowWidth  :: 1920;
+WindowHeight :: 1080;
+
+GRID_SIZE :: 64;
+TILE_REPEAT :: 16;
 
 CameraInput :: struct {
     zoom: float;
@@ -16,21 +26,60 @@ Game :: struct {
     disableCameraMovement: bool;
     tempStorage: Arena;
     sun: Light;
+    lockCamera: bool;
+    mousePosition: Vector2;
 }
 
-White      :: Color{ 255, 255, 255, 255 };
-Blue       :: Color{ 0, 0, 255, 255 };
-Red        :: Color{ 230, 41, 55, 255 };
-Maroon     :: Color{ 190, 33, 55, 255 };
-Gray       :: Color{ 30, 30, 30, 255 };
-DarkGray   :: Color{ 40, 40, 40, 255 };
-GrassGreen :: Color{ 19, 109, 21, 255};
+HeroType :: enum {
+    none,
+    allan,
+    pudge,
+}
 
-WindowWidth  :: 1920;
-WindowHeight :: 1080;
+HeroStats :: struct {
+    health: float;
+    mana: float;
+    moveSpeed: float;
+}
 
-GRID_SIZE :: 64;
-TILE_REPEAT :: 16;
+Entity :: struct {
+    position: Vector3;
+    velocity: Vector3;
+}
+
+Hero :: struct {
+    head: Entity;
+    type: HeroType;
+    stats: HeroStats;
+    target: Vector3;
+    isMoving: bool;
+}
+
+UpdateHero :: (hero: *Hero) {
+    dt := GetFrameTime();
+    if hero.isMoving {
+        diffVec := Vector3Subtract(hero.target, hero.head.position);
+        direction := Vector3Normalize(diffVec);
+
+        hero.head.velocity = Vector3{
+            x = direction.x * hero.stats.moveSpeed,
+            y = 0, // direction.y + hero.stats.moveSpeed,
+            z = direction.z * hero.stats.moveSpeed,
+        };
+
+        Print("%", hero.head.velocity);
+        
+        addedVelocity := Vector3Scale(hero.head.velocity, dt);
+        hero.head.position = Vector3Add(hero.head.position, addedVelocity);
+
+        TARGET_REACHED_THRESHOLD :: 0.5;
+        if Vector3Distance(hero.head.position, hero.target) < TARGET_REACHED_THRESHOLD {
+            hero.isMoving = false;
+        }
+
+        Print("%", hero.head.position);
+    }
+}
 
 main :: () {
     InitWindow(WindowWidth, WindowHeight, xx "Allan over vejen");
@@ -43,11 +92,24 @@ main :: () {
     };
 
     camera := Camera3D{
-        position = {-20, 12, 0},
+        position = {-45, 28, 0},
         target = {-4, 1.5, 0},
         up = {0, 1, 0},
         fovy = 45,
         projection = .perspective,
+    };
+
+    guy := Hero{
+        head = {
+            position = {10, 0, 10},
+            velocity = {0, 0 , 0}
+        },
+        type = .allan,
+        stats = {
+            health = 100,
+            mana = 50,
+            moveSpeed = 25,
+        }
     };
 
     // Load basic lighting shader
@@ -88,13 +150,9 @@ main :: () {
 
     // Create a material using the grid texture
     groundMaterial := LoadMaterialDefault();
+    groundMaterial.shader = lightShader;
     groundMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = groundTexture;
 
-    // groundModel := LoadModelFromMesh(mesh);
-    // groundModel.materials[0].shader = lightShader;
-    // groundModel.materials[0].maps[0].texture = groundTexture;
-
-    
     while !WindowShouldClose() {
         game.tempStorage.clear();
 
@@ -103,10 +161,36 @@ main :: () {
         //
         camInput := GetCameraInput();
 
+        if (IsKeyPressed(.space)) {
+            game.lockCamera = !game.lockCamera;
+        }
+
+        if (IsMouseButtonPressed(.right)) {
+            ray := GetScreenToWorldRay(game.mousePosition, camera);
+            collision := GetRayCollisionMesh(ray, groundMesh, MatrixIdentity());
+
+            if collision.hit {
+                guy.target = collision.point;
+                guy.isMoving = true;
+            }
+        }
+
+        game.mousePosition = GetMousePosition();
+
         //
         // Update
         //
-        UpdateCameraPro(&camera, camInput.movement, camInput.rotation, camInput.zoom);
+
+        // Update camera
+        if game.lockCamera {
+            // Lock camera rotation
+            UpdateCameraPro(&camera, camInput.movement, {0, 0 ,0}, camInput.zoom);
+        } else {
+            UpdateCameraPro(&camera, camInput.movement, camInput.rotation, camInput.zoom);
+        }
+
+        // Update heroes
+        UpdateHero(&guy);
 
         // Update the shader with the camera view vector (points towards { 0.0f, 0.0f, 0.0f })
         SetShaderValue(lightShader, lightShader.locs[ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW], &camera.position, .VEC3);
@@ -126,12 +210,26 @@ main :: () {
             BeginShaderMode(lightShader);
                 DrawMesh(groundMesh, groundMaterial, MatrixIdentity());
                 DrawCube(Vector3{0, 0, 0}, 2, 4, 2, WHITE);
+
+                DrawCube(guy.head.position, 2, 8, 2, RED);
             EndShaderMode();
 
             // Draw spheres to show where the lights are
             DrawSphereEx(game.sun.position, 0.2, 8, 8, game.sun.color);
+
+            // Draw hero target
+            DrawSphere(guy.target, 0.5, RED);
             
         EndMode3D();
+
+        //
+        // 2D overlay stuff
+        //
+
+        // Draw mouse
+        if game.lockCamera {
+            DrawCircle(game.mousePosition.x as int, game.mousePosition.y as int, 10, WHITE);
+        }
 
         DrawFPS(WindowWidth - 120, 30);
 

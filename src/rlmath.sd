@@ -1,5 +1,0 @@
-import "raylib";
-
-extern "C" {
-    MatrixIdentity :: () -> Matrix;
-}
