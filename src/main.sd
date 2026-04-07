@@ -4,16 +4,34 @@ import "fmt";
 import "rlights";
 import "rlgl";
 import "raymath";
+import "math2";
 
-White      :: Color{ 255, 255, 255, 255 };
 Gray       :: Color{ 30, 30, 30, 255 };
 DarkGray   :: Color{ 40, 40, 40, 255 };
 
 WindowWidth  :: 1920;
 WindowHeight :: 1080;
 
-GRID_SIZE :: 64;
-TILE_REPEAT :: 16;
+GRID_SIZE     :: 128;
+GRID_LEN      :: GRID_SIZE * 0.5;
+ROAD_WIDTH    :: GRID_SIZE * 0.8;
+ROAD_HEIGHT   :: GRID_SIZE;
+TILE_REPEAT   :: 4;
+
+CAR_WIDTH  :: 3;
+CAR_HEIGHT :: 3;
+CAR_LENGTH :: 7;
+MAX_CAR_COUNT :: 128;
+
+WALL_WIDTH  :: 2;
+WALL_HEIGHT :: 5;
+WALL_LENGTH :: GRID_SIZE;
+
+PLAYER_HITBOX_ASPECT_RATIO :: 0.6;
+
+DEBUG_DRAW_PLAYER_WIREFRAMES :: false;
+DEBUG_DRAW_CAR_WIREFRAMES :: false;
+DEBUG_DRAW_CAR_HITBOX :: false;
 
 CameraInput :: struct {
     zoom: float;
@@ -28,6 +46,8 @@ Game :: struct {
     sun: Light;
     lockCamera: bool;
     mousePosition: Vector2;
+    cars: []Car;
+    carSpawner: *CarSpawner;
 }
 
 HeroType :: enum {
@@ -42,7 +62,14 @@ HeroStats :: struct {
     moveSpeed: float;
 }
 
+EntityType :: enum {
+    Hero,
+    Car,
+    Wall,
+}
+
 Entity :: struct {
+    type: EntityType;
     position: Vector3;
     velocity: Vector3;
 }
@@ -53,32 +80,219 @@ Hero :: struct {
     stats: HeroStats;
     target: Vector3;
     isMoving: bool;
+
+    // Bounding box of the hero
+    width: float;
+    height: float;
+    length: float;
 }
 
-UpdateHero :: (hero: *Hero) {
+Wall :: struct {
+    head: Entity;
+    width: float;
+    height: float;
+    length: float;
+}
+
+Car :: struct {
+    head: Entity;
+    live: bool;
+}
+
+CarSpawner :: struct {
+    cars: []Car;
+    numLive: int;
+}
+
+Player :: struct {
+    id: int;
+    hero: *Hero;
+    deaths: int;
+}
+
+DrawWalls :: (walls: []Wall) {
+    for *wall in walls {
+        DrawCube(wall.head.position, WALL_WIDTH, WALL_HEIGHT, wall.length, ORANGE);
+    }
+}
+
+getHitbox :: method (hero: Hero) -> Vector2, float {
+    return Vector2{hero.head.position.x, hero.head.position.z}, hero.width * 0.5 * PLAYER_HITBOX_ASPECT_RATIO;
+}
+
+CheckHeroWallCollision :: (hero: Hero, walls: []Wall) -> *Wall, bool {
+    for *wall in walls {
+        hbCenter, hbRadius := hero.getHitbox();
+
+        wallHitboxRec := Rectangle{
+            wall.head.position.x - WALL_WIDTH*0.5,
+            wall.head.position.z - wall.length*0.5,
+            WALL_WIDTH,
+            wall.length,
+        };
+
+        if CheckCollisionCircleRec(hbCenter, hbRadius, wallHitboxRec) {
+            return wall, true;
+        }
+    }
+
+    return null, false;
+}
+
+UpdateCars :: (spawner: *CarSpawner) {
+    dt := GetFrameTime();
+
+    for *car in spawner.cars {
+        if !car.live {
+            continue;
+        }
+
+        car.head.position.z += car.head.velocity.z * dt;
+
+        if car.head.position.z > GRID_SIZE / 2 {
+            car.live = false;
+            spawner.numLive -= 1;
+        }
+    }
+}
+
+InitializeCars :: (spawner: *CarSpawner) {
+    for *car in spawner.cars {
+
+        // Assign each car a random starting position on the ground
+        car.head.position.x = GetRandomValue((ROAD_WIDTH * -0.5 + CAR_WIDTH*0.5) as int, (ROAD_WIDTH * 0.5 - CAR_WIDTH*0.5) as int) as float;
+        car.head.position.y = 0;
+        car.head.position.z = GetRandomValue(-GRID_LEN as int, GRID_LEN as int) as float;
+
+        car.head.velocity.z = GetRandomValue(2, 10) as float;
+
+        car.live = true;
+        spawner.numLive += 1;
+    }
+}
+
+SpawnCars :: (spawner: *CarSpawner) {
+    if spawner.numLive >= spawner.cars.count {
+        return;
+    }
+
+    // Find an empty car slot
+    newCar: *Car;
+    for *car in spawner.cars {
+        if !car.live {
+            newCar = car;
+            break;
+        }
+    }
+
+    newCar.head.position.x = GetRandomValue((ROAD_WIDTH * -0.5 + CAR_WIDTH*0.5) as int, (ROAD_WIDTH * 0.5 - CAR_WIDTH*0.5) as int) as float;
+    newCar.head.position.z = -GRID_LEN;
+    newCar.head.velocity.z = GetRandomValue(2, 10) as float;
+    newCar.live = true;
+
+    spawner.numLive += 1;
+}
+
+DrawCars :: (cars: []Car) {
+    for *car in cars {
+        if !car.live {
+            continue;
+        }
+
+        if DEBUG_DRAW_CAR_HITBOX {
+            DrawCube({car.head.position.x, 0, car.head.position.z}, CAR_WIDTH, 0.1, CAR_LENGTH, BLUE);
+        }
+
+        if DEBUG_DRAW_CAR_WIREFRAMES {
+            DrawCubeWires({car.head.position.x, car.head.position.y + CAR_HEIGHT*0.5, car.head.position.z}, CAR_WIDTH, CAR_HEIGHT, CAR_LENGTH, BLUE);
+        } else {
+            DrawCube({car.head.position.x, car.head.position.y + CAR_HEIGHT*0.5, car.head.position.z}, CAR_WIDTH, CAR_HEIGHT, CAR_LENGTH, BLUE);
+        }
+    }
+}
+
+CheckPlayerCarCollision :: (player: *Player, cars: []Car) -> *Car, bool {
+    for *car in cars {
+        if !car.live {
+            continue;
+        }
+
+        carHitbox := Rectangle{
+            car.head.position.x - CAR_WIDTH*0.5,
+            car.head.position.z - CAR_LENGTH*0.5,
+            CAR_WIDTH,
+            CAR_LENGTH,
+        };
+
+        if CheckCollisionCircleRec(Vector2{player.hero.head.position.x, player.hero.head.position.z}, player.hero.width * 0.5 * PLAYER_HITBOX_ASPECT_RATIO, carHitbox) {
+            return car, true;
+        }
+    }
+
+    return null, false;
+}
+
+RespawnPlayer :: (player: *Player) {
+    player.hero.head.position.x = -GRID_LEN + 2;
+    player.hero.head.position.z = 0;
+    player.hero.isMoving = false;
+}
+
+HandleCarCollision :: (player: *Player, car: *Car) {
+    car.live = false;
+
+    player.deaths += 1;
+
+    RespawnPlayer(player);
+}
+
+SimulateHero :: (hero: Hero) -> Hero {
     dt := GetFrameTime();
     if hero.isMoving {
         diffVec := Vector3Subtract(hero.target, hero.head.position);
         direction := Vector3Normalize(diffVec);
 
-        hero.head.velocity = Vector3{
+        hero.head.velocity = Vector3Scale(Vector3{
             x = direction.x * hero.stats.moveSpeed,
             y = 0, // direction.y + hero.stats.moveSpeed,
             z = direction.z * hero.stats.moveSpeed,
-        };
-
-        Print("%", hero.head.velocity);
+        }, dt);
         
-        addedVelocity := Vector3Scale(hero.head.velocity, dt);
-        hero.head.position = Vector3Add(hero.head.position, addedVelocity);
+        hero.head.position = Vector3Add(hero.head.position, hero.head.velocity);
 
         TARGET_REACHED_THRESHOLD :: 0.5;
         if Vector3Distance(hero.head.position, hero.target) < TARGET_REACHED_THRESHOLD {
             hero.isMoving = false;
         }
-
-        Print("%", hero.head.position);
     }
+
+    return hero;
+}
+
+UpdateHero :: (hero: *Hero, newHero: Hero) {
+    hero.head.velocity = newHero.head.velocity;
+    hero.head.position = newHero.head.position;
+    hero.isMoving      = newHero.isMoving;
+}
+
+SplitMesh :: (mesh: Mesh, numTiles: float) {
+    // The generated mesh has 4 vertices; patch the UVs to [0, numTiles]
+    // GenMeshPlane stores texcoords as { u, v } floats, 2 floats per vertex
+    // Vertex order (looking down): BL, BR, TL, TR
+    uvs: [8]float = [
+        0,           0,
+        numTiles,    0,
+        0,           numTiles,
+        numTiles,    numTiles,
+    ];
+
+    // Copy into the mesh texcoords buffer and re-upload
+    for i in 0..8 {
+        mesh.texcoords[i] = uvs[i];
+    }
+
+    // index 1 = texcoord buffer
+    UpdateMeshBuffer(mesh, 1, uvs.data, 8 * sizeof(float), 0);
 }
 
 main :: () {
@@ -86,14 +300,74 @@ main :: () {
     DisableCursor();
     SetTargetFPS(60);
 
+    // @CompilerBug: Arrays seems not to be zero initialized when being inside the Game struct.
+    // Perhaps we are calculating the struct size incorrectly???
+    cars: [MAX_CAR_COUNT]Car;
+
+    carSpawner := CarSpawner{
+        cars = cars,
+    };
+
+    
+    walls: [4]Wall;
+    {
+        ENTRANCE_LENGTH :: 20;
+        SMALL_SEGNMENT_LENGTH :: 15;
+
+        wallTopLeft := Wall{
+            head = {
+                type = .Wall,
+                position = {-ROAD_WIDTH*0.5 - WALL_WIDTH*0.5, WALL_HEIGHT*0.5, -GRID_LEN + SMALL_SEGNMENT_LENGTH*0.5}
+            },
+            length = SMALL_SEGNMENT_LENGTH,
+        };
+
+        wallBottomLeftLen := GRID_SIZE - ENTRANCE_LENGTH - wallTopLeft.length;
+        wallBottomLeft := Wall{
+            head = {
+                type = .Wall,
+                position = {-ROAD_WIDTH*0.5 - WALL_WIDTH*0.5, WALL_HEIGHT*0.5, wallTopLeft.head.position.z + wallTopLeft.length*0.5 + ENTRANCE_LENGTH + wallBottomLeftLen*0.5}
+            },
+            length = wallBottomLeftLen,
+        };
+
+        wallTopRightLen := GRID_SIZE - ENTRANCE_LENGTH - SMALL_SEGNMENT_LENGTH as float;
+        wallTopRight := Wall{
+            head = {
+                type = .Wall,
+                position = {ROAD_WIDTH*0.5 + WALL_WIDTH*0.5, WALL_HEIGHT*0.5, -GRID_LEN + wallTopRightLen*0.5}
+            },
+            length = wallTopRightLen,
+        };
+
+        wallBottomRight := Wall{
+            head = {
+                type = .Wall,
+                position = {ROAD_WIDTH*0.5 + WALL_WIDTH*0.5, WALL_HEIGHT*0.5, GRID_LEN - SMALL_SEGNMENT_LENGTH + SMALL_SEGNMENT_LENGTH*0.5}
+            },
+            length = SMALL_SEGNMENT_LENGTH,
+        };
+
+        walls[0] = wallTopLeft;
+        walls[1] = wallBottomLeft;
+        walls[2] = wallBottomRight;
+        walls[3] = wallTopRight;
+    }
+
     game := Game{
         disableCameraMovement = true,
         tempStorage = NewArena(4 * Kilobyte),
+        lockCamera = true,
+        cars = cars,
+        carSpawner = &carSpawner,
     };
 
+    origCameraPosition := Vector3{0, 128, 64};
+    origCameraTarget := Vector3{0, -23.5, 0};
+
     camera := Camera3D{
-        position = {-45, 28, 0},
-        target = {-4, 1.5, 0},
+        position = origCameraPosition,
+        target = origCameraTarget,
         up = {0, 1, 0},
         fovy = 45,
         projection = .perspective,
@@ -101,16 +375,31 @@ main :: () {
 
     guy := Hero{
         head = {
-            position = {10, 0, 10},
+            position = {0, 0, 0},
             velocity = {0, 0 , 0}
         },
         type = .allan,
         stats = {
             health = 100,
             mana = 50,
-            moveSpeed = 25,
-        }
+            moveSpeed = 6,
+        },
+        width = 2,
+        height = 4,
+        length = 2,
     };
+
+    player := Player{
+        id = 0,
+        hero = &guy,
+    };
+
+    // Texture loading
+    groundTexture     := LoadTexture(xx "../data/textures/grass/Grass_02.png");
+    groundTextureNorm := LoadTexture(xx "../data/textures/grass/Grass_02_Nrm.png");
+    roadTexture       := LoadTexture(xx "../data/textures/road/Ground_03.png");
+    roadTextureNorm   := LoadTexture(xx "../data/textures/road/Ground_03_Nrm.png");
+    cursorTexture     := LoadTexture(xx "../data/textures/cursor/human.png");
 
     // Load basic lighting shader
     lightShader: Shader = LoadShader(xx "../data/shaders/lighting.vs", xx "../data/shaders/lighting.fs");
@@ -123,35 +412,31 @@ main :: () {
     SetShaderValue(lightShader, ambientLoc, [0.4, 0.4, 0.4, 1.0].data, .VEC4);
 
     // Create lights
-    game.sun = CreateLight(.directional, { -10, 25, -2 }, {0, 0, 0}, {180, 180, 160, 255}, lightShader);
+    game.sun = CreateLight(.directional, { 0, 128, GRID_LEN }, {0, 0, 0}, {180, 180, 160, 255}, lightShader);
     
     // Setup the ground floor
-    groundTexture := LoadTexture(xx "../data/textures/grid/Gray/Prototype_Grid_Gray_02-256x256.png");
-    
     groundMesh := GenMeshPlane(GRID_SIZE, GRID_SIZE, 1, 1);
-
-    // The generated mesh has 4 vertices; patch the UVs to [0, TILE_REPEAT]
-    // GenMeshPlane stores texcoords as { u, v } floats, 2 floats per vertex
-    // Vertex order (looking down): BL, BR, TL, TR
-    groundUvs: [8]float = [
-        0,           0,
-        TILE_REPEAT, 0,
-        0,           TILE_REPEAT,
-        TILE_REPEAT, TILE_REPEAT,
-    ];
-
-    // Copy into the mesh texcoords buffer and re-upload
-    for i in 0..8 {
-        groundMesh.texcoords[i] = groundUvs[i];
-    }
-
-    // index 1 = texcoord buffer
-    UpdateMeshBuffer(groundMesh, 1, groundUvs.data, 8 * sizeof(float), 0);
+    SplitMesh(groundMesh, 4);
 
     // Create a material using the grid texture
     groundMaterial := LoadMaterialDefault();
     groundMaterial.shader = lightShader;
     groundMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = groundTexture;
+    groundMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = GREEN;
+    groundMaterial.maps[MaterialMapIndex.MATERIAL_MAP_NORMAL].texture = groundTextureNorm;
+
+    roadMesh := GenMeshPlane(ROAD_WIDTH, ROAD_HEIGHT, 1, 1);
+    SplitMesh(roadMesh, 8);
+    roadMaterial := LoadMaterialDefault();
+    roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = roadTexture;
+    roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = WHITE;
+    roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_NORMAL].texture = roadTextureNorm;
+
+    //
+    // Initialization
+    //
+    InitializeCars(game.carSpawner);
+    RespawnPlayer(&player);
 
     while !WindowShouldClose() {
         game.tempStorage.clear();
@@ -165,13 +450,19 @@ main :: () {
             game.lockCamera = !game.lockCamera;
         }
 
+        if (IsKeyPressed(.r)) {
+            camera.position = origCameraPosition;
+            camera.target   = origCameraTarget;
+            game.lockCamera = true;
+        }
+
         if (IsMouseButtonPressed(.right)) {
             ray := GetScreenToWorldRay(game.mousePosition, camera);
             collision := GetRayCollisionMesh(ray, groundMesh, MatrixIdentity());
 
             if collision.hit {
-                guy.target = collision.point;
-                guy.isMoving = true;
+                player.hero.target = collision.point;
+                player.hero.isMoving = true;
             }
         }
 
@@ -189,14 +480,69 @@ main :: () {
             UpdateCameraPro(&camera, camInput.movement, camInput.rotation, camInput.zoom);
         }
 
-        // Update heroes
-        UpdateHero(&guy);
+        // Simulate heroes
+        simHero := SimulateHero(*player.hero);
+
+        // Check player vs wall collision
+        {
+            wall, collided := CheckHeroWallCollision(simHero, walls);
+            if collided {
+
+                // Resolve the player position to get unstuck
+                heroCenter, radius := simHero.getHitbox();
+
+                // Check if we hit the left or right side of the wall
+                collidedFromLeftSide := heroCenter.x < wall.head.position.x;
+
+                wallX: float;
+                if collidedFromLeftSide {
+                    wallX = wall.head.position.x - WALL_WIDTH*0.5;
+                } else {
+                    wallX = wall.head.position.x + WALL_WIDTH*0.5;
+                }
+
+                // Calculate the distance to the wall
+                distanceWallX := fabsf(wallX - heroCenter.x);
+
+                // Calculate how much to offset in the x direction
+                centerIsInsideWall := fabsf(wall.head.position.x - heroCenter.x) <= WALL_WIDTH*0.5;
+
+                offsetX: float;
+                if centerIsInsideWall {
+                    offsetX = radius + distanceWallX;
+                } else {
+                    offsetX = radius - distanceWallX;
+                }
+                
+
+                if collidedFromLeftSide {
+                    simHero.head.position.x -= offsetX;
+                } else {
+                    simHero.head.position.x += offsetX;
+                }
+            }
+        }
+
+        // Update the hero with the simulated hero
+        UpdateHero(player.hero, simHero);
+
+        // Check player vs car collision
+        {
+            car, collided := CheckPlayerCarCollision(&player, game.cars);
+            if collided {
+                HandleCarCollision(&player, car);
+            }
+        }
+        
+        // Update cars
+        SpawnCars(game.carSpawner);
+        UpdateCars(game.carSpawner);
 
         // Update the shader with the camera view vector (points towards { 0.0f, 0.0f, 0.0f })
         SetShaderValue(lightShader, lightShader.locs[ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW], &camera.position, .VEC3);
 
         // Update light values (actually, only enable/disable them)
-        UpdateLightValues(lightShader, game.sun );
+        UpdateLightValues(lightShader, game.sun);
 
         //
         // Drawing
@@ -208,30 +554,50 @@ main :: () {
         BeginMode3D(camera);
 
             BeginShaderMode(lightShader);
-                DrawMesh(groundMesh, groundMaterial, MatrixIdentity());
-                DrawCube(Vector3{0, 0, 0}, 2, 4, 2, WHITE);
+                DrawMesh(groundMesh, groundMaterial, MatrixTranslate(0, 0, 0));
+                DrawMesh(roadMesh, roadMaterial, MatrixTranslate(0, 0.2, 0));
 
-                DrawCube(guy.head.position, 2, 8, 2, RED);
+                // Draw walls
+                DrawWalls(walls);
+
+                // Draw hero
+                {
+                    hero := player.hero;
+                    heroPos := hero.head.position;
+                    if DEBUG_DRAW_PLAYER_WIREFRAMES {
+                        DrawCubeWires({heroPos.x, heroPos.y + hero.height*0.5, heroPos.z}, hero.width, hero.height, hero.length, RED);
+                    } else {
+                        DrawCube({heroPos.x, heroPos.y + hero.height*0.5, heroPos.z}, hero.width, hero.height, hero.length, RED);
+                    }
+                }
+
+                // Draw cars
+                DrawCars(game.cars);
+
             EndShaderMode();
 
             // Draw spheres to show where the lights are
             DrawSphereEx(game.sun.position, 0.2, 8, 8, game.sun.color);
 
-            // Draw hero target
-            DrawSphere(guy.target, 0.5, RED);
-            
+            // Draw mouse click
+            DrawSphere(player.hero.target, 0.5, RED);
+
+            // Draw player hitbox
+            DrawCircle3D({player.hero.head.position.x, player.hero.head.position.y, player.hero.head.position.z}, player.hero.width * 0.5 * PLAYER_HITBOX_ASPECT_RATIO, Vector3{1, 0, 0}, 90, GREEN);
+
         EndMode3D();
 
+            
         //
         // 2D overlay stuff
         //
 
         // Draw mouse
         if game.lockCamera {
-            DrawCircle(game.mousePosition.x as int, game.mousePosition.y as int, 10, WHITE);
+            DrawTexture(cursorTexture, (game.mousePosition.x - 2.5) as int, game.mousePosition.y as int, WHITE);
         }
 
-        DrawFPS(WindowWidth - 120, 30);
+        DrawFPS(0, 0);
 
         // Draw stats
         {
@@ -249,19 +615,26 @@ main :: () {
             rotY := game.tempStorage.allocate(16);
             rotZ := game.tempStorage.allocate(16);
 
+            playerX := game.tempStorage.allocate(32);
+            playerZ := game.tempStorage.allocate(32);
+
             sprintf(camX, xx "X = %lf", camera.position.x);
             sprintf(camY, xx "Y = %lf", camera.position.y);
             sprintf(camZ, xx "Z = %lf", camera.position.z);
             sprintf(rotX, xx "RX = %lf", camera.target.x);
             sprintf(rotY, xx "RY = %lf", camera.target.y);
             sprintf(rotZ, xx "RZ = %lf", camera.target.z);
+            sprintf(playerX, xx "Player X = %lf", player.hero.head.position.x);
+            sprintf(playerZ, xx "Player Z = %lf", player.hero.head.position.z);
 
-            DrawText(camX, rect.x as int, rect.y as int, FontSize, White);
-            DrawText(camY, rect.x as int, 1*FontSize + rect.y as int, FontSize, White);
-            DrawText(camZ, rect.x as int, 2*FontSize + rect.y as int, FontSize, White);
-            DrawText(rotX, rect.x as int, 3*FontSize + rect.y as int, FontSize, White);
-            DrawText(rotY, rect.x as int, 4*FontSize + rect.y as int, FontSize, White);
-            DrawText(rotZ, rect.x as int, 5*FontSize + rect.y as int, FontSize, White);
+            DrawText(camX, rect.x as int, rect.y as int, FontSize, WHITE);
+            DrawText(camY, rect.x as int, 1*FontSize + rect.y as int, FontSize, WHITE);
+            DrawText(camZ, rect.x as int, 2*FontSize + rect.y as int, FontSize, WHITE);
+            DrawText(rotX, rect.x as int, 3*FontSize + rect.y as int, FontSize, WHITE);
+            DrawText(rotY, rect.x as int, 4*FontSize + rect.y as int, FontSize, WHITE);
+            DrawText(rotZ, rect.x as int, 5*FontSize + rect.y as int, FontSize, WHITE);
+            DrawText(playerX, rect.x as int, 6*FontSize + rect.y as int, FontSize, WHITE);
+            DrawText(playerZ, rect.x as int, 7*FontSize + rect.y as int, FontSize, WHITE);
         }
 
         EndDrawing();
