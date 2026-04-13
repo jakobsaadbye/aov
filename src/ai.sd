@@ -4,33 +4,33 @@ import "c_stdlib";
 
 MAX_PATH_SEGMENTS :: 64;
 MAX_QUEUED_ELEMENTS :: 1024;
-MAX_VISITED_CELLS :: 1024;
+MAX_VISITED_CELLS :: 4096;
 
 // How much of an extra margin the AI should keep a distance to the cars
 AI_CAR_SAFETY_MARGIN :: 1.4;
 
-StepSize :: 1.4;
-MaxIterations :: 24;
+StepSize :: 1.5;
+MaxIterations :: 48;
 GoalThreshold :: StepSize * 0.5;
 
-Entry :: struct {
+Node :: struct {
     f: float;
     g: float;
     x: float;
     y: float;
     t: int;
-    path: [..]Vector2;
+    cameFrom: *Node;
 }
 
 Queue :: struct {
-    elements: [..]Entry;
+    elements: [..]Node;
 }
 
-push :: method (q: *Queue, elem: Entry) {
+push :: method (q: *Queue, elem: Node) {
     append(q.elements, elem);
 }
 
-pop :: method (q: *Queue) -> Entry {
+pop :: method (q: *Queue) -> Node {
     bestIndex := 0;
     for i in 0..q.elements.count-1 {
         if q.elements[i].f < q.elements[bestIndex].f {
@@ -44,17 +44,21 @@ pop :: method (q: *Queue) -> Entry {
     return best;
 }
 
-Vector3ArrayContains :: (arr: [..]Vector3, elem: Vector3) -> bool {
+FindInVisited :: (visited: [..]Node, pos: Vector3) -> *Node, bool {
     Epsilon :: StepSize * 0.5;
-    for v in arr {
-        inX := elem.x >= v.x - Epsilon && elem.x <= v.x + Epsilon;
-        inY := elem.y >= v.y - Epsilon && elem.y <= v.y + Epsilon;
+
+    for *n in visited {
+        matchesX := pos.x >= n.x - Epsilon && pos.x <= n.x + Epsilon;
+        matchesY := pos.y >= n.y - Epsilon && pos.y <= n.y + Epsilon;
+        matchesT := FloatEquals(pos.z, n.t as float) == 0;
+
         // @TODO: Re-insert once we include the time dimension
-        if inX && inY {
-            return true;
+        if matchesX && matchesY {
+            return n, true;
         }
     }
-    return false;
+
+    return null, false;
 }
 
 Heuristic :: (p: Vector2, goal: Vector2) -> float {
@@ -68,6 +72,39 @@ HasHitGoal :: (x, y: float, goal: Vector2) -> bool {
     }
 
     return false;
+}
+
+ReconstructPath :: (endNode: Node) -> [..]Vector2 {
+    path: [..]Vector2;
+    cap := MaxIterations * 2 * sizeof(Vector2);
+    path.data = malloc(cap);
+    path.capacity = cap;
+
+    currentNode := endNode;
+    while currentNode.cameFrom != null {
+        append(path, Vector2{currentNode.x, currentNode.y});
+
+        currentNode = *currentNode.cameFrom;
+    }
+
+    // Add the start node
+    append(path, Vector2{currentNode.x, currentNode.y});
+
+    // Reverse the path to go from start -> end
+    for i in 0..path.count {
+        j := path.count - 1 - i;
+
+        if i > j {
+            break;
+        }
+
+        tmp := path[i];
+
+        path[i] = path[j];
+        path[j] = tmp;
+    }
+
+    return path;
 }
 
 ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dynamicObstacles: [..]Rectangle, iterations := MaxIterations) -> [..]Vector2 {
@@ -88,25 +125,20 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
     // queue.elements.data = malloc(MAX_QUEUED_ELEMENTS * sizeof(Entry));
     // queue.elements.capacity = MAX_QUEUED_ELEMENTS;
     queue := Queue{};
-    elements: [..]Entry; 
-    elements.data = malloc(MAX_QUEUED_ELEMENTS * sizeof(Entry));
+    elements: [..]Node; 
+    elements.data = malloc(MAX_QUEUED_ELEMENTS * sizeof(Node));
     elements.capacity = MAX_QUEUED_ELEMENTS;
     queue.elements = elements;
 
-    initialEntry := Entry{0, 0, start.x, start.y, 0};
-    initialPath: [..]Vector2;
-    initialPath.data = malloc(MAX_PATH_SEGMENTS * sizeof(Vector2));
-    initialPath.capacity = MAX_PATH_SEGMENTS;
-    append(initialPath, start);
-    initialEntry.path = initialPath;
-
-    queue.push(initialEntry);
+    startNode := Node{0, 0, start.x, start.y, 0, null};
+    queue.push(startNode);
 
     
-    bestPath: [..]Vector2;
-    visited: [..]Vector3;
-    visited.data = malloc(MAX_VISITED_CELLS * sizeof(Vector3));
+    bestNode: Node;
+    visited: [..]Node;
+    visited.data = malloc(MAX_VISITED_CELLS * sizeof(Node));
     visited.capacity = MAX_VISITED_CELLS;
+    memset(visited.data, 0, MAX_VISITED_CELLS);
 
     closestDistance := 999.0;
 
@@ -119,21 +151,23 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
 
         dg := Vector2Distance(Vector2{x, y}, goal);
         if (dg < closestDistance) {
-            bestPath = e.path;
+            bestNode = e;
             closestDistance = dg;
         }
         
         if HasHitGoal(x, y, goal) {
-            Print("Found a path to the goal!. Path count = %", e.path.count);
-            bestPath = e.path;
+            Print("Found a path to the goal!");
+            bestNode = e;
             break;
         }
 
-        if Vector3ArrayContains(visited, Vector3{x, y, t as float}) {
+        _, found1 := FindInVisited(visited, Vector3{x, y, t as float});
+        if found1 {
             continue;
         }
 
-        append(visited, Vector3{x, y, t as float});
+        append(visited, e);
+        currentStable := &visited[visited.count - 1];
 
         Print("Visited count = %", visited.count);
 
@@ -175,29 +209,20 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
 
             // No collision was detected
             nt := t + 1;
-            if !Vector3ArrayContains(visited, Vector3{nx, ny, nt as float}) {
+            _2, found2 := FindInVisited(visited, Vector3{nx, ny, nt as float});
+            if !found2 {
                 ng := e.g + 1;
                 nf := ng + Heuristic(Vector2{nx, ny}, goal);
 
-                // @Cleanup @Speed: This is really trashing memory. Do something better!
-                newPath: [..]Vector2;
-                newPath.data = malloc(MAX_PATH_SEGMENTS * sizeof(Vector2));
-                newPath.capacity = MAX_PATH_SEGMENTS;
-                for v in e.path {
-                    append(newPath, v);
-                }
-                append(newPath, Vector2{nx, ny});
-
-                // Print("New path len = %", newPath.count);
-
-                newEntry := Entry{nf, ng, nx, ny, nt, newPath};
-                queue.push(newEntry);
+                newNode := Node{nf, ng, nx, ny, nt, currentStable};
+                queue.push(newNode);
 
                 Print("Queue size = %", queue.elements.count);
             }
         }
     }
 
+    bestPath := ReconstructPath(bestNode);
     Print("Best path count = %", bestPath.count);
     return bestPath;
 }

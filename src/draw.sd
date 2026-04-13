@@ -144,8 +144,9 @@ DrawAiPath :: (game: *Game) {
         return;
     }
 
-    for p in ai.path {
-        DrawSphere(Vector3{p.x, 1, p.y}, 0.5, GOLD);
+    for p, i in ai.path {
+        color := Color{255, i as u8 * 10, 0, 255};
+        DrawSphere(Vector3{p.x, 1, p.y}, 0.5, color);
     }
 }
 
