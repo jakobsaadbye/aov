@@ -4,142 +4,133 @@ import "fmt";
 import "rlights";
 import "rlgl";
 import "raymath";
-import "math2";
+import "math";
 
-Gray       :: Color{ 30, 30, 30, 255 };
-DarkGray   :: Color{ 40, 40, 40, 255 };
+import "ai";
+import "constants";
+import "entities";
+import "draw";
 
-WindowWidth  :: 1920;
-WindowHeight :: 1080;
-
-GRID_SIZE     :: 128;
-GRID_LEN      :: GRID_SIZE * 0.5;
-ROAD_WIDTH    :: GRID_SIZE * 0.8;
-ROAD_HEIGHT   :: GRID_SIZE;
-TILE_REPEAT   :: 4;
-
-CAR_WIDTH  :: 3;
-CAR_HEIGHT :: 3;
-CAR_LENGTH :: 7;
-MAX_CAR_COUNT :: 128;
-
-WALL_WIDTH  :: 2;
-WALL_HEIGHT :: 5;
-WALL_LENGTH :: GRID_SIZE;
-
-PLAYER_HITBOX_ASPECT_RATIO :: 0.6;
-
-DEBUG_DRAW_PLAYER_WIREFRAMES :: false;
-DEBUG_DRAW_CAR_WIREFRAMES :: false;
-DEBUG_DRAW_CAR_HITBOX :: false;
-
-CameraInput :: struct {
-    zoom: float;
-    rotation: Vector3;
-    movement: Vector3;
-    speed: float;
-}
-
-Game :: struct {
-    disableCameraMovement: bool;
-    tempStorage: Arena;
-    sun: Light;
-    lockCamera: bool;
-    mousePosition: Vector2;
-    cars: []Car;
-    carSpawner: *CarSpawner;
-}
-
-HeroType :: enum {
-    none,
-    allan,
-    pudge,
-}
-
-HeroStats :: struct {
-    health: float;
-    mana: float;
-    moveSpeed: float;
-}
-
-EntityType :: enum {
-    Hero,
-    Car,
-    Wall,
-}
-
-Entity :: struct {
-    type: EntityType;
-    position: Vector3;
-    velocity: Vector3;
-}
-
-Hero :: struct {
-    head: Entity;
-    type: HeroType;
-    stats: HeroStats;
-    target: Vector3;
-    isMoving: bool;
-
-    // Bounding box of the hero
-    width: float;
-    height: float;
-    length: float;
-}
-
-Wall :: struct {
-    head: Entity;
-    width: float;
-    height: float;
-    length: float;
-}
-
-Car :: struct {
-    head: Entity;
-    live: bool;
-}
-
-CarSpawner :: struct {
-    cars: []Car;
-    numLive: int;
-}
-
-Player :: struct {
-    id: int;
-    hero: *Hero;
-    deaths: int;
-}
-
-DrawWalls :: (walls: []Wall) {
-    for *wall in walls {
-        DrawCube(wall.head.position, WALL_WIDTH, WALL_HEIGHT, wall.length, ORANGE);
-    }
-}
 
 getHitbox :: method (hero: Hero) -> Vector2, float {
     return Vector2{hero.head.position.x, hero.head.position.z}, hero.width * 0.5 * PLAYER_HITBOX_ASPECT_RATIO;
 }
 
-CheckHeroWallCollision :: (hero: Hero, walls: []Wall) -> *Wall, bool {
-    for *wall in walls {
-        hbCenter, hbRadius := hero.getHitbox();
+CheckHeroWallCollision :: (game: *Game, hero: Hero) -> Rectangle, bool {
+    hbCenter, hbRadius := hero.getHitbox();
 
-        wallHitboxRec := Rectangle{
+    // Check collisions against the wall
+    for *wall in game.walls {
+
+        wallRec := Rectangle{
             wall.head.position.x - WALL_WIDTH*0.5,
             wall.head.position.z - wall.length*0.5,
             WALL_WIDTH,
             wall.length,
         };
 
-        if CheckCollisionCircleRec(hbCenter, hbRadius, wallHitboxRec) {
-            return wall, true;
+        if CheckCollisionCircleRec(hbCenter, hbRadius, wallRec) {
+            return wallRec, true;
         }
     }
 
-    return null, false;
+    // Check collision with the world bounds
+    for mapBoundRec in MapBoundRects {
+        if CheckCollisionCircleRec(hbCenter, hbRadius, mapBoundRec) {
+            return mapBoundRec, true;
+        }
+    }
+
+    return {}, false;
+}
+
+min :: (values: ...float) -> float {
+    smallest := values[0];
+    for v in values {
+        if v < smallest {
+            smallest = v;
+        }
+    }
+    return smallest;
+}
+
+ResolveCircleRecCollision2 :: (center: Vector2, radius: float, rec: Rectangle) -> Vector2 {
+    // Closest point on rect to circle center
+    closest := Vector2{
+        Clamp(center.x, rec.x, rec.x + rec.width),
+        Clamp(center.y, rec.y, rec.y + rec.height),
+    };
+
+    delta  := Vector2Subtract(center, closest);
+    length := sqrt((delta.x * delta.x + delta.y * delta.y) as f64);
+
+    // Center is inside the rectangle — find minimum exit along each axis
+    if length == 0 {
+        overlapLeft   := center.x - rec.x;
+        overlapRight  := (rec.x + rec.width)  - center.x;
+        overlapTop    := center.y - rec.y;
+        overlapBottom := (rec.y + rec.height) - center.y;
+
+        min_overlap := min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+
+        if      min_overlap == overlapLeft   { return Vector2{center.x - (overlapLeft   + radius), center.y}; }
+        else if min_overlap == overlapRight  { return Vector2{center.x + (overlapRight  + radius), center.y}; }
+        else if min_overlap == overlapTop    { return Vector2{center.x, center.y - (overlapTop    + radius)}; }
+        else                                  { return Vector2{center.x, center.y + (overlapBottom + radius)}; }
+    }
+
+    // Normal case — push circle out by overlap amount along contact normal
+    // @CompilerBug: Assertion failed: arg->type->size == param->type->size && "Unexpected f64 argument to f32 parameter adaptation", file src/code_generator.c, line 1069
+    overlap := (radius as f64) - length;
+    normal  := Vector2Normalize(delta);
+    scaled := Vector2Scale(normal, overlap as f32);
+    return Vector2Add(center, scaled);
+}
+
+// ResolveCircleRecCollision :: (center: Vector2, radius: float, rec: Rectangle) -> Vector2 {
+//     // Check if we hit the left or right side of the wall
+//     collidedFromLeftSide := center.x < rec.x;
+
+//     wallX: float;
+//     if collidedFromLeftSide {
+//         wallX = rec.x - WALL_WIDTH*0.5;
+//     } else {
+//         wallX = rec.x + WALL_WIDTH*0.5;
+//     }
+
+//     // Calculate the distance to the wall
+//     distanceWallX := fabsf(wallX - center.x);
+
+//     // Calculate how much to offset in the x direction
+//     centerIsInsideWall := fabsf(rec.x - center.x) <= WALL_WIDTH*0.5;
+
+//     offsetX: float;
+//     if centerIsInsideWall {
+//         offsetX = radius + distanceWallX;
+//     } else {
+//         offsetX = radius - distanceWallX;
+//     }
+    
+
+//     if collidedFromLeftSide {
+//         hero.head.position.x -= offsetX;
+//     } else {
+//         hero.head.position.x += offsetX;
+//     }
+// }
+
+ResolveHeroWallCollision :: (hero: *Hero, rec: Rectangle) {
+    // Resolve the player position to get unstuck
+    heroCenter, radius := hero.getHitbox();
+
+    newPos := ResolveCircleRecCollision2(heroCenter, radius, rec);
+
+    hero.head.position.x = newPos.x;
+    hero.head.position.z = newPos.y;
 }
 
 UpdateCars :: (spawner: *CarSpawner) {
+    return;
     dt := GetFrameTime();
 
     for *car in spawner.cars {
@@ -193,24 +184,6 @@ SpawnCars :: (spawner: *CarSpawner) {
     spawner.numLive += 1;
 }
 
-DrawCars :: (cars: []Car) {
-    for *car in cars {
-        if !car.live {
-            continue;
-        }
-
-        if DEBUG_DRAW_CAR_HITBOX {
-            DrawCube({car.head.position.x, 0, car.head.position.z}, CAR_WIDTH, 0.1, CAR_LENGTH, BLUE);
-        }
-
-        if DEBUG_DRAW_CAR_WIREFRAMES {
-            DrawCubeWires({car.head.position.x, car.head.position.y + CAR_HEIGHT*0.5, car.head.position.z}, CAR_WIDTH, CAR_HEIGHT, CAR_LENGTH, BLUE);
-        } else {
-            DrawCube({car.head.position.x, car.head.position.y + CAR_HEIGHT*0.5, car.head.position.z}, CAR_WIDTH, CAR_HEIGHT, CAR_LENGTH, BLUE);
-        }
-    }
-}
-
 CheckPlayerCarCollision :: (player: *Player, cars: []Car) -> *Car, bool {
     for *car in cars {
         if !car.live {
@@ -232,18 +205,45 @@ CheckPlayerCarCollision :: (player: *Player, cars: []Car) -> *Car, bool {
     return null, false;
 }
 
-RespawnPlayer :: (player: *Player) {
-    player.hero.head.position.x = -GRID_LEN + 2;
-    player.hero.head.position.z = 0;
-    player.hero.isMoving = false;
+
+GetRandomHero :: () -> Hero {
+    randomIndex := GetRandomValue(0, AllHeroes.count - 1);
+    return AllHeroes[randomIndex];
 }
 
-HandleCarCollision :: (player: *Player, car: *Car) {
+InitializePlayers :: (players: []Player) {
+    for *player, i in players {
+        player.id = i;
+        player.deaths = 0;
+    }
+}
+
+RespawnPlayer :: (game: *Game, player: *Player) {
+    player.hero = GetRandomHero();
+
+    if player.isAi {
+        player.hero.head.position.x = game.walls[0].head.position.x;
+        player.hero.head.position.z = game.walls[0].head.position.z + game.walls[0].length;
+
+        // Reset the AI to move to the entrance first
+        // game.ai1.goal = game.ai1.goals[0];
+        game.ai1.goalCursor = 0;
+    } else {
+        player.hero.head.position.x = -GRID_LEN + 2;
+        player.hero.head.position.z = 0;
+    }
+}
+
+HandleCarCollision :: (game: *Game, player: *Player, car: *Car) {
     car.live = false;
 
     player.deaths += 1;
 
-    RespawnPlayer(player);
+    if player.isAi {
+        game.ai1.pathIsDirty = true;
+    }
+
+    RespawnPlayer(game, player);
 }
 
 SimulateHero :: (hero: Hero) -> Hero {
@@ -275,6 +275,53 @@ UpdateHero :: (hero: *Hero, newHero: Hero) {
     hero.isMoving      = newHero.isMoving;
 }
 
+GetCameraInput :: () -> CameraInput {
+    dt := GetFrameTime();
+
+    zoom     := 0.0;
+    rotation := Vector3{0, 0, 0};
+    movement := Vector3{0, 0, 0};
+    moveSpeedMultiplier := 1.0;
+
+    // Zoom
+    mouseWheel := GetMouseWheelMoveV();
+    if mouseWheel.y != 0 {
+        zoom -= mouseWheel.y;
+    }
+
+    // Rotation
+    mouseDelta := GetMouseDelta();
+    rotation.x += mouseDelta.x * 0.125;
+    rotation.y += mouseDelta.y * 0.125;
+
+    // Movement
+    if IsKeyDown(.left_shift) {
+        moveSpeedMultiplier = 2.0;
+    }
+
+    baseMoveSpeed :: 30;
+
+    if IsKeyDown(.w) {
+        movement.x += baseMoveSpeed * moveSpeedMultiplier * dt;
+    }
+    if IsKeyDown(.s) {
+        movement.x -= baseMoveSpeed * moveSpeedMultiplier * dt;
+    }
+    if IsKeyDown(.a) {
+        movement.y -= baseMoveSpeed * moveSpeedMultiplier * dt;
+    }
+    if IsKeyDown(.d) {
+        movement.y += baseMoveSpeed * moveSpeedMultiplier * dt;
+    }
+
+    return CameraInput{
+        zoom,
+        rotation,
+        movement,
+        moveSpeedMultiplier,
+    };
+}
+
 SplitMesh :: (mesh: Mesh, numTiles: float) {
     // The generated mesh has 4 vertices; patch the UVs to [0, numTiles]
     // GenMeshPlane stores texcoords as { u, v } floats, 2 floats per vertex
@@ -295,14 +342,39 @@ SplitMesh :: (mesh: Mesh, numTiles: float) {
     UpdateMeshBuffer(mesh, 1, uvs.data, 8 * sizeof(float), 0);
 }
 
+StartNewGame :: (game: *Game) {
+
+    // Respawn all players
+    for *player in game.players {
+        if player.id < game.activePlayers {
+            player.isActive = true;
+        } else {
+            player.isActive = false;
+        }
+
+        if player.id == 1 {
+            player.isAi = true;
+        }
+
+        RespawnPlayer(game, player);
+    }
+}
+
 main :: () {
     InitWindow(WindowWidth, WindowHeight, xx "Allan over vejen");
     DisableCursor();
     SetTargetFPS(60);
 
+    icon := LoadImage(xx "../data/window_icon.png");
+    ImageFormat(&icon, PixelFormat.uncompressed_r8g8b8a8);
+    SetWindowIcon(icon);
+
+
+    // InitializeGame :: ()
     // @CompilerBug: Arrays seems not to be zero initialized when being inside the Game struct.
     // Perhaps we are calculating the struct size incorrectly???
     cars: [MAX_CAR_COUNT]Car;
+    players: [MAX_PLAYER_COUNT]Player;
 
     carSpawner := CarSpawner{
         cars = cars,
@@ -311,7 +383,6 @@ main :: () {
     
     walls: [4]Wall;
     {
-        ENTRANCE_LENGTH :: 20;
         SMALL_SEGNMENT_LENGTH :: 15;
 
         wallTopLeft := Wall{
@@ -350,20 +421,12 @@ main :: () {
 
         walls[0] = wallTopLeft;
         walls[1] = wallBottomLeft;
-        walls[2] = wallBottomRight;
-        walls[3] = wallTopRight;
+        walls[2] = wallTopRight;
+        walls[3] = wallBottomRight;
     }
 
-    game := Game{
-        disableCameraMovement = true,
-        tempStorage = NewArena(4 * Kilobyte),
-        lockCamera = true,
-        cars = cars,
-        carSpawner = &carSpawner,
-    };
-
-    origCameraPosition := Vector3{0, 128, 64};
-    origCameraTarget := Vector3{0, -23.5, 0};
+    origCameraPosition := Vector3{0, 80, 64};
+    origCameraTarget := Vector3{0, -45.0, -0};
 
     camera := Camera3D{
         position = origCameraPosition,
@@ -373,26 +436,30 @@ main :: () {
         projection = .perspective,
     };
 
-    guy := Hero{
-        head = {
-            position = {0, 0, 0},
-            velocity = {0, 0 , 0}
-        },
-        type = .allan,
-        stats = {
-            health = 100,
-            mana = 50,
-            moveSpeed = 6,
-        },
-        width = 2,
-        height = 4,
-        length = 2,
+    game := Game{
+        tempStorage = NewArena(4 * Kilobyte),
+        camera = &camera,
+        activePlayers = 2,
+        clientPlayer = &players[0],
+        players = players,
+        cars = cars,
+        walls = walls,
+        carSpawner = &carSpawner,
+        disableCameraMovement = true,
+        lockCamera = true,
+        isDebug = true,
     };
 
-    player := Player{
-        id = 0,
-        hero = &guy,
-    };
+
+    //
+    // Initialization
+    //
+    InitializeCars(game.carSpawner);
+    InitializePlayers(game.players);
+
+    //
+    // Asset loading
+    //
 
     // Texture loading
     groundTexture     := LoadTexture(xx "../data/textures/grass/Grass_02.png");
@@ -432,17 +499,22 @@ main :: () {
     roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = WHITE;
     roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_NORMAL].texture = roadTextureNorm;
 
-    //
-    // Initialization
-    //
-    InitializeCars(game.carSpawner);
-    RespawnPlayer(&player);
+    
+    StartNewGame(&game);
+
+    game.assets.cursorTexture = cursorTexture;
+    game.assets.groundMesh = groundMesh;
+    game.assets.roadMesh = roadMesh;
+    game.assets.lightShader = lightShader;
+    game.assets.groundMaterial = groundMaterial;
+    game.assets.roadMaterial = roadMaterial;
 
     while !WindowShouldClose() {
+
         game.tempStorage.clear();
 
         //
-        // Input
+        // GetInput()
         //
         camInput := GetCameraInput();
 
@@ -461,229 +533,87 @@ main :: () {
             collision := GetRayCollisionMesh(ray, groundMesh, MatrixIdentity());
 
             if collision.hit {
-                player.hero.target = collision.point;
-                player.hero.isMoving = true;
+                game.clientPlayer.hero.target = collision.point;
+                game.clientPlayer.hero.isMoving = true;
             }
         }
+
+        if (game.isDebug) {
+            if (IsKeyPressed(.one)) {
+                game.clientPlayer = &game.players[0];
+            }
+            if (IsKeyPressed(.two)) {
+                game.clientPlayer = &game.players[1];
+            }
+            if (IsKeyPressed(.f1)) {
+                game.debug.drawWireframes = !game.debug.drawWireframes;
+            }
+            if (IsKeyPressed(.f2)) {
+                game.debug.drawHitboxes = !game.debug.drawHitboxes;
+            }
+        }
+
+        GetAiInput(&game);
 
         game.mousePosition = GetMousePosition();
 
         //
-        // Update
+        // UpdateGame()
         //
 
         // Update camera
         if game.lockCamera {
             // Lock camera rotation
-            UpdateCameraPro(&camera, camInput.movement, {0, 0 ,0}, camInput.zoom);
+            UpdateCameraPro(game.camera, camInput.movement, {0, 0 ,0}, camInput.zoom);
         } else {
-            UpdateCameraPro(&camera, camInput.movement, camInput.rotation, camInput.zoom);
+            UpdateCameraPro(game.camera, camInput.movement, camInput.rotation, camInput.zoom);
         }
 
         // Simulate heroes
-        simHero := SimulateHero(*player.hero);
+        for *player in game.players {
 
-        // Check player vs wall collision
-        {
-            wall, collided := CheckHeroWallCollision(simHero, walls);
-            if collided {
-
-                // Resolve the player position to get unstuck
-                heroCenter, radius := simHero.getHitbox();
-
-                // Check if we hit the left or right side of the wall
-                collidedFromLeftSide := heroCenter.x < wall.head.position.x;
-
-                wallX: float;
-                if collidedFromLeftSide {
-                    wallX = wall.head.position.x - WALL_WIDTH*0.5;
-                } else {
-                    wallX = wall.head.position.x + WALL_WIDTH*0.5;
-                }
-
-                // Calculate the distance to the wall
-                distanceWallX := fabsf(wallX - heroCenter.x);
-
-                // Calculate how much to offset in the x direction
-                centerIsInsideWall := fabsf(wall.head.position.x - heroCenter.x) <= WALL_WIDTH*0.5;
-
-                offsetX: float;
-                if centerIsInsideWall {
-                    offsetX = radius + distanceWallX;
-                } else {
-                    offsetX = radius - distanceWallX;
-                }
-                
-
-                if collidedFromLeftSide {
-                    simHero.head.position.x -= offsetX;
-                } else {
-                    simHero.head.position.x += offsetX;
+            simHero := SimulateHero(player.hero);
+    
+            // Check player vs wall collisions
+            {
+                rec, collided := CheckHeroWallCollision(&game, simHero);
+                if collided {
+                    ResolveHeroWallCollision(&simHero, rec);
                 }
             }
-        }
-
-        // Update the hero with the simulated hero
-        UpdateHero(player.hero, simHero);
-
-        // Check player vs car collision
-        {
-            car, collided := CheckPlayerCarCollision(&player, game.cars);
-            if collided {
-                HandleCarCollision(&player, car);
+    
+            // Update the hero with the simulated hero
+            UpdateHero(&player.hero, simHero);
+    
+            // Check player vs car collision
+            {
+                car, collided := CheckPlayerCarCollision(player, game.cars);
+                if collided {
+                    HandleCarCollision(&game, player, car);
+                }
             }
+
         }
+
+        // Update AI path finding
+        UpdateAIs(&game);
         
         // Update cars
         SpawnCars(game.carSpawner);
         UpdateCars(game.carSpawner);
 
         // Update the shader with the camera view vector (points towards { 0.0f, 0.0f, 0.0f })
-        SetShaderValue(lightShader, lightShader.locs[ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW], &camera.position, .VEC3);
+        SetShaderValue(game.assets.lightShader, game.assets.lightShader.locs[ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW], &game.camera.position, .VEC3);
 
         // Update light values (actually, only enable/disable them)
-        UpdateLightValues(lightShader, game.sun);
+        UpdateLightValues(game.assets.lightShader, game.sun);
+        
 
         //
-        // Drawing
+        // DrawGame()
         //
-        BeginDrawing();
-
-        ClearBackground(Gray);
-
-        BeginMode3D(camera);
-
-            BeginShaderMode(lightShader);
-                DrawMesh(groundMesh, groundMaterial, MatrixTranslate(0, 0, 0));
-                DrawMesh(roadMesh, roadMaterial, MatrixTranslate(0, 0.2, 0));
-
-                // Draw walls
-                DrawWalls(walls);
-
-                // Draw hero
-                {
-                    hero := player.hero;
-                    heroPos := hero.head.position;
-                    if DEBUG_DRAW_PLAYER_WIREFRAMES {
-                        DrawCubeWires({heroPos.x, heroPos.y + hero.height*0.5, heroPos.z}, hero.width, hero.height, hero.length, RED);
-                    } else {
-                        DrawCube({heroPos.x, heroPos.y + hero.height*0.5, heroPos.z}, hero.width, hero.height, hero.length, RED);
-                    }
-                }
-
-                // Draw cars
-                DrawCars(game.cars);
-
-            EndShaderMode();
-
-            // Draw spheres to show where the lights are
-            DrawSphereEx(game.sun.position, 0.2, 8, 8, game.sun.color);
-
-            // Draw mouse click
-            DrawSphere(player.hero.target, 0.5, RED);
-
-            // Draw player hitbox
-            DrawCircle3D({player.hero.head.position.x, player.hero.head.position.y, player.hero.head.position.z}, player.hero.width * 0.5 * PLAYER_HITBOX_ASPECT_RATIO, Vector3{1, 0, 0}, 90, GREEN);
-
-        EndMode3D();
-
-            
-        //
-        // 2D overlay stuff
-        //
-
-        // Draw mouse
-        if game.lockCamera {
-            DrawTexture(cursorTexture, (game.mousePosition.x - 2.5) as int, game.mousePosition.y as int, WHITE);
-        }
-
-        DrawFPS(0, 0);
-
-        // Draw stats
-        {
-            Width :: 200;
-            Pad :: 20;
-            FontSize :: 16;
-
-            rect := Rectangle{WindowWidth - Width - Pad, Pad, Width, 300};
-            DrawRectangleRec(rect, DarkGray);
-
-            camX := game.tempStorage.allocate(16);
-            camY := game.tempStorage.allocate(16);
-            camZ := game.tempStorage.allocate(16);
-            rotX := game.tempStorage.allocate(16);
-            rotY := game.tempStorage.allocate(16);
-            rotZ := game.tempStorage.allocate(16);
-
-            playerX := game.tempStorage.allocate(32);
-            playerZ := game.tempStorage.allocate(32);
-
-            sprintf(camX, xx "X = %lf", camera.position.x);
-            sprintf(camY, xx "Y = %lf", camera.position.y);
-            sprintf(camZ, xx "Z = %lf", camera.position.z);
-            sprintf(rotX, xx "RX = %lf", camera.target.x);
-            sprintf(rotY, xx "RY = %lf", camera.target.y);
-            sprintf(rotZ, xx "RZ = %lf", camera.target.z);
-            sprintf(playerX, xx "Player X = %lf", player.hero.head.position.x);
-            sprintf(playerZ, xx "Player Z = %lf", player.hero.head.position.z);
-
-            DrawText(camX, rect.x as int, rect.y as int, FontSize, WHITE);
-            DrawText(camY, rect.x as int, 1*FontSize + rect.y as int, FontSize, WHITE);
-            DrawText(camZ, rect.x as int, 2*FontSize + rect.y as int, FontSize, WHITE);
-            DrawText(rotX, rect.x as int, 3*FontSize + rect.y as int, FontSize, WHITE);
-            DrawText(rotY, rect.x as int, 4*FontSize + rect.y as int, FontSize, WHITE);
-            DrawText(rotZ, rect.x as int, 5*FontSize + rect.y as int, FontSize, WHITE);
-            DrawText(playerX, rect.x as int, 6*FontSize + rect.y as int, FontSize, WHITE);
-            DrawText(playerZ, rect.x as int, 7*FontSize + rect.y as int, FontSize, WHITE);
-        }
-
-        EndDrawing();
+        DrawGame(&game);
     }
 
     CloseWindow();
-}
-
-GetCameraInput :: () -> CameraInput {
-    dt := GetFrameTime();
-
-    zoom     := 0.0;
-    rotation := Vector3{0, 0, 0};
-    movement := Vector3{0, 0, 0};
-    speed    := 1.0;
-
-    // Zoom
-    mouseWheel := GetMouseWheelMoveV();
-    if mouseWheel.y != 0 {
-        zoom -= mouseWheel.y;
-    }
-
-    // Rotation
-    mouseDelta := GetMouseDelta();
-    rotation.x += mouseDelta.x * 0.125;
-    rotation.y += mouseDelta.y * 0.125;
-
-    // Movement
-    if IsKeyDown(.left_shift) {
-        speed = 2.0;
-    }
-
-    if IsKeyDown(.w) {
-        movement.x += 10 * speed * dt;
-    }
-    if IsKeyDown(.s) {
-        movement.x -= 10 * speed * dt;
-    }
-    if IsKeyDown(.a) {
-        movement.y -= 10 * speed * dt;
-    }
-    if IsKeyDown(.d) {
-        movement.y += 10 * speed * dt;
-    }
-
-    return CameraInput{
-        zoom,
-        rotation,
-        movement,
-        speed,
-    };
 }

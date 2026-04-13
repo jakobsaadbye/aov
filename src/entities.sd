@@ -1,0 +1,159 @@
+import "raylib";
+
+Game :: struct {
+    tempStorage: Arena;
+    sun: Light;
+    camera: *Camera3D;
+    mousePosition: Vector2;
+    assets: Assets;
+    activePlayers: int;
+    clientPlayer: *Player;
+    cars: []Car;
+    players: []Player;
+    walls: []Wall;
+    ai1: AiBot;
+    carSpawner: *CarSpawner;
+    disableCameraMovement: bool;
+    lockCamera: bool;
+    isDebug: bool;
+    debug: DebugToggles;
+}
+
+AiBot :: struct {
+    path: [..]Vector2;
+    nextPoint: int;
+    goal: Vector2;
+    goalCursor: int;
+    goals: [..]Vector2;
+    staticObstacles: [..]Rectangle;
+    dynamicObstacles: [..]Rectangle;
+    pathIsDirty: bool;
+}
+
+CameraInput :: struct {
+    zoom: float;
+    rotation: Vector3;
+    movement: Vector3;
+    speed: float;
+}
+
+Assets :: struct {
+    // Textures
+    cursorTexture: Texture;
+    // Meshes
+    groundMesh: Mesh;
+    roadMesh: Mesh;
+    // Shaders
+    lightShader: Shader;
+    // Materials
+    groundMaterial: Material;
+    roadMaterial: Material;
+}
+
+DebugToggles :: struct {
+    drawWireframes: bool;
+    drawHitboxes: bool;
+}
+
+HeroType :: enum {
+    none,
+    allan,
+    ghosty,
+    pudge,
+}
+
+HeroStats :: struct {
+    health: float;
+    mana: float;
+    moveSpeed: float;
+}
+
+EntityType :: enum {
+    Hero,
+    Car,
+    Wall,
+}
+
+Entity :: struct {
+    type: EntityType;
+    position: Vector3;
+    velocity: Vector3;
+}
+
+Hero :: struct {
+    head: Entity;
+    type: HeroType;
+    stats: HeroStats;
+    target: Vector3;
+    isMoving: bool;
+
+    // Bounding box of the hero
+    width: float;
+    height: float;
+    length: float;
+}
+
+Wall :: struct {
+    head: Entity;
+    length: float;
+}
+
+Car :: struct {
+    head: Entity;
+    live: bool;
+}
+
+CarSpawner :: struct {
+    cars: []Car;
+    numLive: int;
+}
+
+Player :: struct {
+    id: int;
+    hero: Hero;
+    deaths: int;
+    isActive: bool;
+    isAi: bool;
+}
+
+
+
+
+HERO_DEFN_ALLAN :: Hero{
+    head = {
+        type = .Hero,
+    },
+    type = .allan,
+    stats = {
+        health = 1,
+        mana = 50,
+        moveSpeed = 6,
+    },
+    width = 2,
+    height = 4,
+    length = 2,
+};
+
+HERO_DEFN_GHOSTY :: Hero{
+    head = {
+        type = .Hero,
+    },
+    type = .ghosty,
+    stats = {
+        health = 1,
+        mana = 50,
+        moveSpeed = 8,
+    },
+    width = 2,
+    height = 3,
+    length = 2,
+};
+
+AllHeroes :: [
+    HERO_DEFN_ALLAN,
+    HERO_DEFN_GHOSTY,
+];
+
+pos2d :: method (hero: Hero) -> Vector2 {
+    return Vector2{hero.head.position.x, hero.head.position.z};
+}

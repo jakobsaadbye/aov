@@ -1,0 +1,216 @@
+import "entities";
+import "raylib";
+import "raymath";
+
+DrawGame :: (game: *Game) {
+    Asset := game.assets;
+    
+    BeginDrawing();
+
+    ClearBackground(Gray);
+
+    BeginMode3D(*game.camera);
+    {
+        BeginShaderMode(Asset.lightShader);
+        {
+            DrawMesh(Asset.groundMesh, Asset.groundMaterial, MatrixTranslate(0, 0, 0));
+            DrawMesh(Asset.roadMesh, Asset.roadMaterial, MatrixTranslate(0, 0.2, 0));
+        
+            // Draw walls
+            DrawWalls(game, game.walls);
+        
+            // Draw hero
+            DrawPlayers(game, game.players);
+        
+            // Draw cars
+            DrawCars(game, game.cars);
+
+            // Draw map bounds
+            // DrawMapBounds();
+        }
+        EndShaderMode();
+
+        DrawAiInternals(game);
+    
+        // Draw spheres to show where the lights are
+        DrawSphereEx(game.sun.position, 0.2, 8, 8, game.sun.color);
+    
+        // Draw mouse click
+        DrawSphere(game.clientPlayer.hero.target, 0.5, RED);
+    
+        // Draw player hitbox
+        // DrawCircle3D(game.clientPlayer.hero.position, game.clientPlayer.hero.width * 0.5 * PLAYER_HITBOX_ASPECT_RATIO, Vector3{1, 0, 0}, 90, GREEN);
+    }
+    EndMode3D();
+
+
+
+    //
+    // 2D overlay stuff
+    //
+
+    // Draw mouse
+    if game.lockCamera {
+        DrawTexture(Asset.cursorTexture, (game.mousePosition.x - 2.5) as int, game.mousePosition.y as int, WHITE);
+    }
+
+    DrawFPS(0, 0);
+
+    // Draw stats
+    {
+        Width :: 200;
+        Pad :: 20;
+        FontSize :: 16;
+
+        rect := Rectangle{WindowWidth - Width - Pad, Pad, Width, 300};
+        DrawRectangleRec(rect, DarkGray);
+
+        camX := game.tempStorage.allocate(16);
+        camY := game.tempStorage.allocate(16);
+        camZ := game.tempStorage.allocate(16);
+        rotX := game.tempStorage.allocate(16);
+        rotY := game.tempStorage.allocate(16);
+        rotZ := game.tempStorage.allocate(16);
+
+        playerX := game.tempStorage.allocate(32);
+        playerZ := game.tempStorage.allocate(32);
+
+        sprintf(camX, xx "X = %lf", game.camera.position.x);
+        sprintf(camY, xx "Y = %lf", game.camera.position.y);
+        sprintf(camZ, xx "Z = %lf", game.camera.position.z);
+        sprintf(rotX, xx "RX = %lf", game.camera.target.x);
+        sprintf(rotY, xx "RY = %lf", game.camera.target.y);
+        sprintf(rotZ, xx "RZ = %lf", game.camera.target.z);
+        sprintf(playerX, xx "Player X = %lf", game.clientPlayer.hero.head.position.x);
+        sprintf(playerZ, xx "Player Z = %lf", game.clientPlayer.hero.head.position.z);
+
+        DrawText(camX, rect.x as int, rect.y as int, FontSize, WHITE);
+        DrawText(camY, rect.x as int, 1*FontSize + rect.y as int, FontSize, WHITE);
+        DrawText(camZ, rect.x as int, 2*FontSize + rect.y as int, FontSize, WHITE);
+        DrawText(rotX, rect.x as int, 3*FontSize + rect.y as int, FontSize, WHITE);
+        DrawText(rotY, rect.x as int, 4*FontSize + rect.y as int, FontSize, WHITE);
+        DrawText(rotZ, rect.x as int, 5*FontSize + rect.y as int, FontSize, WHITE);
+        DrawText(playerX, rect.x as int, 6*FontSize + rect.y as int, FontSize, WHITE);
+        DrawText(playerZ, rect.x as int, 7*FontSize + rect.y as int, FontSize, WHITE);
+    }
+
+    EndDrawing();
+}
+
+DrawAiInternals :: (game: *Game) {
+    DrawAiPath(game);
+    DrawAiObstacles(game);
+    DrawAiGoal(game);
+}
+
+DrawAiGoal :: (game: *Game) {
+    ai := game.ai1;
+    center := Vector3{
+        ai.goal.x,
+        0.1,
+        ai.goal.y
+    };
+    DrawSphere(center, 1, DARKBROWN);
+}
+
+DrawAiObstacles :: (game: *Game) {
+    ai := game.ai1;
+    for ob in ai.staticObstacles {
+        center := Vector3{
+            x = ob.x + ob.width*0.5,
+            y = 0.4,
+            z = ob.y + ob.height*0.5,
+        };
+
+        DrawCube(center, ob.width, center.y*0.5, ob.height, ORANGE);
+    }
+
+    for ob, i in ai.dynamicObstacles {
+        center := Vector3{
+            x = ob.x + ob.width*0.5,
+            y = 0.4,
+            z = ob.y + ob.height*0.5,
+        };
+
+        DrawCube(center, ob.width, center.y*0.5, ob.height, BLUE);
+    }
+
+
+}
+
+DrawAiPath :: (game: *Game) {
+    ai := game.ai1;
+    if ai.path.count == 0 {
+        return;
+    }
+
+    for p in ai.path {
+        DrawSphere(Vector3{p.x, 1, p.y}, 0.5, GOLD);
+    }
+}
+
+DrawMapBounds :: () {
+    for mapBounds in MapBoundRects {
+        // Reposition the rectangle to be calculated from the center
+        centerPos := Vector3{
+            x = mapBounds.x + mapBounds.width*0.5,
+            y = 3,
+            z = mapBounds.y + mapBounds.height*0.5,
+        };
+
+        DrawCube(centerPos, mapBounds.width, 6, mapBounds.height, GRAY);
+    }
+}
+
+DrawPlayers :: (game: *Game, players: []Player) {
+    for *player in players {
+        if !player.isActive {
+            continue;
+        }
+    
+        hero := player.hero;
+        heroPos := hero.head.position;
+    
+        color := RED;
+        if hero.type == .allan {
+            color = RED;
+        }
+        else if hero.type == .ghosty {
+            color = DARKBLUE;
+        }
+
+        if game.debug.drawWireframes {
+            DrawCubeWires({heroPos.x, heroPos.y + hero.height*0.5, heroPos.z}, hero.width, hero.height, hero.length, color);
+        } else {
+            DrawCube({heroPos.x, heroPos.y + hero.height*0.5, heroPos.z}, hero.width, hero.height, hero.length, color);
+        }
+    }
+}
+
+DrawCars :: (game: *Game, cars: []Car) {
+    for *car in cars {
+        if !car.live {
+            continue;
+        }
+
+        if game.debug.drawHitboxes {
+            DrawCube({car.head.position.x, 0, car.head.position.z}, CAR_WIDTH, 0.1, CAR_LENGTH, BLUE);
+        }
+
+        DrawCubeOrWireframe({car.head.position.x, car.head.position.y + CAR_HEIGHT*0.5, car.head.position.z}, CAR_WIDTH, CAR_HEIGHT, CAR_LENGTH, BLUE, game.debug.drawWireframes);
+    }
+}
+
+DrawWalls :: (game: *Game, walls: []Wall) {
+    for *wall in walls {
+        DrawCubeOrWireframe(wall.head.position, WALL_WIDTH, WALL_HEIGHT, wall.length, ORANGE, game.debug.drawWireframes);
+    }
+}
+
+DrawCubeOrWireframe :: (position: Vector3, width: float, height: float, length: float, color: Color, drawWireframe: bool) {
+    if drawWireframe {
+        DrawCubeWires(position, width, height, length, color);
+    } else {
+        DrawCube(position, width, height, length, color);
+    }
+}

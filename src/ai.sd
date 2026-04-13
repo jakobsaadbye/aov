@@ -1,0 +1,360 @@
+import "entities";
+import "constants";
+import "c_stdlib";
+
+MAX_PATH_SEGMENTS :: 64;
+MAX_QUEUED_ELEMENTS :: 1024;
+MAX_VISITED_CELLS :: 1024;
+
+// How much of an extra margin the AI should keep a distance to the cars
+AI_CAR_SAFETY_MARGIN :: 1.4;
+
+StepSize :: 1.4;
+MaxIterations :: 24;
+GoalThreshold :: StepSize * 0.5;
+
+Entry :: struct {
+    f: float;
+    g: float;
+    x: float;
+    y: float;
+    t: int;
+    path: [..]Vector2;
+}
+
+Queue :: struct {
+    elements: [..]Entry;
+}
+
+push :: method (q: *Queue, elem: Entry) {
+    append(q.elements, elem);
+}
+
+pop :: method (q: *Queue) -> Entry {
+    bestIndex := 0;
+    for i in 0..q.elements.count-1 {
+        if q.elements[i].f < q.elements[bestIndex].f {
+            bestIndex = i;
+        }
+    }
+    best := q.elements[bestIndex];
+    // Swap with last and shrink
+    q.elements[bestIndex] = q.elements[q.elements.count - 1];
+    q.elements.count -= 1;
+    return best;
+}
+
+Vector3ArrayContains :: (arr: [..]Vector3, elem: Vector3) -> bool {
+    Epsilon :: StepSize * 0.5;
+    for v in arr {
+        inX := elem.x >= v.x - Epsilon && elem.x <= v.x + Epsilon;
+        inY := elem.y >= v.y - Epsilon && elem.y <= v.y + Epsilon;
+        // @TODO: Re-insert once we include the time dimension
+        if inX && inY {
+            return true;
+        }
+    }
+    return false;
+}
+
+Heuristic :: (p: Vector2, goal: Vector2) -> float {
+    return Vector2Distance(p, goal);
+}
+
+HasHitGoal :: (x, y: float, goal: Vector2) -> bool {
+    dist := Vector2Distance(Vector2{x, y}, goal);
+    if dist < GoalThreshold {
+        return true;
+    }
+
+    return false;
+}
+
+ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dynamicObstacles: [..]Rectangle, iterations := MaxIterations) -> [..]Vector2 {
+    neighborDirections: [8]Vector2 = [
+        {0, StepSize},
+        {StepSize, StepSize},
+        {StepSize, 0},
+        {StepSize, -StepSize},
+        {0, -StepSize},
+        {-StepSize, -StepSize},
+        {-StepSize, 0},
+        {-StepSize, StepSize},
+        // {0, 0},
+    ];
+
+    // @CompilerBug: We error out, when setting the dynamic arrays directly on the struct
+    // queue.elements: [..]Entry; 
+    // queue.elements.data = malloc(MAX_QUEUED_ELEMENTS * sizeof(Entry));
+    // queue.elements.capacity = MAX_QUEUED_ELEMENTS;
+    queue := Queue{};
+    elements: [..]Entry; 
+    elements.data = malloc(MAX_QUEUED_ELEMENTS * sizeof(Entry));
+    elements.capacity = MAX_QUEUED_ELEMENTS;
+    queue.elements = elements;
+
+    initialEntry := Entry{0, 0, start.x, start.y, 0};
+    initialPath: [..]Vector2;
+    initialPath.data = malloc(MAX_PATH_SEGMENTS * sizeof(Vector2));
+    initialPath.capacity = MAX_PATH_SEGMENTS;
+    append(initialPath, start);
+    initialEntry.path = initialPath;
+
+    queue.push(initialEntry);
+
+    
+    bestPath: [..]Vector2;
+    visited: [..]Vector3;
+    visited.data = malloc(MAX_VISITED_CELLS * sizeof(Vector3));
+    visited.capacity = MAX_VISITED_CELLS;
+
+    closestDistance := 999.0;
+
+    while queue.elements.count != 0 {
+        e := queue.pop();
+        
+        x := e.x;
+        y := e.y;
+        t := e.t;
+
+        dg := Vector2Distance(Vector2{x, y}, goal);
+        if (dg < closestDistance) {
+            bestPath = e.path;
+            closestDistance = dg;
+        }
+        
+        if HasHitGoal(x, y, goal) {
+            Print("Found a path to the goal!. Path count = %", e.path.count);
+            bestPath = e.path;
+            break;
+        }
+
+        if Vector3ArrayContains(visited, Vector3{x, y, t as float}) {
+            continue;
+        }
+
+        append(visited, Vector3{x, y, t as float});
+
+        Print("Visited count = %", visited.count);
+
+        if t >= MaxIterations {
+            // Max depth reached for this branch
+            continue;
+        }
+
+        // Visit neighboring cells
+        for d in neighborDirections {
+            nx := x + d.x;
+            ny := y + d.y;
+
+            p := Vector2{nx, ny};
+
+            // Check walls + world bounds
+            hitStaticObstacle := false;
+            for staticOb in staticObstacles {
+                if CheckCollisionPointRec(p, staticOb) {
+                    hitStaticObstacle = true;
+                    break;
+                }
+            }
+            if hitStaticObstacle {
+                continue;
+            }
+
+            // Check cars
+            hitDynamicObstacle := false;
+            for dynamicOb in dynamicObstacles {
+                if CheckCollisionPointRec(p, dynamicOb) {
+                    hitDynamicObstacle = true;
+                    break;
+                }
+            }
+            if hitDynamicObstacle {
+                continue;
+            }
+
+            // No collision was detected
+            nt := t + 1;
+            if !Vector3ArrayContains(visited, Vector3{nx, ny, nt as float}) {
+                ng := e.g + 1;
+                nf := ng + Heuristic(Vector2{nx, ny}, goal);
+
+                // @Cleanup @Speed: This is really trashing memory. Do something better!
+                newPath: [..]Vector2;
+                newPath.data = malloc(MAX_PATH_SEGMENTS * sizeof(Vector2));
+                newPath.capacity = MAX_PATH_SEGMENTS;
+                for v in e.path {
+                    append(newPath, v);
+                }
+                append(newPath, Vector2{nx, ny});
+
+                // Print("New path len = %", newPath.count);
+
+                newEntry := Entry{nf, ng, nx, ny, nt, newPath};
+                queue.push(newEntry);
+
+                Print("Queue size = %", queue.elements.count);
+            }
+        }
+    }
+
+    Print("Best path count = %", bestPath.count);
+    return bestPath;
+}
+
+TargetReachedThreshold :: 0.5;
+
+ReachedPoint :: (p1, p2: Vector2, margin: float) -> bool {
+    return Vector2Distance(p1, p2) < margin;
+}
+
+UpdateAIs :: (game: *Game) {
+    aiPlayer := &game.players[1];
+
+    start := Vector2{
+        x = aiPlayer.hero.head.position.x,
+        y = aiPlayer.hero.head.position.z,
+    };
+
+    if game.ai1.goals.count == 0 {
+        wallTopL := game.walls[0];
+        wallTopR := game.walls[2];
+    
+        startEntrance := Vector2{
+            x = wallTopL.head.position.x, 
+            y = wallTopL.head.position.z + wallTopL.length*0.5 + ENTRANCE_LENGTH*0.5
+        };
+
+        endEntrance := Vector2{
+            x = wallTopR.head.position.x, 
+            y = wallTopR.head.position.z + wallTopR.length*0.5 + ENTRANCE_LENGTH*0.5
+        };
+        
+        goals: [..]Vector2 = [
+            startEntrance,
+            endEntrance,
+        ];
+    
+        game.ai1.goalCursor = 0;
+        game.ai1.goals = goals;
+    }
+
+    if game.ai1.goalCursor < game.ai1.goals.count {
+        game.ai1.goal = game.ai1.goals[game.ai1.goalCursor];
+    }
+
+    // Get all the static and dynamic obstacles on the map
+    if game.ai1.staticObstacles.count == 0 {
+        staticObstacles: [..]Rectangle;
+        for *wall in game.walls {
+            rect := Rectangle{
+                x = wall.head.position.x - WALL_WIDTH*0.5,
+                y = wall.head.position.z - wall.length*0.5,
+                width = WALL_WIDTH,
+                height = wall.length,
+            };
+    
+            append(staticObstacles, rect);
+        }
+    
+        for mapBound in MapBoundRects {
+            append(staticObstacles, mapBound);
+        }
+        game.ai1.staticObstacles = staticObstacles;
+    }
+    
+    if game.ai1.dynamicObstacles.count == 0 {
+        // TODO: Should we consider other players as dynamic???
+        dynamicObstacles: [..]Rectangle;
+        for *car in game.cars {
+            if !car.live {
+                continue;
+            }
+    
+            carRec := Rectangle{
+                x = car.head.position.x - CAR_WIDTH*0.5 - AI_CAR_SAFETY_MARGIN,
+                y = car.head.position.z - CAR_LENGTH*0.5 - AI_CAR_SAFETY_MARGIN,
+                width = CAR_WIDTH + AI_CAR_SAFETY_MARGIN*2,
+                height = CAR_LENGTH + AI_CAR_SAFETY_MARGIN*2,
+            };
+    
+            append(dynamicObstacles, carRec);
+        }
+
+        game.ai1.dynamicObstacles = dynamicObstacles;
+    }
+
+    heroPos2d := aiPlayer.hero.pos2d();
+
+    // Update the ai path when it has reached the first point on its path
+    hasCalculatedPathThisFrame := false;
+    finishedAllGoals := game.ai1.goalCursor >= game.ai1.goals.count;
+
+    if game.ai1.path.count == 0 {
+        Print("[AI 1]: Getting initial path\n");
+        game.ai1.path = ComputeFastestPath(start, game.ai1.goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
+        hasCalculatedPathThisFrame = true;
+    }
+
+    if game.ai1.path.count > 0 && !hasCalculatedPathThisFrame && !finishedAllGoals {
+        target2d := Vector2{x = aiPlayer.hero.target.x, y = aiPlayer.hero.target.z};
+
+        if ReachedPoint(heroPos2d, target2d, 0.5) {
+            game.ai1.nextPoint += 1;
+
+            Print("[AI 1]: Reached the next point");
+
+            if game.ai1.nextPoint >= game.ai1.path.count {
+                game.ai1.nextPoint = 0;
+
+                Print("[AI 1]: Recalculating new path");
+                game.ai1.path = ComputeFastestPath(start, game.ai1.goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
+                hasCalculatedPathThisFrame = true;
+            }
+
+        };
+    }
+
+    if game.ai1.pathIsDirty && !hasCalculatedPathThisFrame {
+        Print("[AI 1]: Scrapping old path");
+        game.ai1.path = ComputeFastestPath(start, game.ai1.goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
+        game.ai1.pathIsDirty = false;
+        hasCalculatedPathThisFrame = true;
+    }
+
+    // Steer the AI towards its next goal once it has reached its current goal
+    if ReachedPoint(heroPos2d, game.ai1.goals[game.ai1.goalCursor], StepSize) {
+        game.ai1.goalCursor += 1;
+        if game.ai1.goalCursor < game.ai1.goals.count {
+            game.ai1.goal = game.ai1.goals[game.ai1.goalCursor];
+        } else {
+            Print("[AI 1]: Completed all goals");
+        }
+    }
+
+}
+
+GetAiInput :: (game: *Game) {
+    aiPlayer := &game.players[1];
+    aiBot := game.ai1;
+
+    if aiBot.path.count > 0 {
+        nextPoint := aiBot.nextPoint;
+
+        if nextPoint < aiBot.path.count {
+            point := aiBot.path[nextPoint];
+            target := Vector3{
+                x = point.x,
+                y = 0,
+                z = point.y,
+            };
+            aiPlayer.hero.target = target;
+            aiPlayer.hero.isMoving = true;
+        } else {
+            aiPlayer.hero.isMoving = false;
+        }
+    }
+    else {
+        aiPlayer.hero.isMoving = false;
+    }
+}
