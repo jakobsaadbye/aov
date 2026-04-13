@@ -99,7 +99,7 @@ DrawGame :: (game: *Game) {
 
 DrawAiInternals :: (game: *Game) {
     DrawAiPath(game);
-    DrawAiObstacles(game);
+    // DrawAiObstacles(game);
     DrawAiGoal(game);
 }
 

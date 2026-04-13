@@ -1,0 +1,8 @@
+extern "C" {
+    clock :: () -> s64;
+}
+
+// Return current system time in milliseconds
+getSystemTime :: () -> s64 {
+    return clock();
+}

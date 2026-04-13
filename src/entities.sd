@@ -127,7 +127,7 @@ HERO_DEFN_ALLAN :: Hero{
     stats = {
         health = 1,
         mana = 50,
-        moveSpeed = 6,
+        moveSpeed = 8,
     },
     width = 2,
     height = 4,

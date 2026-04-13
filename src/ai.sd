@@ -1,16 +1,17 @@
 import "entities";
 import "constants";
 import "c_stdlib";
+import "time";
 
 MAX_PATH_SEGMENTS :: 64;
 MAX_QUEUED_ELEMENTS :: 1024;
-MAX_VISITED_CELLS :: 4096;
+MAX_VISITED_NODES :: 16384;
 
 // How much of an extra margin the AI should keep a distance to the cars
 AI_CAR_SAFETY_MARGIN :: 1.4;
 
-StepSize :: 1.5;
-MaxIterations :: 48;
+StepSize :: 1.0;
+MaxIterations :: 64;
 GoalThreshold :: StepSize * 0.5;
 
 Node :: struct {
@@ -107,7 +108,39 @@ ReconstructPath :: (endNode: Node) -> [..]Vector2 {
     return path;
 }
 
+GetVisitedIndex :: (pos: Vector3) -> int {
+    // Shift the position by half the grid size
+    pos.x = Clamp(pos.x, -GRID_LEN, GRID_LEN);
+    pos.y = Clamp(pos.y, -GRID_LEN, GRID_LEN);
+    x := pos.x as int + GRID_LEN as int - 1;
+    y := pos.y as int + GRID_LEN as int - 1;
+
+    idx := (GRID_SIZE-1 as int) * x + y;
+    if idx >= GRID_SIZE*GRID_SIZE {
+        print("Wrong index. index = %, x = %, y = %, t = %", idx, x, y, pos.z);
+        assert(false);
+        return 0;
+    }
+    return idx;
+}
+
+SetIsVisited :: (visitMask: [..]bool, pos: Vector3) {
+    idx := GetVisitedIndex(pos);
+    visitMask[idx] = true;
+}
+
+IsVisited :: (visitMask: [..]bool, pos: Vector3) -> bool {
+    idx := GetVisitedIndex(pos);
+    return visitMask[idx];
+}
+
 ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dynamicObstacles: [..]Rectangle, iterations := MaxIterations) -> [..]Vector2 {
+
+    timeStart := getSystemTime();
+
+    durationFindVisit := 0 as s64;
+    durationQueue     := 0 as s64;
+
     neighborDirections: [8]Vector2 = [
         {0, StepSize},
         {StepSize, StepSize},
@@ -136,14 +169,23 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
     
     bestNode: Node;
     visited: [..]Node;
-    visited.data = malloc(MAX_VISITED_CELLS * sizeof(Node));
-    visited.capacity = MAX_VISITED_CELLS;
-    memset(visited.data, 0, MAX_VISITED_CELLS);
+    visited.data = malloc(MAX_VISITED_NODES * sizeof(Node));
+    visited.capacity = MAX_VISITED_NODES;
+    memset(visited.data, 0, MAX_VISITED_NODES);
+
+
+    MAX_VISITABLE_NODES :: GRID_SIZE * GRID_SIZE * 1;
+    visitedMask: [..]bool;
+    visitedMask.data = malloc(MAX_VISITABLE_NODES);
+    visitedMask.capacity = MAX_VISITABLE_NODES;
+
 
     closestDistance := 999.0;
 
     while queue.elements.count != 0 {
+        queuePopStart := getSystemTime();
         e := queue.pop();
+        durationQueue += getSystemTime() - queuePopStart;
         
         x := e.x;
         y := e.y;
@@ -156,20 +198,22 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
         }
         
         if HasHitGoal(x, y, goal) {
-            Print("Found a path to the goal!");
             bestNode = e;
             break;
         }
 
-        _, found1 := FindInVisited(visited, Vector3{x, y, t as float});
-        if found1 {
+        findVisitStart := getSystemTime();
+        isVisited := IsVisited(visitedMask, Vector3{x, y, t as float});
+        durationFindVisit += getSystemTime() - findVisitStart;
+        if isVisited {
             continue;
         }
 
+        SetIsVisited(visitedMask, Vector3{x, y, t as float});
         append(visited, e);
         currentStable := &visited[visited.count - 1];
 
-        Print("Visited count = %", visited.count);
+        // Print("Visited count = %", visited.count);
 
         if t >= MaxIterations {
             // Max depth reached for this branch
@@ -209,21 +253,38 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
 
             // No collision was detected
             nt := t + 1;
-            _2, found2 := FindInVisited(visited, Vector3{nx, ny, nt as float});
-            if !found2 {
-                ng := e.g + 1;
+            findVisitStart = getSystemTime();
+            isVisited := IsVisited(visitedMask, Vector3{nx, ny, nt as float});
+            durationFindVisit += getSystemTime() - findVisitStart;
+            if !isVisited {
+                ng := e.g + Vector2Distance(Vector2{x, y}, Vector2{nx, ny});
                 nf := ng + Heuristic(Vector2{nx, ny}, goal);
 
                 newNode := Node{nf, ng, nx, ny, nt, currentStable};
                 queue.push(newNode);
-
-                Print("Queue size = %", queue.elements.count);
             }
         }
     }
 
+    timeEnd := getSystemTime();
+
+    durationMs := timeEnd - timeStart;
+
+    Print("---------------------");
+    Print("Took:            % ms.", durationMs);
+    Print("Visited:         % ", visited.count);
+    Print("Queue cap:       % ", queue.elements.capacity);
+    Print("Queue time:      % ", durationQueue);
+    Print("Find visit time: % ", durationFindVisit);
+    Print("---------------------");
+
+    
     bestPath := ReconstructPath(bestNode);
-    Print("Best path count = %", bestPath.count);
+
+    free(queue.elements.data);
+    free(visited.data);
+    free(visitedMask.data);
+
     return bestPath;
 }
 
@@ -233,13 +294,15 @@ ReachedPoint :: (p1, p2: Vector2, margin: float) -> bool {
     return Vector2Distance(p1, p2) < margin;
 }
 
+SnapToGrid :: (v: Vector2) -> Vector2 {
+    return Vector2{
+        x = (round(v.x / StepSize as f64) * StepSize) as f32,
+        y = (round(v.y / StepSize as f64) * StepSize) as f32,
+    };
+}
+
 UpdateAIs :: (game: *Game) {
     aiPlayer := &game.players[1];
-
-    start := Vector2{
-        x = aiPlayer.hero.head.position.x,
-        y = aiPlayer.hero.head.position.z,
-    };
 
     if game.ai1.goals.count == 0 {
         wallTopL := game.walls[0];
@@ -267,6 +330,16 @@ UpdateAIs :: (game: *Game) {
     if game.ai1.goalCursor < game.ai1.goals.count {
         game.ai1.goal = game.ai1.goals[game.ai1.goalCursor];
     }
+
+    start := Vector2{
+        x = aiPlayer.hero.head.position.x,
+        y = aiPlayer.hero.head.position.z,
+    };
+
+    goal := game.ai1.goal;
+
+    start = SnapToGrid(start);
+    goal = SnapToGrid(goal);
 
     // Get all the static and dynamic obstacles on the map
     if game.ai1.staticObstacles.count == 0 {
@@ -317,7 +390,7 @@ UpdateAIs :: (game: *Game) {
 
     if game.ai1.path.count == 0 {
         Print("[AI 1]: Getting initial path\n");
-        game.ai1.path = ComputeFastestPath(start, game.ai1.goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
+        game.ai1.path = ComputeFastestPath(start, goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
         hasCalculatedPathThisFrame = true;
     }
 
@@ -327,13 +400,13 @@ UpdateAIs :: (game: *Game) {
         if ReachedPoint(heroPos2d, target2d, 0.5) {
             game.ai1.nextPoint += 1;
 
-            Print("[AI 1]: Reached the next point");
+            // Print("[AI 1]: Reached the next point");
 
             if game.ai1.nextPoint >= game.ai1.path.count {
                 game.ai1.nextPoint = 0;
 
                 Print("[AI 1]: Recalculating new path");
-                game.ai1.path = ComputeFastestPath(start, game.ai1.goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
+                game.ai1.path = ComputeFastestPath(start, goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
                 hasCalculatedPathThisFrame = true;
             }
 
@@ -342,7 +415,7 @@ UpdateAIs :: (game: *Game) {
 
     if game.ai1.pathIsDirty && !hasCalculatedPathThisFrame {
         Print("[AI 1]: Scrapping old path");
-        game.ai1.path = ComputeFastestPath(start, game.ai1.goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
+        game.ai1.path = ComputeFastestPath(start, goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
         game.ai1.pathIsDirty = false;
         hasCalculatedPathThisFrame = true;
     }
@@ -354,6 +427,7 @@ UpdateAIs :: (game: *Game) {
             game.ai1.goal = game.ai1.goals[game.ai1.goalCursor];
         } else {
             Print("[AI 1]: Completed all goals");
+            game.ai1.goalCursor = 0;
         }
     }
 
@@ -377,9 +451,11 @@ GetAiInput :: (game: *Game) {
             aiPlayer.hero.isMoving = true;
         } else {
             aiPlayer.hero.isMoving = false;
+            aiPlayer.hero.target = Vector3{0};
         }
     }
     else {
         aiPlayer.hero.isMoving = false;
+        aiPlayer.hero.target = Vector3{0};
     }
 }
