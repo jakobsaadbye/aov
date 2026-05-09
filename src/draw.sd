@@ -104,18 +104,20 @@ DrawAiInternals :: (game: *Game) {
 }
 
 DrawAiGoal :: (game: *Game) {
-    ai := game.ai1;
-    center := Vector3{
-        ai.goal.x,
-        0.1,
-        ai.goal.y
-    };
-    DrawSphere(center, 1, DARKBROWN);
+    for *ai in game.aiManager.aiBots {
+        center := Vector3{
+            ai.goal.x,
+            0.1,
+            ai.goal.y
+        };
+        DrawSphere(center, 1, DARKBROWN);
+    }
 }
 
 DrawAiObstacles :: (game: *Game) {
-    ai := game.ai1;
-    for ob in ai.staticObstacles {
+    aiManager := game.aiManager;
+
+    for ob in aiManager.staticObstacles {
         center := Vector3{
             x = ob.x + ob.width*0.5,
             y = 0.4,
@@ -125,7 +127,7 @@ DrawAiObstacles :: (game: *Game) {
         DrawCube(center, ob.width, center.y*0.5, ob.height, ORANGE);
     }
 
-    for ob, i in ai.dynamicObstacles {
+    for ob, i in aiManager.dynamicObstacles {
         center := Vector3{
             x = ob.x + ob.width*0.5,
             y = 0.4,
@@ -135,18 +137,18 @@ DrawAiObstacles :: (game: *Game) {
         DrawCube(center, ob.width, center.y*0.5, ob.height, BLUE);
     }
 
-
 }
 
 DrawAiPath :: (game: *Game) {
-    ai := game.ai1;
-    if ai.path.count == 0 {
-        return;
-    }
-
-    for p, i in ai.path {
-        color := Color{255, i as u8 * 10, 0, 255};
-        DrawSphere(Vector3{p.x, 1, p.y}, 0.5, color);
+    for *ai in game.aiManager.aiBots {
+        if ai.path.count == 0 {
+            continue;
+        }
+    
+        for p, i in ai.path {
+            color := Color{255, i as u8 * 10, 0, 255};
+            DrawSphere(Vector3{p.x, 1, p.y}, 0.5, color);
+        }
     }
 }
 
@@ -165,10 +167,6 @@ DrawMapBounds :: () {
 
 DrawPlayers :: (game: *Game, players: []Player) {
     for *player in players {
-        if !player.isActive {
-            continue;
-        }
-    
         hero := player.hero;
         heroPos := hero.head.position;
     

@@ -1,0 +1,98 @@
+import "entities";
+
+HeapQueue :: struct {
+    elements: [..]Node;
+}
+
+newHeapQueue :: (maxSize: int) -> HeapQueue {
+    queue := HeapQueue{};
+    queue.elements.data = malloc(maxSize * sizeof(Node));
+    queue.elements.capacity = maxSize;
+
+    return queue;
+}
+
+swap :: method (q: *HeapQueue, a, b: Node) {
+    q.elements[a.index] = b;
+    q.elements[b.index] = a;
+    q.elements[a.index].index = a.index;
+    q.elements[b.index].index = b.index;
+}
+
+sortUp :: method (q: *HeapQueue, elem: Node) {
+    parentIndex: int = (elem.index - 1) / 2;
+    while true {
+        if parentIndex < 0 {
+            return;
+        }
+
+        parent := q.elements[parentIndex];
+    
+        if elem.f < parent.f {
+            // Swap the parent with the current node in the tree
+            q.swap(elem, parent);
+            elem.index = parentIndex;
+
+            parentIndex = (parent.index - 1) / 2;
+        } else {
+            return;
+        }
+    }
+}
+
+sortDown :: method (q: *HeapQueue, elem: Node) {
+    currentElement := elem;
+    while true {
+        childIndexLeft  := currentElement.index * 2 + 1;
+        childIndexRight := currentElement.index * 2 + 2;
+        swapIndex := 0;
+
+        if childIndexLeft < q.elements.count {
+            swapIndex = childIndexLeft;
+
+            if childIndexRight < q.elements.count {
+                // Swap with the child that has the lowest cost
+                childLeft  := q.elements[childIndexLeft];
+                childRight := q.elements[childIndexRight];
+                if childRight.f < childLeft.f {
+                    swapIndex = childIndexRight;
+                }
+            }
+
+            child := q.elements[swapIndex];
+
+            if currentElement.f > child.f {
+                q.swap(currentElement, child);
+                currentElement.index = swapIndex;
+            } else {
+                return;
+            }
+        } else {
+            return;
+        }
+    }
+}
+
+push :: method (q: *HeapQueue, elem: Node) {
+    // Add the item to the end of the queue
+    elem.index = q.elements.count as int;
+    q.elements[q.elements.count] = elem;
+    q.sortUp(elem);
+    q.elements.count += 1;
+}
+
+pop :: method (q: *HeapQueue) -> Node {
+    first := q.elements[0];
+    q.elements.count -= 1;
+
+    // Replace with the last element
+    q.elements[0] = q.elements[q.elements.count];
+    q.elements[0].index = 0;
+
+    q.sortDown(q.elements[0]);
+    return first;
+}
+
+count :: method (q: *HeapQueue) -> int {
+    return q.elements.count as int;
+}

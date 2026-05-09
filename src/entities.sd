@@ -6,12 +6,11 @@ Game :: struct {
     camera: *Camera3D;
     mousePosition: Vector2;
     assets: Assets;
-    activePlayers: int;
     clientPlayer: *Player;
     cars: []Car;
-    players: []Player;
+    players: [..]Player;
     walls: []Wall;
-    ai1: AiBot;
+    aiManager: AiManager;
     carSpawner: *CarSpawner;
     disableCameraMovement: bool;
     lockCamera: bool;
@@ -19,15 +18,23 @@ Game :: struct {
     debug: DebugToggles;
 }
 
+AiManager :: struct {
+    aiBots: [..]AiBot;
+    staticObstacles: [..]Rectangle;
+    dynamicObstacles: [..]Rectangle;
+    leftEntrance: Vector2;
+    rightEntrance: Vector2;
+}
+
 AiBot :: struct {
+    player: *Player;
     path: [..]Vector2;
     nextPoint: int;
     goal: Vector2;
     goalCursor: int;
     goals: [..]Vector2;
-    staticObstacles: [..]Rectangle;
-    dynamicObstacles: [..]Rectangle;
-    pathIsDirty: bool;
+    internalClock: int;
+    shouldRecalculatePath: bool;
 }
 
 CameraInput :: struct {
@@ -112,8 +119,23 @@ Player :: struct {
     id: int;
     hero: Hero;
     deaths: int;
-    isActive: bool;
     isAi: bool;
+}
+
+//////////////////////////////////////////////////////////
+// Ai types
+//////////////////////////////////////////////////////////
+
+Node :: struct {
+    f: float;
+    g: float;
+    x: float;
+    y: float;
+    t: int;
+    cameFrom: *Node;
+
+    // Needed in the priority queue
+    index: int;
 }
 
 

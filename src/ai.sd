@@ -2,48 +2,20 @@ import "entities";
 import "constants";
 import "c_stdlib";
 import "time";
+import "heapq";
 
-MAX_PATH_SEGMENTS :: 64;
-MAX_QUEUED_ELEMENTS :: 1024;
+MAX_QUEUED_NODES :: 16384;
 MAX_VISITED_NODES :: 16384;
 
 // How much of an extra margin the AI should keep a distance to the cars
 AI_CAR_SAFETY_MARGIN :: 1.4;
 
 StepSize :: 1.0;
-MaxIterations :: 64;
+MaxIterations :: 8;
 GoalThreshold :: StepSize * 0.5;
 
-Node :: struct {
-    f: float;
-    g: float;
-    x: float;
-    y: float;
-    t: int;
-    cameFrom: *Node;
-}
+REFRESH_PATH_RATE_MS :: 60000;
 
-Queue :: struct {
-    elements: [..]Node;
-}
-
-push :: method (q: *Queue, elem: Node) {
-    append(q.elements, elem);
-}
-
-pop :: method (q: *Queue) -> Node {
-    bestIndex := 0;
-    for i in 0..q.elements.count-1 {
-        if q.elements[i].f < q.elements[bestIndex].f {
-            bestIndex = i;
-        }
-    }
-    best := q.elements[bestIndex];
-    // Swap with last and shrink
-    q.elements[bestIndex] = q.elements[q.elements.count - 1];
-    q.elements.count -= 1;
-    return best;
-}
 
 FindInVisited :: (visited: [..]Node, pos: Vector3) -> *Node, bool {
     Epsilon :: StepSize * 0.5;
@@ -155,13 +127,9 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
 
     // @CompilerBug: We error out, when setting the dynamic arrays directly on the struct
     // queue.elements: [..]Entry; 
-    // queue.elements.data = malloc(MAX_QUEUED_ELEMENTS * sizeof(Entry));
-    // queue.elements.capacity = MAX_QUEUED_ELEMENTS;
-    queue := Queue{};
-    elements: [..]Node; 
-    elements.data = malloc(MAX_QUEUED_ELEMENTS * sizeof(Node));
-    elements.capacity = MAX_QUEUED_ELEMENTS;
-    queue.elements = elements;
+    // queue.elements.data = malloc(MAX_QUEUED_NODES * sizeof(Entry));
+    // queue.elements.capacity = MAX_QUEUED_NODES;
+    queue := newHeapQueue(MAX_QUEUED_NODES);
 
     startNode := Node{0, 0, start.x, start.y, 0, null};
     queue.push(startNode);
@@ -174,7 +142,7 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
     memset(visited.data, 0, MAX_VISITED_NODES);
 
 
-    MAX_VISITABLE_NODES :: GRID_SIZE * GRID_SIZE * 1;
+    MAX_VISITABLE_NODES :: GRID_SIZE * GRID_SIZE;
     visitedMask: [..]bool;
     visitedMask.data = malloc(MAX_VISITABLE_NODES);
     visitedMask.capacity = MAX_VISITABLE_NODES;
@@ -182,7 +150,7 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
 
     closestDistance := 999.0;
 
-    while queue.elements.count != 0 {
+    while queue.count() != 0 {
         queuePopStart := getSystemTime();
         e := queue.pop();
         durationQueue += getSystemTime() - queuePopStart;
@@ -257,7 +225,7 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
             isVisited := IsVisited(visitedMask, Vector3{nx, ny, nt as float});
             durationFindVisit += getSystemTime() - findVisitStart;
             if !isVisited {
-                ng := e.g + Vector2Distance(Vector2{x, y}, Vector2{nx, ny});
+                ng := e.g + 1; // Vector2Distance(Vector2{x, y}, Vector2{nx, ny});
                 nf := ng + Heuristic(Vector2{nx, ny}, goal);
 
                 newNode := Node{nf, ng, nx, ny, nt, currentStable};
@@ -270,7 +238,7 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
 
     durationMs := timeEnd - timeStart;
 
-    Print("---------------------");
+    Print("\n---------------------");
     Print("Took:            % ms.", durationMs);
     Print("Visited:         % ", visited.count);
     Print("Queue cap:       % ", queue.elements.capacity);
@@ -301,161 +269,92 @@ SnapToGrid :: (v: Vector2) -> Vector2 {
     };
 }
 
-UpdateAIs :: (game: *Game) {
-    aiPlayer := &game.players[1];
+UpdateSingleAI :: (game: *Game, ai: *AiBot) {
+    aiManager := &game.aiManager;
 
-    if game.ai1.goals.count == 0 {
-        wallTopL := game.walls[0];
-        wallTopR := game.walls[2];
+    hero := ai.player.hero;
     
-        startEntrance := Vector2{
-            x = wallTopL.head.position.x, 
-            y = wallTopL.head.position.z + wallTopL.length*0.5 + ENTRANCE_LENGTH*0.5
+    position3d := ai.player.hero.head.position;
+    position2d := Vector2{position3d.x, position3d.z};
+
+    // TODO(jsd): Remove
+    ai.goal = aiManager.rightEntrance;
+
+    start := SnapToGrid(position2d);
+    goal := SnapToGrid(ai.goal);
+
+    // Update the ai path when it has reached the end of its path
+    if ai.path.count > 0 {
+        target2d := Vector2{x = hero.target.x, y = hero.target.z};
+
+        if ReachedPoint(position2d, target2d, 0.5) {
+            ai.nextPoint += 1;
         };
 
-        endEntrance := Vector2{
-            x = wallTopR.head.position.x, 
-            y = wallTopR.head.position.z + wallTopR.length*0.5 + ENTRANCE_LENGTH*0.5
-        };
-        
-        goals: [..]Vector2 = [
-            startEntrance,
-            endEntrance,
-        ];
-    
-        game.ai1.goalCursor = 0;
-        game.ai1.goals = goals;
-    }
-
-    if game.ai1.goalCursor < game.ai1.goals.count {
-        game.ai1.goal = game.ai1.goals[game.ai1.goalCursor];
-    }
-
-    start := Vector2{
-        x = aiPlayer.hero.head.position.x,
-        y = aiPlayer.hero.head.position.z,
-    };
-
-    goal := game.ai1.goal;
-
-    start = SnapToGrid(start);
-    goal = SnapToGrid(goal);
-
-    // Get all the static and dynamic obstacles on the map
-    if game.ai1.staticObstacles.count == 0 {
-        staticObstacles: [..]Rectangle;
-        for *wall in game.walls {
-            rect := Rectangle{
-                x = wall.head.position.x - WALL_WIDTH*0.5,
-                y = wall.head.position.z - wall.length*0.5,
-                width = WALL_WIDTH,
-                height = wall.length,
-            };
-    
-            append(staticObstacles, rect);
+        if ai.nextPoint >= ai.path.count && !ai.shouldRecalculatePath {
+            Print("shouldRecalculatePath");
+            ai.nextPoint = 0;
+            ai.shouldRecalculatePath = true;
         }
-    
-        for mapBound in MapBoundRects {
-            append(staticObstacles, mapBound);
-        }
-        game.ai1.staticObstacles = staticObstacles;
+
     }
+
+    if ai.shouldRecalculatePath {
+        Print("[AI 1]: Calculating new path");
+        ai.path = ComputeFastestPath(start, goal, aiManager.staticObstacles, aiManager.dynamicObstacles, iterations = MaxIterations);
+        ai.nextPoint = 0;
+        ai.shouldRecalculatePath = false;
+    }
+
+    // Update the hero position
+    {
+        if ai.path.count > 0 {
+            nextPoint := ai.nextPoint;
     
-    if game.ai1.dynamicObstacles.count == 0 {
-        // TODO: Should we consider other players as dynamic???
-        dynamicObstacles: [..]Rectangle;
-        for *car in game.cars {
-            if !car.live {
-                continue;
+            if nextPoint < ai.path.count {
+                point := ai.path[nextPoint];
+                target := Vector3{
+                    x = point.x,
+                    y = 0,
+                    z = point.y,
+                };
+                ai.player.hero.target = target;
+                ai.player.hero.isMoving = true;
+            } else {
+                ai.player.hero.isMoving = false;
+                ai.player.hero.target = Vector3{0};
             }
-    
-            carRec := Rectangle{
-                x = car.head.position.x - CAR_WIDTH*0.5 - AI_CAR_SAFETY_MARGIN,
-                y = car.head.position.z - CAR_LENGTH*0.5 - AI_CAR_SAFETY_MARGIN,
-                width = CAR_WIDTH + AI_CAR_SAFETY_MARGIN*2,
-                height = CAR_LENGTH + AI_CAR_SAFETY_MARGIN*2,
-            };
-    
-            append(dynamicObstacles, carRec);
         }
-
-        game.ai1.dynamicObstacles = dynamicObstacles;
-    }
-
-    heroPos2d := aiPlayer.hero.pos2d();
-
-    // Update the ai path when it has reached the first point on its path
-    hasCalculatedPathThisFrame := false;
-    finishedAllGoals := game.ai1.goalCursor >= game.ai1.goals.count;
-
-    if game.ai1.path.count == 0 {
-        Print("[AI 1]: Getting initial path\n");
-        game.ai1.path = ComputeFastestPath(start, goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
-        hasCalculatedPathThisFrame = true;
-    }
-
-    if game.ai1.path.count > 0 && !hasCalculatedPathThisFrame && !finishedAllGoals {
-        target2d := Vector2{x = aiPlayer.hero.target.x, y = aiPlayer.hero.target.z};
-
-        if ReachedPoint(heroPos2d, target2d, 0.5) {
-            game.ai1.nextPoint += 1;
-
-            // Print("[AI 1]: Reached the next point");
-
-            if game.ai1.nextPoint >= game.ai1.path.count {
-                game.ai1.nextPoint = 0;
-
-                Print("[AI 1]: Recalculating new path");
-                game.ai1.path = ComputeFastestPath(start, goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
-                hasCalculatedPathThisFrame = true;
-            }
-
-        };
-    }
-
-    if game.ai1.pathIsDirty && !hasCalculatedPathThisFrame {
-        Print("[AI 1]: Scrapping old path");
-        game.ai1.path = ComputeFastestPath(start, goal, game.ai1.staticObstacles, game.ai1.dynamicObstacles, iterations = MaxIterations);
-        game.ai1.pathIsDirty = false;
-        hasCalculatedPathThisFrame = true;
+        else {
+            ai.player.hero.isMoving = false;
+            ai.player.hero.target = Vector3{0};
+        }
     }
 
     // Steer the AI towards its next goal once it has reached its current goal
-    if ReachedPoint(heroPos2d, game.ai1.goals[game.ai1.goalCursor], StepSize) {
-        game.ai1.goalCursor += 1;
-        if game.ai1.goalCursor < game.ai1.goals.count {
-            game.ai1.goal = game.ai1.goals[game.ai1.goalCursor];
-        } else {
-            Print("[AI 1]: Completed all goals");
-            game.ai1.goalCursor = 0;
-        }
-    }
+    // if ReachedPoint(position2d, ai.goals[ai.goalCursor], GoalThreshold) {
+    //     ai.goalCursor += 1;
+    //     if ai.goalCursor < ai.goals.count {
+    //         ai.goal = ai.goals[ai.goalCursor];
+    //     } else {
+    //         Print("[AI 1]: Completed all goals");
+    //         ai.goalCursor = 0;
+    //     }
+    // }
 
+    // Update clock
+    // dt := GetFrameTime();
+    // game.ai1.internalClock += (dt * 1000.0) as int;
+    // if game.ai1.internalClock > REFRESH_PATH_RATE_MS {
+    //     game.ai1.shouldRecalculatePath = true;
+    //     game.ai1.internalClock         = 0;
+    // }
 }
 
-GetAiInput :: (game: *Game) {
-    aiPlayer := &game.players[1];
-    aiBot := game.ai1;
+UpdateAIs :: (game: *Game) {
+    aiManager := &game.aiManager;
 
-    if aiBot.path.count > 0 {
-        nextPoint := aiBot.nextPoint;
-
-        if nextPoint < aiBot.path.count {
-            point := aiBot.path[nextPoint];
-            target := Vector3{
-                x = point.x,
-                y = 0,
-                z = point.y,
-            };
-            aiPlayer.hero.target = target;
-            aiPlayer.hero.isMoving = true;
-        } else {
-            aiPlayer.hero.isMoving = false;
-            aiPlayer.hero.target = Vector3{0};
-        }
-    }
-    else {
-        aiPlayer.hero.isMoving = false;
-        aiPlayer.hero.target = Vector3{0};
+    for *ai in aiManager.aiBots {
+        UpdateSingleAI(game, ai);
     }
 }

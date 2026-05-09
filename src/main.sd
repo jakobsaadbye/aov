@@ -5,6 +5,7 @@ import "rlights";
 import "rlgl";
 import "raymath";
 import "math";
+import "c_stdlib";
 
 import "ai";
 import "constants";
@@ -87,38 +88,6 @@ ResolveCircleRecCollision2 :: (center: Vector2, radius: float, rec: Rectangle) -
     return Vector2Add(center, scaled);
 }
 
-// ResolveCircleRecCollision :: (center: Vector2, radius: float, rec: Rectangle) -> Vector2 {
-//     // Check if we hit the left or right side of the wall
-//     collidedFromLeftSide := center.x < rec.x;
-
-//     wallX: float;
-//     if collidedFromLeftSide {
-//         wallX = rec.x - WALL_WIDTH*0.5;
-//     } else {
-//         wallX = rec.x + WALL_WIDTH*0.5;
-//     }
-
-//     // Calculate the distance to the wall
-//     distanceWallX := fabsf(wallX - center.x);
-
-//     // Calculate how much to offset in the x direction
-//     centerIsInsideWall := fabsf(rec.x - center.x) <= WALL_WIDTH*0.5;
-
-//     offsetX: float;
-//     if centerIsInsideWall {
-//         offsetX = radius + distanceWallX;
-//     } else {
-//         offsetX = radius - distanceWallX;
-//     }
-    
-
-//     if collidedFromLeftSide {
-//         hero.head.position.x -= offsetX;
-//     } else {
-//         hero.head.position.x += offsetX;
-//     }
-// }
-
 ResolveHeroWallCollision :: (hero: *Hero, rec: Rectangle) {
     // Resolve the player position to get unstuck
     heroCenter, radius := hero.getHitbox();
@@ -130,7 +99,6 @@ ResolveHeroWallCollision :: (hero: *Hero, rec: Rectangle) {
 }
 
 UpdateCars :: (spawner: *CarSpawner) {
-    return;
     dt := GetFrameTime();
 
     for *car in spawner.cars {
@@ -211,23 +179,59 @@ GetRandomHero :: () -> Hero {
     return AllHeroes[randomIndex];
 }
 
-InitializePlayers :: (players: []Player) {
-    for *player, i in players {
-        player.id = i;
-        player.deaths = 0;
+InitializePlayers :: (game: *Game) {
+    totalPlayerCount := NORMAL_PLAYER_COUNT + AI_PLAYER_COUNT;
+
+    players: [..]Player;
+    players.data = malloc(sizeof(Player) * MAX_PLAYER_COUNT);
+    players.capacity = MAX_PLAYER_COUNT;
+    players.count = 0;
+
+    for i in 0..totalPlayerCount {
+        player := Player{
+            id = i,
+            deaths = 0,
+            isAi = i >= NORMAL_PLAYER_COUNT
+        };
+
+        append(players, player);
     }
+
+    game.players = players;
+    game.clientPlayer = &game.players[0];
+}
+
+GetAiFromPlayerId :: (game: *Game, playerId: int) -> *AiBot {
+    aiManager := &game.aiManager;
+
+    for *ai in aiManager.aiBots {
+        if ai.player.id == playerId {
+            return ai;
+        }
+    }
+
+    return null;
+}
+
+RespawnAI :: (game: *Game, player: *Player) {
+    ai := GetAiFromPlayerId(game, player.id);
+    if ai == null {
+        return;
+    }
+
+    ai.player.hero.head.position.x = game.walls[0].head.position.x;
+    ai.player.hero.head.position.z = game.walls[0].head.position.z + game.walls[0].length;
+
+    // Reset the AI to move to the entrance first
+    ai.goalCursor = 1;
+    ai.shouldRecalculatePath = true;
 }
 
 RespawnPlayer :: (game: *Game, player: *Player) {
     player.hero = GetRandomHero();
 
     if player.isAi {
-        player.hero.head.position.x = game.walls[0].head.position.x;
-        player.hero.head.position.z = game.walls[0].head.position.z + game.walls[0].length;
-
-        // Reset the AI to move to the entrance first
-        // game.ai1.goal = game.ai1.goals[0];
-        game.ai1.goalCursor = 0;
+        RespawnAI(game, player);
     } else {
         player.hero.head.position.x = -GRID_LEN + 2;
         player.hero.head.position.z = 0;
@@ -238,10 +242,6 @@ HandleCarCollision :: (game: *Game, player: *Player, car: *Car) {
     car.live = false;
 
     player.deaths += 1;
-
-    if player.isAi {
-        game.ai1.pathIsDirty = true;
-    }
 
     RespawnPlayer(game, player);
 }
@@ -343,21 +343,105 @@ SplitMesh :: (mesh: Mesh, numTiles: float) {
 }
 
 StartNewGame :: (game: *Game) {
-
     // Respawn all players
     for *player in game.players {
-        if player.id < game.activePlayers {
-            player.isActive = true;
-        } else {
-            player.isActive = false;
-        }
-
-        if player.id == 1 {
-            player.isAi = true;
-        }
-
         RespawnPlayer(game, player);
     }
+}
+
+InitializeAiManager :: (game: *Game) {
+    aiManager := &game.aiManager;
+
+    // Ai bots
+    {
+        aiBots: [..]AiBot;
+        aiBots.data = malloc(sizeof(AiBot) * AI_PLAYER_COUNT);
+        aiBots.capacity = AI_PLAYER_COUNT;
+    
+        for *player in game.players {
+            if !player.isAi {
+                continue;
+            }
+
+            aiBot: AiBot;
+            aiBot.player = player;
+
+            append(aiBots, aiBot);
+        }
+
+        aiManager.aiBots = aiBots;
+    }
+
+    // Static obstacles
+    {
+        staticObstacles: [..]Rectangle;
+        for *wall in game.walls {
+            rect := Rectangle{
+                x = wall.head.position.x - WALL_WIDTH*0.5,
+                y = wall.head.position.z - wall.length*0.5,
+                width = WALL_WIDTH,
+                height = wall.length,
+            };
+    
+            append(staticObstacles, rect);
+        }
+    
+        for mapBound in MapBoundRects {
+            append(staticObstacles, mapBound);
+        }
+    
+        aiManager.staticObstacles = staticObstacles;
+    }
+
+    // TODO(jsd): Reconsider if we still want this structure
+    // Dynamic obstacles
+    {
+        dynamicObstacles: [..]Rectangle;
+        dynamicObstacles.data = malloc(MAX_CAR_COUNT * sizeof(Rectangle));
+        dynamicObstacles.capacity = MAX_CAR_COUNT;
+
+        for *car, i in game.cars {
+            if !car.live {
+                continue;
+            }
+    
+            carRec := Rectangle{
+                x = car.head.position.x - CAR_WIDTH*0.5 - AI_CAR_SAFETY_MARGIN,
+                y = car.head.position.z - CAR_LENGTH*0.5 - AI_CAR_SAFETY_MARGIN,
+                width = CAR_WIDTH + AI_CAR_SAFETY_MARGIN*2,
+                height = CAR_LENGTH + AI_CAR_SAFETY_MARGIN*2,
+            };
+
+            append(dynamicObstacles, carRec);
+        }
+
+        aiManager.dynamicObstacles = dynamicObstacles;
+    }
+
+    // Goal points
+    {
+        wallTopL := game.walls[0];
+        wallTopR := game.walls[2];
+    
+        leftEntrance := Vector2{
+            x = wallTopL.head.position.x, 
+            y = wallTopL.head.position.z + wallTopL.length*0.5 + ENTRANCE_LENGTH*0.5
+        };
+
+        rightEntrance := Vector2{
+            x = wallTopR.head.position.x, 
+            y = wallTopR.head.position.z + wallTopR.length*0.5 + ENTRANCE_LENGTH*0.5
+        };
+
+        aiManager.leftEntrance  = leftEntrance;
+        aiManager.rightEntrance = rightEntrance;
+    }
+}
+
+InitializeGame :: (game: *Game) {
+    InitializeCars(game.carSpawner);
+    InitializePlayers(game);
+    InitializeAiManager(game);
 }
 
 main :: () {
@@ -374,7 +458,6 @@ main :: () {
     // @CompilerBug: Arrays seems not to be zero initialized when being inside the Game struct.
     // Perhaps we are calculating the struct size incorrectly???
     cars: [MAX_CAR_COUNT]Car;
-    players: [MAX_PLAYER_COUNT]Player;
 
     carSpawner := CarSpawner{
         cars = cars,
@@ -439,9 +522,6 @@ main :: () {
     game := Game{
         tempStorage = NewArena(4 * Kilobyte),
         camera = &camera,
-        activePlayers = 2,
-        clientPlayer = &players[0],
-        players = players,
         cars = cars,
         walls = walls,
         carSpawner = &carSpawner,
@@ -454,8 +534,7 @@ main :: () {
     //
     // Initialization
     //
-    InitializeCars(game.carSpawner);
-    InitializePlayers(game.players);
+    InitializeGame(&game);
 
     //
     // Asset loading
@@ -552,8 +631,6 @@ main :: () {
                 game.debug.drawHitboxes = !game.debug.drawHitboxes;
             }
         }
-
-        GetAiInput(&game);
 
         game.mousePosition = GetMousePosition();
 
