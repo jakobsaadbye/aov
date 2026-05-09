@@ -129,12 +129,12 @@ DrawAiObstacles :: (game: *Game) {
 
     for ob, i in aiManager.dynamicObstacles {
         center := Vector3{
-            x = ob.x + ob.width*0.5,
+            x = ob.rec.x + ob.rec.width*0.5,
             y = 0.4,
-            z = ob.y + ob.height*0.5,
+            z = ob.rec.y + ob.rec.height*0.5,
         };
 
-        DrawCube(center, ob.width, center.y*0.5, ob.height, BLUE);
+        DrawCube(center, ob.rec.width, center.y*0.5, ob.rec.height, BLUE);
     }
 
 }
@@ -145,9 +145,17 @@ DrawAiPath :: (game: *Game) {
             continue;
         }
     
-        for p, i in ai.path {
-            color := Color{255, i as u8 * 10, 0, 255};
-            DrawSphere(Vector3{p.x, 1, p.y}, 0.5, color);
+        for _, i in ai.path {
+            p1 := ai.path[i];
+            p2 := ai.path[i];
+            if i + 1 < ai.path.count {
+                p2 = ai.path[i + 1];
+            }
+
+            p13d := p1.to3d(1);
+            p23d := p2.to3d(1);
+
+            DrawCylinderEx(p13d, p23d, 0.2, 0.2, 4, RED);
         }
     }
 }

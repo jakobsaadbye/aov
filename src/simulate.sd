@@ -1,0 +1,23 @@
+import "entities";
+
+SimulateHero :: (hero: Hero, dt: float) -> Hero {
+    if hero.isMoving {
+        diffVec := Vector3Subtract(hero.target, hero.head.position);
+        direction := Vector3Normalize(diffVec);
+
+        hero.head.velocity = Vector3Scale(Vector3{
+            x = direction.x * hero.stats.moveSpeed,
+            y = 0, // direction.y + hero.stats.moveSpeed,
+            z = direction.z * hero.stats.moveSpeed,
+        }, dt);
+        
+        hero.head.position = Vector3Add(hero.head.position, hero.head.velocity);
+
+        TARGET_REACHED_THRESHOLD :: 0.5;
+        if Vector3Distance(hero.head.position, hero.target) < TARGET_REACHED_THRESHOLD {
+            hero.isMoving = false;
+        }
+    }
+
+    return hero;
+}

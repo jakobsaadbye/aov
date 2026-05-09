@@ -21,7 +21,7 @@ Game :: struct {
 AiManager :: struct {
     aiBots: [..]AiBot;
     staticObstacles: [..]Rectangle;
-    dynamicObstacles: [..]Rectangle;
+    dynamicObstacles: [..]DynamicObstacle;
     leftEntrance: Vector2;
     rightEntrance: Vector2;
 }
@@ -35,6 +35,12 @@ AiBot :: struct {
     goals: [..]Vector2;
     internalClock: int;
     shouldRecalculatePath: bool;
+}
+
+DynamicObstacle :: struct {
+    rec: Rectangle;
+    velocity: float;
+    active: bool;
 }
 
 CameraInput :: struct {
@@ -178,4 +184,13 @@ AllHeroes :: [
 
 pos2d :: method (hero: Hero) -> Vector2 {
     return Vector2{hero.head.position.x, hero.head.position.z};
+}
+
+getHitboxRadius :: method (hero: Hero) -> float {
+    return hero.width * 0.5 * PLAYER_HITBOX_ASPECT_RATIO;
+}
+
+getHitbox :: method (hero: Hero) -> Vector2, float {
+    radius := hero.getHitboxRadius();
+    return Vector2{hero.head.position.x, hero.head.position.z}, radius;
 }

@@ -11,7 +11,7 @@ MAX_VISITED_NODES :: 16384;
 AI_CAR_SAFETY_MARGIN :: 1.4;
 
 StepSize :: 1.0;
-MaxIterations :: 8;
+MaxIterations :: 32;
 GoalThreshold :: StepSize * 0.5;
 
 REFRESH_PATH_RATE_MS :: 60000;
@@ -106,14 +106,19 @@ IsVisited :: (visitMask: [..]bool, pos: Vector3) -> bool {
     return visitMask[idx];
 }
 
-ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dynamicObstacles: [..]Rectangle, iterations := MaxIterations) -> [..]Vector2 {
-
+ComputeFastestPath :: (
+    start, goal: Vector2, 
+    hero: Hero, 
+    staticObstacles: [..]Rectangle, 
+    dynamicObstacles: [..]DynamicObstacle, 
+    iterations := MaxIterations
+) -> [..]Vector2 {
     timeStart := getSystemTime();
 
     durationFindVisit := 0 as s64;
     durationQueue     := 0 as s64;
 
-    neighborDirections: [8]Vector2 = [
+    neighborDirections: [9]Vector2 = [
         {0, StepSize},
         {StepSize, StepSize},
         {StepSize, 0},
@@ -122,7 +127,7 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
         {-StepSize, -StepSize},
         {-StepSize, 0},
         {-StepSize, StepSize},
-        // {0, 0},
+        {0, 0},
     ];
 
     // @CompilerBug: We error out, when setting the dynamic arrays directly on the struct
@@ -146,7 +151,10 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
     visitedMask: [..]bool;
     visitedMask.data = malloc(MAX_VISITABLE_NODES);
     visitedMask.capacity = MAX_VISITABLE_NODES;
+    memset(visitedMask.data, 0, MAX_VISITABLE_NODES);
 
+    timePerStep := StepSize / hero.stats.moveSpeed;
+    heroRadius := hero.getHitboxRadius();
 
     closestDistance := 999.0;
 
@@ -189,16 +197,18 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
         }
 
         // Visit neighboring cells
+        elapsedTime := t as float * timePerStep;
+
         for d in neighborDirections {
             nx := x + d.x;
             ny := y + d.y;
 
-            p := Vector2{nx, ny};
+            playerPos := Vector2{nx, ny};
 
             // Check walls + world bounds
             hitStaticObstacle := false;
             for staticOb in staticObstacles {
-                if CheckCollisionPointRec(p, staticOb) {
+                if CheckCollisionCircleRec(playerPos, heroRadius, staticOb) {
                     hitStaticObstacle = true;
                     break;
                 }
@@ -209,8 +219,20 @@ ComputeFastestPath :: (start, goal: Vector2, staticObstacles: [..]Rectangle, dyn
 
             // Check cars
             hitDynamicObstacle := false;
-            for dynamicOb in dynamicObstacles {
-                if CheckCollisionPointRec(p, dynamicOb) {
+            for dob in dynamicObstacles {
+                if !dob.active {
+                    continue;
+                }
+
+                // Apply physics to the car to get where it is at timestep t
+                recT := Rectangle{
+                    x = dob.rec.x,
+                    y = dob.rec.y + dob.velocity * elapsedTime,
+                    width = dob.rec.width,
+                    height = dob.rec.height,
+                };
+
+                if CheckCollisionCircleRec(playerPos, heroRadius, recT) {
                     hitDynamicObstacle = true;
                     break;
                 }
@@ -269,6 +291,34 @@ SnapToGrid :: (v: Vector2) -> Vector2 {
     };
 }
 
+RecalculateDynamicObstacles :: (game: *Game, aiManager: *AiManager) {
+    // Reset
+    memset(aiManager.dynamicObstacles.data, 0, MAX_DYNAMIC_OBSTACLES);
+    aiManager.dynamicObstacles.count = 0;
+
+    for *car, i in game.cars {
+        if !car.live {
+            continue;
+        }
+
+        carRec := Rectangle{
+            x = car.head.position.x - CAR_WIDTH*0.5 - AI_CAR_SAFETY_MARGIN,
+            y = car.head.position.z - CAR_LENGTH*0.5 - AI_CAR_SAFETY_MARGIN,
+            width = CAR_WIDTH + AI_CAR_SAFETY_MARGIN*2,
+            height = CAR_LENGTH + AI_CAR_SAFETY_MARGIN*2,
+        };
+
+        dob := DynamicObstacle{
+            rec = carRec,
+            velocity = car.head.velocity.z,
+            active = true,
+        };
+        
+        aiManager.dynamicObstacles[i] = dob;
+        aiManager.dynamicObstacles.count += 1;
+    }
+}
+
 UpdateSingleAI :: (game: *Game, ai: *AiBot) {
     aiManager := &game.aiManager;
 
@@ -284,15 +334,19 @@ UpdateSingleAI :: (game: *Game, ai: *AiBot) {
     goal := SnapToGrid(ai.goal);
 
     // Update the ai path when it has reached the end of its path
-    if ai.path.count > 0 {
+    if ai.path.count > 1 {
         target2d := Vector2{x = hero.target.x, y = hero.target.z};
 
         if ReachedPoint(position2d, target2d, 0.5) {
             ai.nextPoint += 1;
+
+            // TODO(jsd): Remove
+            if ai.nextPoint == 4 {
+                ai.shouldRecalculatePath = true;
+            }
         };
 
         if ai.nextPoint >= ai.path.count && !ai.shouldRecalculatePath {
-            Print("shouldRecalculatePath");
             ai.nextPoint = 0;
             ai.shouldRecalculatePath = true;
         }
@@ -301,14 +355,16 @@ UpdateSingleAI :: (game: *Game, ai: *AiBot) {
 
     if ai.shouldRecalculatePath {
         Print("[AI 1]: Calculating new path");
-        ai.path = ComputeFastestPath(start, goal, aiManager.staticObstacles, aiManager.dynamicObstacles, iterations = MaxIterations);
+        RecalculateDynamicObstacles(game, aiManager);
+
+        ai.path = ComputeFastestPath(start, goal, hero, aiManager.staticObstacles, aiManager.dynamicObstacles, iterations = MaxIterations);
         ai.nextPoint = 0;
         ai.shouldRecalculatePath = false;
     }
 
     // Update the hero position
     {
-        if ai.path.count > 0 {
+        if ai.path.count > 1 {
             nextPoint := ai.nextPoint;
     
             if nextPoint < ai.path.count {
@@ -331,24 +387,6 @@ UpdateSingleAI :: (game: *Game, ai: *AiBot) {
         }
     }
 
-    // Steer the AI towards its next goal once it has reached its current goal
-    // if ReachedPoint(position2d, ai.goals[ai.goalCursor], GoalThreshold) {
-    //     ai.goalCursor += 1;
-    //     if ai.goalCursor < ai.goals.count {
-    //         ai.goal = ai.goals[ai.goalCursor];
-    //     } else {
-    //         Print("[AI 1]: Completed all goals");
-    //         ai.goalCursor = 0;
-    //     }
-    // }
-
-    // Update clock
-    // dt := GetFrameTime();
-    // game.ai1.internalClock += (dt * 1000.0) as int;
-    // if game.ai1.internalClock > REFRESH_PATH_RATE_MS {
-    //     game.ai1.shouldRecalculatePath = true;
-    //     game.ai1.internalClock         = 0;
-    // }
 }
 
 UpdateAIs :: (game: *Game) {
