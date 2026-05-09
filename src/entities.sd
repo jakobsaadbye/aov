@@ -1,4 +1,5 @@
 import "raylib";
+import "windows_thread";
 
 Game :: struct {
     tempStorage: Arena;
@@ -31,10 +32,36 @@ AiBot :: struct {
     path: [..]Vector2;
     nextPoint: int;
     goal: Vector2;
-    goalCursor: int;
-    goals: [..]Vector2;
-    internalClock: int;
+    worker: AiWorker;
     shouldRecalculatePath: bool;
+    waitingForPath: bool;
+}
+
+AiWorker :: struct {
+    thread: *void;
+
+    // Shared state between main thread and worker
+    lock:      CriticalSection;
+    workReady: ConditionVariable;
+
+    // Work request — main thread writes, worker reads
+    request:    AiPathRequest;
+    hasRequest: bool;
+
+    // Result — worker writes, main thread reads
+    result:    AiPathResult;
+    hasResult: u32;  // atomic, 0 = no result, 1 = result ready
+}
+
+AiPathRequest :: struct {
+    start, goal: Vector2;
+    hero: Hero;
+    staticObstacles: [..]Rectangle;
+    dynamicObstacles: [..]DynamicObstacle;
+}
+
+AiPathResult :: struct {
+    path: [..]Vector2;
 }
 
 DynamicObstacle :: struct {

@@ -340,12 +340,15 @@ InitializeAiManager :: (game: *Game) {
 
             aiBot: AiBot;
             aiBot.player = player;
+            InitializeAiWorker(&aiBot.worker);
 
             append(aiBots, aiBot);
         }
 
         aiManager.aiBots = aiBots;
     }
+
+
 
     // Static obstacles
     {
@@ -538,7 +541,6 @@ main :: () {
     roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = roadTexture;
     roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = WHITE;
     roadMaterial.maps[MaterialMapIndex.MATERIAL_MAP_NORMAL].texture = roadTextureNorm;
-
     
     StartNewGame(&game);
 
@@ -567,6 +569,10 @@ main :: () {
             camera.position = origCameraPosition;
             camera.target   = origCameraTarget;
             game.lockCamera = true;
+        }
+
+        if (IsKeyPressed(.f5)) {
+            StartNewGame(&game);
         }
 
         if (IsMouseButtonPressed(.right)) {

@@ -1,14 +1,17 @@
 import "entities";
+import "windows_thread";
 import "constants";
 import "c_stdlib";
 import "time";
 import "heapq";
 
+MAX_SEARCH_DEPTH_SECONDS :: 3.5;
+
 MAX_QUEUED_NODES :: 16384;
 MAX_VISITED_NODES :: 16384;
 
 // How much of an extra margin the AI should keep a distance to the cars
-AI_CAR_SAFETY_MARGIN :: 0.25;
+AI_CAR_SAFETY_MARGIN :: 0.3;
 
 StepSize :: 1.0;
 MaxIterations :: 32;
@@ -21,23 +24,6 @@ MAX_VISITABLE_NODES :: GRID_SIZE * GRID_SIZE * MAX_TIME_BUCKETS;
 
 REFRESH_PATH_RATE_MS :: 60000;
 
-
-FindInVisited :: (visited: [..]Node, pos: Vector3) -> *Node, bool {
-    Epsilon :: StepSize * 0.5;
-
-    for *n in visited {
-        matchesX := pos.x >= n.x - Epsilon && pos.x <= n.x + Epsilon;
-        matchesY := pos.y >= n.y - Epsilon && pos.y <= n.y + Epsilon;
-        matchesT := FloatEquals(pos.z, n.t as float) == 0;
-
-        // @TODO: Re-insert once we include the time dimension
-        if matchesX && matchesY {
-            return n, true;
-        }
-    }
-
-    return null, false;
-}
 
 Heuristic :: (p: Vector2, goal: Vector2) -> float {
     return Vector2Distance(p, goal);
@@ -117,8 +103,7 @@ ComputeFastestPath :: (
     start, goal: Vector2, 
     hero: Hero, 
     staticObstacles: [..]Rectangle, 
-    dynamicObstacles: [..]DynamicObstacle, 
-    iterations := MaxIterations
+    dynamicObstacles: [..]DynamicObstacle
 ) -> [..]Vector2 {
     timeStart := getSystemTime();
 
@@ -164,6 +149,9 @@ ComputeFastestPath :: (
 
     closestDistance := 999.0;
 
+
+    carCollisionCheckingTimeTotal := 0 as s64;
+
     while queue.count() != 0 {
         queuePopStart := getSystemTime();
         e := queue.pop();
@@ -195,9 +183,7 @@ ComputeFastestPath :: (
         append(visited, e);
         currentStable := &visited[visited.count - 1];
 
-        MAX_PATH_SECONDS :: 3.0;
-
-        if t >= MAX_PATH_SECONDS {
+        if t >= MAX_SEARCH_DEPTH_SECONDS {
             // Max depth reached for this branch
             continue;
         }
@@ -226,13 +212,15 @@ ComputeFastestPath :: (
             }
 
             // Check cars
+            carCollisionCheckingTimeStart := getSystemTime();
+
             hitDynamicObstacle := false;
             for dob in dynamicObstacles {
                 if !dob.active {
                     continue;
                 }
 
-                // Apply physics to the car to get where it is at timestep t
+                // Interpolate the cars hitbox to at timestep t and check if it collides with the player
                 recT := Rectangle{
                     x = dob.rec.x,
                     y = dob.rec.y + dob.velocity * nt,
@@ -245,6 +233,8 @@ ComputeFastestPath :: (
                     break;
                 }
             }
+            carCollisionCheckingTimeEnd := getSystemTime();
+            carCollisionCheckingTimeTotal += carCollisionCheckingTimeEnd - carCollisionCheckingTimeStart;
             if hitDynamicObstacle {
                 continue;
             }
@@ -272,7 +262,8 @@ ComputeFastestPath :: (
     Print("Visited:         % ", visited.count);
     Print("Queue cap:       % ", queue.elements.capacity);
     Print("Queue time:      % ", durationQueue);
-    Print("Find visit time: % ", durationFindVisit);
+    Print("Collision time:  % ms.", carCollisionCheckingTimeTotal);
+    Print("Find visit time: % ms.", durationFindVisit);
     Print("---------------------");
 
     
@@ -348,7 +339,7 @@ UpdateSingleAI :: (game: *Game, ai: *AiBot) {
             ai.nextPoint += 1;
 
             // TODO(jsd): Remove
-            if ai.nextPoint == 4 {
+            if ai.nextPoint == 6 {
                 ai.shouldRecalculatePath = true;
             }
         };
@@ -359,17 +350,33 @@ UpdateSingleAI :: (game: *Game, ai: *AiBot) {
         }
     }
 
-    if ai.path.count == 1 {
-        ai.shouldRecalculatePath = true;
+    // Check if we have gotten a new path result
+    if ai.waitingForPath {
+        result: AiPathResult;
+        if PollPathResult(&ai.worker, result) {
+            ai.path          = result.path;
+            ai.nextPoint     = 0;
+            ai.waitingForPath = false;
+        }
     }
 
-    if ai.shouldRecalculatePath {
+    if ai.shouldRecalculatePath && !ai.waitingForPath {
         Print("[AI 1]: Calculating new path");
         RecalculateDynamicObstacles(game, aiManager);
 
+        request := AiPathRequest{
+            start            = SnapToGrid(ai.player.hero.pos2d()),
+            goal             = SnapToGrid(ai.goal),
+            hero             = ai.player.hero,
+            staticObstacles  = aiManager.staticObstacles,
+            dynamicObstacles = aiManager.dynamicObstacles,
+        };
+
+        SubmitPathRequest(&ai.worker, request);
+
         ai.path = ComputeFastestPath(start, goal, hero, aiManager.staticObstacles, aiManager.dynamicObstacles, iterations = MaxIterations);
-        ai.nextPoint = 0;
         ai.shouldRecalculatePath = false;
+        ai.waitingForPath = true;
     }
 
     // Update the hero position
@@ -405,4 +412,70 @@ UpdateAIs :: (game: *Game) {
     for *ai in aiManager.aiBots {
         UpdateSingleAI(game, ai);
     }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Ai worker stuff
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Entry point for each worker thread
+WorkerThreadProc :: (lpParam: *void) -> u32 {
+    worker := lpParam as *AiWorker;
+
+    while true {
+        // Lock and wait for work
+        EnterCriticalSection(&worker.lock);
+        while !worker.hasRequest {
+            SleepConditionVariableCS(&worker.workReady, &worker.lock, INFINITE);
+        }
+
+        // Grab the request and clear it
+        request := worker.request;
+        worker.hasRequest = false;
+        LeaveCriticalSection(&worker.lock);
+
+        // Do the work outside the lock so the main thread isn't blocked
+        path := ComputeFastestPath(
+            request.start,
+            request.goal,
+            request.hero,
+            request.staticObstacles,
+            request.dynamicObstacles,
+        );
+
+        // Write result
+        worker.result.path = path;
+        InterlockedExchange(&worker.hasResult, 1);
+    }
+
+    return 0;
+}
+
+InitializeAiWorker :: (worker: *AiWorker) {
+    InitializeCriticalSection(&worker.lock);
+    InitializeConditionVariable(&worker.workReady);
+    worker.hasRequest = false;
+    worker.hasResult  = 0;
+
+    worker.thread = CreateThread(null, 0, WorkerThreadProc, worker, 0, null);
+}
+
+// Call this from the main thread to submit work
+SubmitPathRequest :: (worker: *AiWorker, request: PathRequest) {
+    EnterCriticalSection(&worker.lock);
+    worker.request    = request;
+    worker.hasRequest = true;
+    LeaveCriticalSection(&worker.lock);
+
+    // Wake the worker thread
+    WakeConditionVariable(&worker.workReady);
+}
+
+// Call this from the main thread to check if result is ready
+PollPathResult :: (worker: *AiWorker, result: *PathResult) -> bool {
+    if InterlockedCompareExchange(&worker.hasResult, 0, 1) == 1 {
+        result = *worker.result;
+        return true;
+    }
+    return false;
 }
