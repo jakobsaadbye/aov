@@ -8,11 +8,16 @@ MAX_QUEUED_NODES :: 16384;
 MAX_VISITED_NODES :: 16384;
 
 // How much of an extra margin the AI should keep a distance to the cars
-AI_CAR_SAFETY_MARGIN :: 1.4;
+AI_CAR_SAFETY_MARGIN :: 0.25;
 
 StepSize :: 1.0;
 MaxIterations :: 32;
 GoalThreshold :: StepSize * 0.5;
+
+TIME_BUCKET :: 0.5;
+MAX_TIME_BUCKETS :: 8;
+
+MAX_VISITABLE_NODES :: GRID_SIZE * GRID_SIZE * MAX_TIME_BUCKETS;
 
 REFRESH_PATH_RATE_MS :: 60000;
 
@@ -86,9 +91,11 @@ GetVisitedIndex :: (pos: Vector3) -> int {
     pos.y = Clamp(pos.y, -GRID_LEN, GRID_LEN);
     x := pos.x as int + GRID_LEN as int - 1;
     y := pos.y as int + GRID_LEN as int - 1;
+    timeBucket := (pos.z / TIME_BUCKET) as int;
+    timeBucket = Clamp(timeBucket as float, 0, MAX_TIME_BUCKETS - 1) as int;
 
-    idx := (GRID_SIZE-1 as int) * x + y;
-    if idx >= GRID_SIZE*GRID_SIZE {
+    idx := (GRID_SIZE * GRID_SIZE) * timeBucket + (GRID_SIZE - 1) * x + y;
+    if idx >= MAX_VISITABLE_NODES {
         print("Wrong index. index = %, x = %, y = %, t = %", idx, x, y, pos.z);
         assert(false);
         return 0;
@@ -146,8 +153,7 @@ ComputeFastestPath :: (
     visited.capacity = MAX_VISITED_NODES;
     memset(visited.data, 0, MAX_VISITED_NODES);
 
-
-    MAX_VISITABLE_NODES :: GRID_SIZE * GRID_SIZE;
+    
     visitedMask: [..]bool;
     visitedMask.data = malloc(MAX_VISITABLE_NODES);
     visitedMask.capacity = MAX_VISITABLE_NODES;
@@ -179,29 +185,31 @@ ComputeFastestPath :: (
         }
 
         findVisitStart := getSystemTime();
-        isVisited := IsVisited(visitedMask, Vector3{x, y, t as float});
+        isVisited := IsVisited(visitedMask, Vector3{x, y, t});
         durationFindVisit += getSystemTime() - findVisitStart;
         if isVisited {
             continue;
         }
 
-        SetIsVisited(visitedMask, Vector3{x, y, t as float});
+        SetIsVisited(visitedMask, Vector3{x, y, t});
         append(visited, e);
         currentStable := &visited[visited.count - 1];
 
-        // Print("Visited count = %", visited.count);
+        MAX_PATH_SECONDS :: 3.0;
 
-        if t >= MaxIterations {
+        if t >= MAX_PATH_SECONDS {
             // Max depth reached for this branch
             continue;
         }
 
         // Visit neighboring cells
-        elapsedTime := t as float * timePerStep;
-
         for d in neighborDirections {
             nx := x + d.x;
             ny := y + d.y;
+
+            stepDist := Vector2Distance(Vector2{0, 0}, d);
+            stepTime := stepDist / hero.stats.moveSpeed;
+            nt := t + stepTime;
 
             playerPos := Vector2{nx, ny};
 
@@ -227,7 +235,7 @@ ComputeFastestPath :: (
                 // Apply physics to the car to get where it is at timestep t
                 recT := Rectangle{
                     x = dob.rec.x,
-                    y = dob.rec.y + dob.velocity * elapsedTime,
+                    y = dob.rec.y + dob.velocity * nt,
                     width = dob.rec.width,
                     height = dob.rec.height,
                 };
@@ -242,12 +250,11 @@ ComputeFastestPath :: (
             }
 
             // No collision was detected
-            nt := t + 1;
             findVisitStart = getSystemTime();
-            isVisited := IsVisited(visitedMask, Vector3{nx, ny, nt as float});
+            isVisited := IsVisited(visitedMask, Vector3{nx, ny, nt});
             durationFindVisit += getSystemTime() - findVisitStart;
             if !isVisited {
-                ng := e.g + 1; // Vector2Distance(Vector2{x, y}, Vector2{nx, ny});
+                ng := e.g + stepDist;
                 nf := ng + Heuristic(Vector2{nx, ny}, goal);
 
                 newNode := Node{nf, ng, nx, ny, nt, currentStable};
@@ -350,7 +357,10 @@ UpdateSingleAI :: (game: *Game, ai: *AiBot) {
             ai.nextPoint = 0;
             ai.shouldRecalculatePath = true;
         }
+    }
 
+    if ai.path.count == 1 {
+        ai.shouldRecalculatePath = true;
     }
 
     if ai.shouldRecalculatePath {

@@ -137,7 +137,7 @@ Node :: struct {
     g: float;
     x: float;
     y: float;
-    t: int;
+    t: float;
     cameFrom: *Node;
 
     // Needed in the priority queue
