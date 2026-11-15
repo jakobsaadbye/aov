@@ -2,8 +2,8 @@ namespace aov;
 
 use raylib;
 
-// The sun: a directional light with a bit of shine, plus ambient light, and a haze in the distance. The shader is in the
-// program, so the game needs no files for it
+// The sun: a directional light with a bit of shine, plus ambient light, and a haze in the distance. The shader is
+// data/shaders/lighting.vs and lighting.fs
 
 Lighting :: struct {
     shader:       Shader;
@@ -16,58 +16,11 @@ AmbientColor :: Vector3{0.42, 0.45, 0.52};
 HazeColor    :: Vector3{0.36, 0.46, 0.38};
 
 newLighting :: () -> Lighting {
-    shader := LoadShaderFromMemory(
-"#version 330
-in vec3 vertexPosition;
-in vec2 vertexTexCoord;
-in vec3 vertexNormal;
-
-uniform mat4 mvp;
-uniform mat4 matModel;
-uniform mat4 matNormal;
-
-out vec3 fragPosition;
-out vec2 fragTexCoord;
-out vec3 fragNormal;
-
-void main() {
-    fragPosition = vec3(matModel * vec4(vertexPosition, 1.0));
-    fragTexCoord = vertexTexCoord;
-    fragNormal   = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));
-    gl_Position  = mvp * vec4(vertexPosition, 1.0);
-}
-",
-"#version 330
-in vec3 fragPosition;
-in vec2 fragTexCoord;
-in vec3 fragNormal;
-
-uniform sampler2D texture0;
-uniform vec4 colDiffuse;
-uniform vec3 viewPos;
-uniform vec3 sunDirection;
-uniform vec3 sunColor;
-uniform vec3 ambientColor;
-uniform vec3 hazeColor;
-
-out vec4 finalColor;
-
-void main() {
-    vec4 base = texture(texture0, fragTexCoord) * colDiffuse;
-
-    vec3 normal  = normalize(fragNormal);
-    vec3 toLight = normalize(-sunDirection);
-    vec3 toEye   = normalize(viewPos - fragPosition);
-
-    float diffuse  = max(dot(normal, toLight), 0.0);
-    float specular = pow(max(dot(normal, normalize(toLight + toEye)), 0.0), 24.0) * 0.18;
-
-    vec3 color = base.rgb * (ambientColor + sunColor * diffuse) + sunColor * specular * diffuse;
-
-    float haze = clamp((length(viewPos - fragPosition) - 140.0) / 260.0, 0.0, 0.75);
-    finalColor = vec4(mix(color, hazeColor, haze), base.a);
-}
-");
+    vsPath := dataPath("shaders/lighting.vs");
+    fsPath := dataPath("shaders/lighting.fs");
+    defer vsPath.free();
+    defer fsPath.free();
+    shader := LoadShader(vsPath, fsPath);
 
     // DrawMesh sets these when the shader has them
     shader.locs[ShaderLocationIndex.shaderLocMatrixModel as int]  = GetShaderLocation(shader, "matModel");
@@ -99,6 +52,17 @@ newMaterial :: method (lighting: *Lighting, color: Color) -> Material {
     material.shader = lighting.shader;
     material.maps[MaterialMapIndex.materialMapAlbedo as int].color = color;
     return material;
+}
+
+// A model of the data folder, e.g models/car.obj, with all of its materials lit by the sun
+loadModel :: method (lighting: *Lighting, file: string) -> Model {
+    path := dataPath(file);
+    defer path.free();
+    model := LoadModel(path);
+    for i in 0..model.materialCount {
+        model.materials[i].shader = lighting.shader;
+    }
+    return model;
 }
 
 unload :: method (lighting: *Lighting) {

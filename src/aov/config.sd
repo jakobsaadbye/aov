@@ -11,12 +11,12 @@ TargetFps    :: 144;
 MapHalfWidth  :: 80.0;      // x from -80 to 80
 MapHalfLength :: 64.0;      // z from -64 to 64
 
-// The motorway runs along z. It has two carriageways of lanes, split by the median
-LaneWidth          :: 8.0;
-LanesPerDirection  :: 6;
-LaneCount          :: LanesPerDirection * 2;
-RoadHalfWidth      :: LaneWidth * LanesPerDirection;   // 48: the road covers x from -48 to 48
-RoadOverhang       :: 40.0;                            // How far the road goes on past the field, where the cars come from
+// The motorway runs along z, and all of its lanes drive from the far end (the top of the screen) towards the camera.
+// The cars are nearly as wide as their lanes, so no hero fits between two of them
+LaneWidth     :: 6.0;
+LaneCount     :: 16;
+RoadHalfWidth :: LaneWidth * LaneCount * 0.5;     // 48: the road covers x from -48 to 48
+RoadOverhang  :: 40.0;                            // How far the road goes on past the field, where the cars come from
 
 // The walls along both sides of the road, each with one opening to get on and off it
 WallWidth       :: 3.0;
@@ -28,15 +28,19 @@ OpeningInset    :: 10.0;    // From the end of the field to the opening
 SpawnX    :: -MapHalfWidth + 8;
 GoalX     :: RoadHalfWidth + WallWidth + 4;   // Past the wall on the far side
 
-// Traffic
-MaxCars           :: 128;
-CarWidth          :: 4.4;
-CarHeight         :: 2.6;
-TruckHeight       :: 4.2;
-MinCarSpeed       :: 9.0;
-MaxCarSpeed       :: 26.0;
-SpeedUpPerLevel   :: 0.08;    // Every crossing makes the traffic this much faster
-MaxLevel          :: 15;
+// Traffic. The sizes of the vehicles are those of their models in data/models (see tools/make_models.py)
+MaxCars         :: 160;
+CarWidth        :: 5.2;
+CarLength       :: 8.0;
+VanLength       :: 9.0;
+TruckLength     :: 16.0;
+CarHeight       :: 2.4;
+VanHeight       :: 3.0;
+TruckHeight     :: 4.2;
+MinCarSpeed     :: 6.0;
+MaxCarSpeed     :: 17.0;
+SpeedUpPerLevel :: 0.06;    // Every crossing makes the traffic this much faster
+MaxLevel        :: 15;
 
 // Heroes
 ClickReachedDistance :: 0.3;

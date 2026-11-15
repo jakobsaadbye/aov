@@ -278,7 +278,7 @@ heroRunOver :: method (game: *Game, car: *Car) {
     game.stats.deathsBy[hero.kind] += 1;
 
     // The car throws the bits along the road
-    push := Vector3{0, 0, laneDirection(car.lane) * car.speed * 0.6};
+    push := Vector3{0, 0, car.speed * 0.6};
     color := ColorAlpha(info.color, 1);
     game.effects.burst(hero.position + Vector3{0, info.height * 0.5, 0}, color, 70, push, &game.rng);
     game.effects.addSplat(hero.ground(), info.width * 0.9, Color{150, 20, 25, 255});

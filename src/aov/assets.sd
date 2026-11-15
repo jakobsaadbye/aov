@@ -1,81 +1,83 @@
 namespace aov;
 
+import fmt;
 use raylib;
 
-// The textures, meshes and the shader of the game. The textures are made when the game starts, so it runs without any
-// files. When the data folder of the repository is there (data/textures/..., which isn't in git), its textures are
-// used instead
+// The textures, models and the shader of the game, from the data folder of the repository
 
 Assets :: struct {
     lighting: Lighting;
-    lit:      Material;     // The lit material that the solid things are drawn with. Its color is set for each
-    cube:     Mesh;         // A 1x1x1 cube, scaled to make walls, cars and heroes
-    cylinder: Mesh;         // Radius 1, height 1
+    lit:      Material;     // The lit material that the lane markings are drawn with
+    cube:     Mesh;         // A 1x1x1 cube, scaled to make the walls and the lane markings
 
-    ground:        Mesh;    // The field
-    groundMaterial: Material;
-    road:          Mesh;
-    roadMaterial:  Material;
-    outside:       Mesh;    // The land around the field, to the horizon
+    ground:          Mesh;  // The field
+    groundMaterial:  Material;
+    road:            Mesh;
+    roadMaterial:    Material;
+    outside:         Mesh;  // The land around the field, to the horizon
     outsideMaterial: Material;
 
-    cursor: ?Texture;
+    vehicles: [CarKind.count]Model;
+    vehicleBody: [CarKind.count]int;   // The material of each vehicle that gets the color of the car
+    heroes:   [HeroKind.count]Model;
+
+    cursor: Texture;
+}
+
+// The data folder is next to src, and the program is in src/build, so it is found from wherever the game is started
+dataPath :: (file: string) -> c.string {
+    path := fmt.sprint("%../../data/%", GetApplicationDirectory().toString(), file);
+    defer path.free();
+    return path.toCString();
 }
 
 loadAssets :: () -> Assets {
     assets: Assets;
-    dataFolder := findDataFolder();
 
     assets.lighting = newLighting();
     assets.cube     = GenMeshCube(1, 1, 1);
-    assets.cylinder = GenMeshCylinder(1, 1, 16);
     assets.lit      = assets.lighting.newMaterial(White);
 
     // The field: grass, tiled
-    grass, fromData := loadTextureOr(dataFolder, "textures/grass/Grass_02.png", () -> Image {
-        // Green, with lighter and darker patches
-        image := GenImageColor(256, 256, {92, 150, 64, 255});
-        patches := GenImagePerlinNoise(256, 256, 0, 0, 6);
-        ImageDraw(&image, patches, {0, 0, 256, 256}, {0, 0, 256, 256}, {255, 255, 255, 70});
-        UnloadImage(patches);
-        return image;
-    });
-    grassColor := White;
-    if fromData { grassColor = Color{0, 228, 48, 255}; }   // The grass texture of the data folder is grey
+    grass := loadTexture("textures/grass/Grass_02.png");
     assets.ground = GenMeshPlane(MapHalfWidth * 2, MapHalfLength * 2, 1, 1);
     tileTexture(&assets.ground, 10, 8);
-    assets.groundMaterial = assets.lighting.newMaterial(grassColor);
+    assets.groundMaterial = assets.lighting.newMaterial(White);
     assets.groundMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = grass;
 
     // The land around it, darker, so the field stands out
     assets.outside = GenMeshPlane(900, 900, 1, 1);
-    tileTexture(&assets.outside, 60, 60);
-    assets.outsideMaterial = assets.lighting.newMaterial(ColorBrightness(grassColor, -0.4));
+    tileTexture(&assets.outside, 56, 56);
+    assets.outsideMaterial = assets.lighting.newMaterial({120, 140, 120, 255});
     assets.outsideMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = grass;
 
-    // The road, with its markings painted on: one texture is the whole width of the road, and repeats along it
+    // The road: stones, about a lane to a tile
     assets.road = GenMeshPlane(RoadHalfWidth * 2, RoadEnd * 2, 1, 1);
-    tileTexture(&assets.road, 1, RoadEnd * 2 / RoadMarkingRepeat);
+    tileTexture(&assets.road, RoadHalfWidth * 2 / 8, RoadEnd * 2 / 8);
     assets.roadMaterial = assets.lighting.newMaterial(White);
-    assets.roadMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = makeRoadTexture(dataFolder);
+    assets.roadMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = loadTexture("textures/road/Ground_03.png");
 
-    // The cursor of Warcraft and the window icon, when they are in the data folder
-    if dataFolder.hasValue() {
-        iconPath := dataPath(dataFolder.value(), "window_icon.png");
-        defer iconPath.free();
-        if FileExists(iconPath) {
-            icon := LoadImage(iconPath);
-            ImageFormat(&icon, .uncompressedR8g8b8a8);
-            SetWindowIcon(icon);
-            UnloadImage(icon);
-        }
-
-        path := dataPath(dataFolder.value(), "textures/cursor/human.png");
-        defer path.free();
-        if FileExists(path) {
-            assets.cursor = LoadTexture(path);
-        }
+    // The models, lit by the sun like the rest
+    for kind in CarKind.values {
+        file := fmt.sprint("models/%.obj", CarKind.names[kind]);
+        assets.vehicles[kind] = assets.lighting.loadModel(file);
+        assets.vehicleBody[kind] = findBodyMaterial(assets.vehicles[kind]);
+        file.free();
     }
+    for kind in HeroKind.values {
+        file := fmt.sprint("models/%.obj", HeroKind.names[kind]);
+        assets.heroes[kind] = assets.lighting.loadModel(file);
+        file.free();
+    }
+
+    assets.cursor = loadTexture("textures/cursor/human.png");
+
+    iconPath := dataPath("window_icon.png");
+    defer iconPath.free();
+    icon := LoadImage(iconPath);
+    ImageFormat(&icon, .uncompressedR8g8b8a8);
+    SetWindowIcon(icon);
+    UnloadImage(icon);
 
     return assets;
 }
@@ -83,10 +85,12 @@ loadAssets :: () -> Assets {
 unload :: method (assets: *Assets) {
     UnloadTexture(assets.groundMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture);
     UnloadTexture(assets.roadMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture);
-    if assets.cursor.hasValue() { UnloadTexture(assets.cursor.value()); }
+    UnloadTexture(assets.cursor);
+
+    for model in assets.vehicles { UnloadModel(model); }
+    for model in assets.heroes   { UnloadModel(model); }
 
     UnloadMesh(assets.cube);
-    UnloadMesh(assets.cylinder);
     UnloadMesh(assets.ground);
     UnloadMesh(assets.road);
     UnloadMesh(assets.outside);
@@ -94,96 +98,42 @@ unload :: method (assets: *Assets) {
     assets.lighting.unload();
 }
 
-// Draws the unit cube scaled, turned around y and moved, with the lit material in a color
-drawBox :: method (assets: *Assets, center: Vector3, size: Vector3, angle: f32, color: Color) {
+// Draws the unit cube scaled and moved, with the lit material in a color
+drawBox :: method (assets: *Assets, center: Vector3, size: Vector3, color: Color) {
     assets.lit.maps[MaterialMapIndex.materialMapAlbedo].color = color;
-    transform := MatrixScale(size.x, size.y, size.z) * MatrixRotateY(angle) * MatrixTranslate(center.x, center.y, center.z);
+    transform := MatrixScale(size.x, size.y, size.z) * MatrixTranslate(center.x, center.y, center.z);
     DrawMesh(assets.cube, assets.lit, transform);
 }
 
-// Draws the unit cylinder standing on a point
-drawCylinder :: method (assets: *Assets, base: Vector3, radius: f32, height: f32, color: Color) {
-    assets.lit.maps[MaterialMapIndex.materialMapAlbedo].color = color;
-    transform := MatrixScale(radius, height, radius) * MatrixTranslate(base.x, base.y, base.z);
-    DrawMesh(assets.cylinder, assets.lit, transform);
+// Draws a vehicle with the color of the car on its body
+drawVehicle :: method (assets: *Assets, kind: CarKind, position: Vector3, color: Color) {
+    model := assets.vehicles[kind];
+    model.materials[assets.vehicleBody[kind]].maps[MaterialMapIndex.materialMapAlbedo].color = color;
+    DrawModelEx(model, position, {0, 1, 0}, 0, {1, 1, 1}, White);
 }
 
-//
-// Textures
-//
+// Draws a hero turned to look along the angle, in radians around y (0 looks towards +z)
+drawHero :: method (assets: *Assets, kind: HeroKind, position: Vector3, facing: f32, tint: Color) {
+    DrawModelEx(assets.heroes[kind], position, {0, 1, 0}, facing * Rad2Deg, {1, 1, 1}, tint);
+}
 
-RoadMarkingRepeat :: 16.0;     // The length of road one copy of the road texture covers: a dash and a gap
-RoadPixelsPerUnit :: 8;
-
-makeRoadTexture :: (dataFolder: ?string) -> Texture {
-    width  := (RoadHalfWidth * 2) as int * RoadPixelsPerUnit;
-    height := RoadMarkingRepeat as int * RoadPixelsPerUnit;
-
-    // Asphalt: grey with a bit of grit
-    image := GenImageColor(width, height, {78, 80, 86, 255});
-    grit := GenImageWhiteNoise(width, height, 0.5);
-    ImageDraw(&image, grit, {0, 0, width as f32, height as f32}, {0, 0, width as f32, height as f32}, {255, 255, 255, 18});
-    UnloadImage(grit);
-
-    // The asphalt of the data folder instead, when it is there
-    if dataFolder.hasValue() {
-        path := dataPath(dataFolder.value(), "textures/road/Ground_03.png");
-        defer path.free();
-        if FileExists(path) {
-            asphalt := LoadImage(path);
-            source := Rectangle{0, 0, asphalt.width as f32, asphalt.height as f32};
-            for tile in 0..(width / height) {
-                ImageDraw(&image, asphalt, source, {(tile * height) as f32, 0, height as f32, height as f32}, White);
-            }
-            UnloadImage(asphalt);
-        }
+// The material that a vehicle's body has: the one that is pure white (see tools/make_models.py)
+findBodyMaterial :: (model: Model) -> int {
+    for i in 0..model.materialCount {
+        color := model.materials[i].maps[MaterialMapIndex.materialMapAlbedo].color;
+        if color == White { return i as int; }
     }
+    fmt.print("WARNING: A vehicle model has no white body material, see tools/make_models.py");
+    return 0;
+}
 
-    px :: (units: f32) -> int { return (units * RoadPixelsPerUnit) as int; };
-
-    // The lines along the edges, a dashed line between the lanes, and the double line of the median
-    edge := px(0.3);
-    ImageDrawRectangle(&image, px(0.4), 0, edge, height, {235, 235, 235, 255});
-    ImageDrawRectangle(&image, width - px(0.4) - edge, 0, edge, height, {235, 235, 235, 255});
-
-    for lane in 1..LaneCount {
-        x := px(LaneWidth * lane as f32);
-        if lane == LanesPerDirection {
-            ImageDrawRectangle(&image, x - px(0.55), 0, px(0.3), height, {240, 200, 40, 255});
-            ImageDrawRectangle(&image, x + px(0.25), 0, px(0.3), height, {240, 200, 40, 255});
-        } else {
-            ImageDrawRectangle(&image, x - px(0.12), 0, px(0.24), px(6), {225, 225, 225, 255});
-        }
-    }
-
-    texture := LoadTextureFromImage(image);
-    UnloadImage(image);
+loadTexture :: (file: string) -> Texture {
+    path := dataPath(file);
+    defer path.free();
+    texture := LoadTexture(path);
     GenTextureMipmaps(&texture);
     SetTextureFilter(texture, .trilinear);
     return texture;
-}
-
-// A texture of the data folder, or the image that make gives, e.g when the data folder isn't there. True when it is from
-// the data folder
-loadTextureOr :: (dataFolder: ?string, file: string, make: () -> Image) -> Texture, bool {
-    image: Image;
-    found := false;
-
-    if dataFolder.hasValue() {
-        path := dataPath(dataFolder.value(), file);
-        defer path.free();
-        if FileExists(path) {
-            image = LoadImage(path);
-            found = true;
-        }
-    }
-    if !found { image = make(); }
-
-    texture := LoadTextureFromImage(image);
-    UnloadImage(image);
-    GenTextureMipmaps(&texture);
-    SetTextureFilter(texture, .trilinear);
-    return texture, found;
 }
 
 // Makes a texture repeat over a plane of GenMeshPlane, which goes from 0 to 1 over the whole plane
@@ -193,36 +143,4 @@ tileTexture :: (mesh: *Mesh, repeatX: f32, repeatZ: f32) {
         mesh.texcoords[i * 2 + 1] *= repeatZ;
     }
     UpdateMeshBuffer(*mesh, 1, mesh.texcoords, mesh.vertexCount * 2 * sizeof(f32) as int, 0);
-}
-
-//
-// The data folder
-//
-
-// The data folder of the repository, next to src. The game can be run from the repository, from src or from src/build
-findDataFolder :: () -> ?string {
-    candidates := ["data", "../data", "../../data"];
-    for candidate in candidates {
-        marker := dataPath(candidate, "textures");
-        defer marker.free();
-        if DirectoryExists(marker) { return candidate; }
-    }
-
-    // Next to the program, e.g src/build/out.exe
-    programFolder := GetApplicationDirectory().toString();
-    for candidate in candidates {
-        folder := fmt.sprint("%/%", programFolder, candidate);
-        marker := dataPath(folder, "textures");
-        defer marker.free();
-        if DirectoryExists(marker) { return folder; }
-        folder.free();
-    }
-    return null;
-}
-
-// A path in the data folder, as a c.string for raylib. Free it
-dataPath :: (folder: string, file: string) -> c.string {
-    path := fmt.sprint("%/%", folder, file);
-    defer path.free();
-    return path.toCString();
 }

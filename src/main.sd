@@ -17,7 +17,7 @@ main :: () {
 
     assets := aov.loadAssets();
     defer assets.unload();
-    if assets.cursor.hasValue() { HideCursor(); }
+    HideCursor();       // The cursor of Warcraft is drawn instead
 
     game := aov.newGame(time.now().unixMilli() as u64);
     defer game.free();
