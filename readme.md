@@ -180,8 +180,10 @@ as they are and played again, so a lucky genome doesn't stay. Fitness (`fitnessO
 kills (an enemy a car gets within 3 seconds of being hooked, bashed or locked), how far across the hero is at the end,
 and how fast the best crossing was.
 
-The best genome is written to `data/bots/genomes.json` after each generation, by the names of the genes, so it can be
-read and changed by hand, and the game plays with it. Games run on many threads; build it with LLVM, which makes the bots
+The best of a generation is often just the luckiest in its few games, so at the end there is a playoff (`--playoff N`
+games each): the hall of fame, the last elite and the hand tuned genome play against each other, and the one with the
+best mean is written to `data/bots/genomes.json` (it is also written after each generation, in case training is
+stopped). It is saved by the names of the genes, so it can be read and changed by hand, and the game plays with it. Games run on many threads; build it with LLVM, which makes the bots
 think about 10 times as fast:
 
 ```

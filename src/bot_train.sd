@@ -7,7 +7,7 @@
 //     build/out.exe --generations 40 --threads 4
 //
 // Options: --generations N, --population N, --games N (games each genome plays a generation), --seconds N (of a game),
-// --threads N, --seed N, --from-default (start from the hand tuned genes instead of the trained ones), --out FILE
+// --threads N, --seed N, --playoff N (games each finalist plays at the end), --from-default (start from the hand tuned genes instead of the trained ones), --out FILE
 
 import aov;
 import fmt;
@@ -28,6 +28,7 @@ Config :: struct {
     elite:       int = 4;           // The best, kept as they are (and played again, so luck doesn't keep them)
     tournament:  int = 3;
     fromDefault: bool;
+    playoff:     int = 32;          // Games each finalist plays at the end
     out:         string;
 }
 
@@ -38,6 +39,7 @@ Candidate :: struct {
     crossings: int;
     deaths:    int;
     kills:     int;
+    index:     int;         // In the playoff
 }
 
 // A game of three candidates and one of the hall of fame
@@ -127,6 +129,7 @@ readConfig :: () -> Config {
             case "--threads"      { config.threads = (next.toInt() ?? 4) as int; i += 1; }
             case "--seed"         { config.seed = (next.toInt() ?? 1) as u64; i += 1; }
             case "--from-default" { config.fromDefault = true; }
+            case "--playoff"      { config.playoff = (next.toInt() ?? 32) as int; i += 1; }
             case "--out"          { config.out = next; i += 1; }
             else                  { fmt.print("Unknown option '%'", args[i]); }
         }
@@ -226,7 +229,64 @@ main :: () {
         population.free();
         population = next;
     }
+
+    // The playoff: the best of each generation is the one that was luckiest in a few games, so the hall of fame, the
+    // elite and the hand tuned genes play many games against each other, and the best of those is the one that is kept
+    finalists: [..]aov.Genome;
+    defer finalists.free();
+    finalists.add(aov.defaultGenome());
+    for genome in hallOfFame { finalists.add(genome); }
+    for i in 0..config.elite { finalists.add(population[i].genome); }
+    results := playoff(finalists, config.playoff, config, &rng);
+    defer results.free();
+    fmt.print("Playoff of % genomes, % games each:", finalists.count, config.playoff);
+    for result, i in results {
+        label := "";
+        if result.index == 0 { label = " (hand tuned)"; }
+        fmt.print("  %. fitness % (each game % across, % run over, % kills)%", i + 1, fmt.fixed(result.fitness, 2),
+            fmt.fixed(result.crossings as f32 / result.games as f32, 2), fmt.fixed(result.deaths as f32 / result.games as f32, 2),
+            fmt.fixed(result.kills as f32 / result.games as f32, 2), label);
+    }
+    save(config.out, results[0], config.generations);
     fmt.print("Done. The best genome is in %", config.out);
+}
+
+// Each finalist plays games against three others, picked at random, and their fitness is the mean of their games
+playoff :: (finalists: []aov.Genome, games: int, config: Config, rng: *random.Random) -> [..]Candidate {
+    jobs: [..]GameJob;
+    defer jobs.free();
+    order: [..]int;
+    defer order.free();
+    for i in 0..finalists.count { order.add(i as int); }
+    for round in 0..games {
+        rng.shuffle(order);
+        for g in 0..finalists.count / PerGame {
+            job := GameJob{seed: config.seed * 7919 + (round * 100 + g) as u64 + 99999, seconds: config.seconds};
+            for k in 0..PerGame {
+                index := order[g * PerGame + k];
+                job.genomes[k] = finalists[index];
+                job.candidates[k] = index;
+            }
+            jobs.add(job);
+        }
+    }
+    playAll(jobs, config.threads);
+
+    results: [..]Candidate;
+    for genome, i in finalists { results.add(Candidate{genome: genome, index: i as int}); }
+    for job in jobs {
+        for k in 0..PerGame {
+            result := &results[job.candidates[k]];
+            result.fitness += job.fitness[k];
+            result.games += 1;
+            result.crossings += job.crossings[k];
+            result.deaths += job.deaths[k];
+            result.kills += job.kills[k];
+        }
+    }
+    for *result in results { result.fitness /= math.max(result.games, 1) as f32; }
+    results.sort();
+    return results;
 }
 
 // The fittest first
