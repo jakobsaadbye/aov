@@ -93,7 +93,8 @@ A font is a `.ttf` in `data/fonts`, loaded in `loadFonts()` in `hud.sd`.
 | F5 | New game |
 | H | Hide the help |
 | F1 / F2 / F3 | Wireframes / hitboxes / debug numbers |
-| F4 | What the bots plan: their way across, in the color of each |
+| F4 | The inspector: what a bot thinks. Tab picks the next bot |
+| F8 | Save a recording of the game so far to `src/recordings/` |
 | F6 | Debug: switch to the next hero |
 
 ### Options
@@ -106,10 +107,12 @@ After `--`, e.g `saad run main.sd -- --bots 5 --seed 7`. Most are for trying thi
 | `--spectate` | No hero of your own: the camera follows the first bot |
 | `--seed N` | The same seed gives the same game |
 | `--hero NAME` | Your first hero, e.g `--hero butcher` |
-| `--plans` | Show what the bots plan (F4) |
+| `--inspect N` | Open the inspector on player N, e.g `--spectate --inspect 0` |
+| `--record FILE` | Save a recording of the game to FILE when it closes |
+| `--replay FILE` | Play a recording back |
 | `--speed X` | Run the game X times as fast |
 | `--screenshot S FILE` | Save a screenshot after S seconds of game time. Can be given more than once |
-| `--quit S` | Close after S seconds of game time |
+| `--quit S` | Close after S seconds of game time, or at the end of a replay |
 | `--mute` | No sound |
 
 The mouse on the icon of an ability shows what it does, and how far it reaches.
@@ -165,6 +168,30 @@ thinks in three parts, which can each be changed on its own:
 How a bot plays is a `BotPersonality`: how often it plans, how quick it reacts, how much room it keeps to the cars, and
 how keen it is to use abilities and to cast on enemies. The bots of a game get the ones in `BotPersonalities` in turn.
 
+### The inspector
+
+F4 opens the inspector on a bot, and Tab picks the next one. In the world it shows what that bot knows: the cells around
+it in the color of how long they stay free of cars (red now, yellow soon, green for a while, grey for walls), its plan,
+with a yellow ball where it waits for a gap, and a ring around it in the color of how soon a car is on it. The panel says
+what it is doing (waiting for a gap and for how long, walking, dodging, casting, stunned), when a car gets to it, its
+plan, what its last search cost, and the score of each of its abilities against the bar it casts at. The plans of the
+other bots are drawn too. When you spectate, the camera follows the bot that is inspected; otherwise hold space.
+
+What the inspector shows comes from the brain (`drawInspection` and `describe` of `Brain`), so another kind of bot
+shows what it thinks with.
+
+### Recordings
+
+F8 saves what was played so far to `src/recordings/<date>.json`, and `--replay FILE` plays it back, e.g to see again what a
+bot did, or to show a bug. The game is the same each time for the same seed, so a recording is only its settings and, for
+each frame, its time step and the commands of the players. In a replay the bots think too, so the inspector works, but
+their commands are the recorded ones. A checksum of the heroes every second shows when a replay stops matching, e.g
+because the game was changed since it was recorded, in a banner and on the console.
+
+```
+saad run main.sd -- --replay recordings/2026-11-15_19-48-02.json --inspect 1 --speed 2
+```
+
 `src/bot_arena.sd` lets bots play on their own without a window, as fast as they can, and says how they did: crossings,
 deaths, the time they waited and walked, and what their thinking cost. Run it before and after changing a bot:
 
@@ -188,6 +215,7 @@ All of the game is in the namespace `aov`, in `src/aov/`. `src/main.sd` opens th
 | `camera.sd` | The RTS camera |
 | `effects.sd` | The click marker, the stains, the bits flying and the rings of the abilities |
 | `assets.sd`, `lighting.sd` | The textures, models and shader of the data folder |
+| `inspector.sd`, `recording.sd` | The inspector of the bots (F4), and recordings and replays |
 | `render.sd`, `hud.sd` | The 3D scene and the 2D overlay, with the hero drawn in 3D in its portrait |
 | `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
 

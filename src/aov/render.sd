@@ -52,7 +52,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
         if player.phase.kind == .runOver { continue; }
         drawHero(assets, game, i as int);
     }
-    if game.debug.plans { drawPlans(game); }
+    drawInspection3D(game);
 
     if game.debug.wireframes { rlDisableWireMode(); }
     if game.debug.hitboxes { drawHitboxes(game); }
@@ -183,20 +183,6 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     }
 }
 
-// The plans of the bots (F4): their way across, a dot a waypoint, in the color of the player
-drawPlans :: (game: *Game) {
-    for player in game.players {
-        if !player.isBot() || !player.isPlaying() { continue; }
-        path := player.brain.plannedPath();
-        previous := player.hero.position + Vector3{0, 0.4, 0};
-        for waypoint in path {
-            point := waypoint.point.at(0.4);
-            DrawLine3D(previous, point, player.color);
-            previous = point;
-        }
-        if path.count > 0 { DrawSphere(path[path.count - 1].point.at(0.5), 0.5, player.color); }
-    }
-}
 
 // The reach of an ability while the mouse is on its icon, and the chill aura all the time
 drawAbilityHints :: (game: *Game) {

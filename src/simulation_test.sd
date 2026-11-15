@@ -7,6 +7,7 @@ import aov;
 import fmt;
 import math;
 import random;
+import json;
 use raylib;
 
 Dt :: 1.0 / 60.0;
@@ -28,6 +29,7 @@ main :: () {
     testEnemySpells();
     testForecast();
     testBotCrosses();
+    testRecording();
     fmt.print("All simulation tests passed");
 }
 
@@ -531,6 +533,39 @@ testBotCrosses :: () {
     }
     assert(bot.stats.crossings == 1 && bot.stats.deaths == 0);
     assert(bot.brain.profile().plans > 0);
+}
+
+// A game played back from its recording is the same game
+testRecording :: () {
+    game := aov.newGame(9, bots: 3, humans: 1);
+    defer game.free();
+    rng := random.newRandom(1);
+    for frame in 0..900 {
+        if frame == 100 { game.you().order(aov.Command{move: {-60, 20}}); }
+        if frame == 400 { game.you().order(aov.Command{cast: {slot: 0, target: {-40, 0}}}); }
+        game.step((1.0 / 60.0) * rng.uniform(0.8, 1.2) as f32);    // Frames aren't all as long
+    }
+    assert(game.recording.frames.count == 900 && game.recording.checksums.count == 15);
+
+    // Through JSON, like a file
+    text := json.encode(game.recording);
+    recording, err := json.decode<aov.Recording>(text);
+    assert(err == null && recording.frames.count == 900);
+
+    replay := aov.newReplay(recording);
+    defer replay.free();
+    while !replay.replay.isFinished() { replay.step(0); }
+    assert(!replay.replay.diverged.hasValue());
+    for player, i in game.players {
+        assert(replay.players[i].hero.position == player.hero.position && replay.players[i].stats.deaths == player.stats.deaths);
+    }
+
+    // A replay of a game that has changed doesn't match, and says so
+    changed := aov.newReplay(recording);
+    defer changed.free();
+    changed.players[1].hero.position.x += 3;
+    while !changed.replay.isFinished() { changed.step(0); }
+    assert(changed.replay.diverged.hasValue());
 }
 
 //

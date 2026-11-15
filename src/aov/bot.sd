@@ -33,6 +33,34 @@ Brain :: interface {
 
     // What its thinking has cost so far
     profile :: method () -> BotProfile;
+
+    // For the inspector (F4, inspector.sd): draws what it knows in the world, in 3D, e.g where it is safe and where it is
+    // going, and adds lines of text that say what it is doing and why
+    drawInspection :: method * (game: *Game, me: int);
+    describe :: method * (game: *Game, me: int, lines: *[..]InspectorLine);
+}
+
+// What a bot is doing this frame, for the inspector
+BotMode :: enum {
+    waiting,            // For a gap, before it leaves for the next point of its plan
+    walking,            // To the next point of its plan
+    dodging,            // The reflex: away from a car its plan didn't see coming
+    casting,            // An ability
+    noPlan,             // No way anywhere: it stands still
+    cantAct,            // Stunned, dragged, in the air or on its hook
+    notPlaying,         // Run over, or across
+}
+
+// The last look at the abilities: the score of each, and the bar a score must be over to cast it
+BotDecision :: struct {
+    mode:       BotMode;
+    scores:     [MaxAbilities]f32;
+    bar:        f32;
+    lastCast:   string;             // The name of the last ability it cast
+    lastCastAt: f32;
+    lastSearch: f64;                // Seconds the last search took
+    lastStates: int;
+    chosen:     string;             // The ability the last look chose, if any
 }
 
 BotPersonality :: struct {
@@ -74,6 +102,7 @@ Bot :: struct {
     thinkIn:     f32;
     lastKind:    HeroKind;
     wasActing:   bool;
+    decision:    BotDecision;
     stats:       BotProfile;
 }
 
@@ -121,6 +150,7 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     if !player.isPlaying() {
         bot.plan.clear();
         bot.replanIn = 0;
+        bot.decision.mode = .notPlaying;
         return;
     }
     hero := &player.hero;
@@ -133,7 +163,10 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     }
     bot.lastKind = hero.kind;
     bot.wasActing = canAct;
-    if !canAct { return; }
+    if !canAct {
+        bot.decision.mode = .cantAct;
+        return;
+    }
 
     bot.replanIn -= dt;
     if bot.isBehindPlan(game.time) { bot.mustSearch = true; }
@@ -148,13 +181,19 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
         cast := bot.chooseAbility(game, me);
         if cast.hasValue() {
             player.order(cast.value());
+            bot.decision.mode = .casting;
+            bot.decision.lastCast = bot.decision.chosen;
+            bot.decision.lastCastAt = game.time;
             bot.replanIn = 0;           // Where it is going to be has changed
             bot.mustSearch = true;
             return;
         }
     }
 
-    if bot.dodge(game, me) { return; }
+    if bot.dodge(game, me) {
+        bot.decision.mode = .dodging;
+        return;
+    }
     bot.follow(game, me, dt);
 }
 
@@ -267,6 +306,8 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
 
     bot.stats.plans += 1;
     bot.stats.planSeconds += time.clock() - forecastDone;
+    bot.decision.lastSearch = time.clock() - forecastDone;
+    bot.decision.lastStates = result.expanded;
     bot.stats.expanded += result.expanded;
     if result.reachesGoal { bot.stats.reachedGoal += 1; }
 
@@ -311,6 +352,7 @@ follow :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     if bot.next >= bot.plan.count {
         if hero.isMoving { player.order(.stop); }
         bot.stats.noPlan += dt;
+        bot.decision.mode = .noPlan;
         return;
     }
 
@@ -318,9 +360,11 @@ follow :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     if game.time < waypoint.depart - 0.02 {
         if hero.isMoving { player.order(.stop); }       // Waiting for a gap
         bot.stats.waiting += dt;
+        bot.decision.mode = .waiting;
         return;
     }
     bot.stats.walking += dt;
+    bot.decision.mode = .walking;
     if !hero.isMoving || hero.target.xz().distance(waypoint.point) > 0.01 {
         player.order(Command{move: waypoint.point});
     }
@@ -360,12 +404,16 @@ chooseAbility :: method (bot: *Bot, game: *Game, me: int) -> ?Command {
     };
 
     bestScore: f32 = 1 - bot.personality.abilityUse * 0.7;     // The bar: from 0.3 for the keenest to 1 for none
+    bot.decision.bar = bestScore;
     best: ?Command = null;
     for ability, slot in hero.abilities() {
+        bot.decision.scores[slot] = -1;                         // Not ready, or a passive
         if !hero.abilityReady(slot as int) { continue; }
         choice := bot.scoreAbility(game, view, ability);
+        bot.decision.scores[slot] = choice.score;
         if choice.score > bestScore {
             bestScore = choice.score;
+            bot.decision.chosen = ability.name;
             best = Command{cast: {slot: slot as int, target: choice.target}};
         }
     }
