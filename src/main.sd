@@ -17,21 +17,25 @@ use raylib;
 //     --spectate          No hero of your own: the camera follows the first bot
 //     --seed N            The same seed gives the same game
 //     --hero NAME         Your first hero, e.g --hero butcher
-//     --plans             Show what the bots plan (F4)
+//     --inspect N         Open the inspector (F4) on the bot of player N, e.g 1 for the first bot of a game with you
 //     --speed X           Run the game X times as fast, e.g 4 to see a lot quickly
 //     --screenshot S F    Save a screenshot to the file F after S seconds of game time
-//     --quit S            Close after S seconds of game time
+//     --quit S            Close after S seconds of game time, or at the end of a replay
 //     --mute              No sound
+//     --record FILE       Save a recording of the game to FILE when it closes. F8 saves one at any time
+//     --replay FILE       Play a recording back (recording.sd). The other options of the game are the recording's
 Options :: struct {
     bots:       int = aov.DefaultBots;
     spectate:   bool;
     seed:       ?u64;
     hero:       ?aov.HeroKind;
-    plans:      bool;
+    inspect:    ?int;
     speed:      f32 = 1;
     shots:      [..]Screenshot;
     quitAt:     ?f32;
     mute:       bool;
+    record:     ?string;
+    replay:     ?string;
 }
 
 Screenshot :: struct {
@@ -51,10 +55,12 @@ readOptions :: () -> Options {
             case "--bots"     { options.bots = (next.toInt() ?? aov.DefaultBots) as int; i += 1; }
             case "--spectate" { options.spectate = true; }
             case "--seed"     { options.seed = (next.toInt() ?? 1) as u64; i += 1; }
-            case "--plans"    { options.plans = true; }
+            case "--inspect"  { options.inspect = (next.toInt() ?? 1) as int; i += 1; }
             case "--speed"    { options.speed = (next.toFloat() ?? 1) as f32; i += 1; }
             case "--quit"     { options.quitAt = (next.toFloat() ?? 10) as f32; i += 1; }
             case "--mute"     { options.mute = true; }
+            case "--record"   { options.record = next; i += 1; }
+            case "--replay"   { options.replay = next; i += 1; }
             case "--hero" {
                 index := aov.HeroKind.names.indexOf(next);
                 if index >= 0 { options.hero = index as aov.HeroKind; }
@@ -86,13 +92,34 @@ main :: () {
     assets := aov.loadAssets();
     defer assets.unload();
 
-    seed := options.seed ?? time.now().unixMilli() as u64;
-    humans := 1;
-    if options.spectate { humans = 0; }
-    game := aov.newGame(seed, bots: options.bots, humans: humans);
+    game: *aov.Game = null;
+    if options.replay.hasValue() {
+        recording, err := aov.loadRecording(options.replay.value());
+        if err != null {
+            fmt.print("ERROR: Couldn't read the recording %: %", options.replay.value(), err.message);
+            return;
+        }
+        game = aov.newReplay(recording);
+    } else {
+        seed := options.seed ?? time.now().unixMilli() as u64;
+        humans := 1;
+        if options.spectate { humans = 0; }
+        game = aov.newGame(seed, bots: options.bots, humans: humans);
+        if options.hero.hasValue() && !options.spectate {
+            game.spawnHero(game.local, options.hero.value());
+            game.recording.firstHero = options.hero.value() as int;
+        }
+    }
     defer game.free();
-    if options.hero.hasValue() && !options.spectate { game.spawnHero(game.local, options.hero.value()); }
-    game.debug.plans = options.plans;
+    defer {
+        if options.record.hasValue() {
+            err := game.saveRecording(options.record.value());
+            if err != null { fmt.print("ERROR: Couldn't save the recording: %", err.message); }
+        }
+    }
+    if options.inspect.hasValue() {
+        game.inspector = aov.Inspector{isOpen: true, player: options.inspect.value()};
+    }
 
     if !options.mute {
         folder := aov.dataFolder();
@@ -105,15 +132,25 @@ main :: () {
     HideCursor();       // The cursor of Warcraft is drawn instead
 
     nextShot := 0;
+    replayClock: f32 = 0;
     while !WindowShouldClose() {
         // A long frame, e.g while the window is dragged, mustn't throw the hero through a car. Faster with --speed, in
-        // steps that are no longer
-        steps := math.max(1, math.ceilf(options.speed) as int);
-        dt := math.min(GetFrameTime(), 0.05) * options.speed / steps as f32;
-        game.update(dt);
-        for 1..steps {
-            if !game.isPaused { game.simulate(dt); }
+        // steps that are no longer. A replay plays its recorded frames as fast as they were played, times the speed
+        dt := math.min(GetFrameTime(), 0.05);
+        game.handleKeys();
+        if game.replay != null {
+            replayClock += dt * options.speed;
+            while !game.isPaused && !game.replay.isFinished() {
+                next := game.replay.recording.frames[game.replay.frame].dt;
+                if replayClock < next { break; }
+                replayClock -= next;
+                game.advance(next);
+            }
+        } else {
+            steps := math.max(1, math.ceilf(options.speed) as int);
+            for 0..steps { game.advance(dt * options.speed / steps as f32); }
         }
+        game.updateCamera(dt);
 
         if IsKeyPressed(.m) { game.sounds.toggleMute("theme"); }
         game.sounds.setListener(game.camera.focus);
@@ -132,5 +169,6 @@ main :: () {
             nextShot += 1;
         }
         if options.quitAt.hasValue() && game.time >= options.quitAt.value() { break; }
+        if options.quitAt.hasValue() && game.replay != null && game.replay.isFinished() { break; }
     }
 }

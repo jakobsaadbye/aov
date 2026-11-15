@@ -1,0 +1,174 @@
+namespace aov;
+
+// Recordings of games, which can be played back exactly, e.g to see again what a bot did, or to show a bug.
+//
+// The game is the same each time for the same seed, so a recording is only what made it go its way: the settings it
+// started with, and for each frame its time step and the commands of the players (game.sd). A replay starts the same
+// game and gives it those, frame by frame. The bots think in a replay too, so the inspector (F4) shows what they thought,
+// but their commands are the recorded ones.
+//
+// Every second the recording keeps a checksum of where the heroes are. A replay compares them, and says when it doesn't
+// match, e.g when the game was changed since the recording was made: from then on it shows a different game.
+//
+//     F8 during a game             saves what was played so far to recordings/<time>.json
+//     --record FILE                saves it to FILE when the game closes
+//     --replay FILE                plays a recording back
+
+import fmt;
+import json;
+import os;
+import time;
+use raylib;
+
+RecordingVersion :: 1;
+ChecksumEvery    :: 60;         // Frames between two checksums
+
+RecordedCommand :: struct {
+    player:  int;
+    command: Command;
+}
+
+RecordedFrame :: struct {
+    dt:         f32;
+    @json.Field(omitEmpty: true)
+    commands:   [..]RecordedCommand;
+    @json.Field(omitEmpty: true)
+    restart:    bool;           // F5: a new game, before this frame
+    @json.Field(omitEmpty: true)
+    nextHero:   bool;           // F6: the next hero for the player at the keyboard, before this frame
+}
+
+Checksum :: struct {
+    frame: int;
+    value: u64;
+}
+
+Recording :: struct {
+    version:   int = RecordingVersion;
+    seed:      u64;
+    bots:      int;
+    humans:    int;
+    firstHero: int = -1;        // The hero the player at the keyboard started with (--hero), or -1 for a random one
+    frames:    [..]RecordedFrame;
+    checksums: [..]Checksum;
+}
+
+// Playing a recording back
+Replay :: struct {
+    recording: Recording;
+    frame:     int;             // The next frame to play
+    diverged:  ?f32;            // The time of the game when it stopped matching the recording
+    reported:  bool;
+}
+
+// Says once, when a replay is at its end, if it matched the recording all the way
+reportEnd :: method (replay: *Replay, game: *Game) {
+    if replay.reported || !replay.isFinished() { return; }
+    replay.reported = true;
+    if replay.diverged.hasValue() { return; }
+    fmt.print("INFO: The replay matched the recording, % frames, % s", replay.frame, fmt.fixed(game.time, 1));
+    game.showBanner(White, "End of the recording");
+}
+
+isFinished :: method (replay: *Replay) -> bool {
+    return replay.frame >= replay.recording.frames.count;
+}
+
+// A checksum of where the heroes are and how they are, to see that a replay is the game that was recorded
+gameChecksum :: (game: *Game) -> u64 {
+    sum: u64 = 0;
+    for player in game.players {
+        hero := player.hero;
+        sum = hashCombine(sum, (hero.position.x * 1000) as i64 as u64);
+        sum = hashCombine(sum, (hero.position.z * 1000) as i64 as u64);
+        sum = hashCombine(sum, (hero.health * 100) as i64 as u64);
+        sum = hashCombine(sum, (hero.kind as u64) * 7 + (player.phase.kind as u64));
+    }
+    return sum;
+}
+
+// Keeps a frame of the game that is played, before it is simulated
+recordFrame :: method (game: *Game, dt: f32, restart: bool, nextHero: bool) {
+    frame := RecordedFrame{dt: dt, restart: restart, nextHero: nextHero};
+    game.recording.frames.add(frame);
+}
+
+// The commands of a player for the frame that is being simulated: kept, or in a replay, the recorded ones in their place
+recordOrReplay :: method (game: *Game, player: int) {
+    commands := &game.players[player].commands;
+    if game.replay != null {
+        commands.clear();
+        frame := game.replay.recording.frames[game.replay.frame];
+        for recorded in frame.commands {
+            if recorded.player == player { commands.add(recorded.command); }
+        }
+        return;
+    }
+    last := game.recording.frames.count - 1;
+    if last < 0 { return; }
+    for command in *commands {
+        game.recording.frames[last].commands.add(RecordedCommand{player, command});
+    }
+}
+
+// After a frame is simulated: a checksum now and then, and in a replay, if it still matches
+checkFrame :: method (game: *Game) {
+    frame := game.recording.frames.count as int;
+    if game.replay != null { frame = game.replay.frame + 1; }
+    if frame % ChecksumEvery != 0 { return; }
+    value := gameChecksum(game);
+
+    if game.replay == null {
+        game.recording.checksums.add(Checksum{frame, value});
+        return;
+    }
+    replay := game.replay;
+    if replay.diverged.hasValue() { return; }
+    for checksum in replay.recording.checksums {
+        if checksum.frame == frame && checksum.value != value {
+            replay.diverged = game.time;
+            game.showBanner({255, 140, 90, 255}, "The replay doesn't match the recording from % s on", fmt.fixed(game.time, 1));
+            fmt.print("WARNING: The replay doesn't match the recording from % s on (frame %)", fmt.fixed(game.time, 1), frame);
+        }
+    }
+}
+
+// Saves what was played so far, to a file
+saveRecording :: method (game: *Game, path: string) -> error {
+    text := json.encode(game.recording);
+    defer text.free();
+    return os.writeFile(path, text);
+}
+
+// Saves what was played so far to recordings/<time>.json, and says where
+saveRecordingNow :: method (game: *Game) {
+    os.makeDir("recordings");
+    path := fmt.sprint("recordings/%.json", time.now().format("2006-01-02_15-04-05"));
+    err := game.saveRecording(path);
+    if err != null {
+        game.showBanner({255, 90, 80, 255}, "Couldn't save the recording: %", err.message);
+        return;
+    }
+    game.showBanner({120, 255, 140, 255}, "Saved the recording to %", path);
+    fmt.print("INFO: Saved the recording to %", path);
+}
+
+loadRecording :: (path: string) -> Recording, error {
+    text, err := os.readFile(path);
+    if err != null { return default, err; }
+    recording, decodeErr := json.decode<Recording>(text);
+    if decodeErr != null { return default, decodeErr; }
+    return recording, null;
+}
+
+// A new game that plays a recording back
+newReplay :: (recording: Recording) -> *Game {
+    game := newGame(recording.seed, bots: recording.bots, humans: recording.humans);
+    if recording.firstHero >= 0 && recording.humans > 0 {
+        game.spawnHero(game.local, recording.firstHero as HeroKind);
+    }
+    game.recording.firstHero = recording.firstHero;
+    game.replay = new(Replay);
+    game.replay.recording = recording;
+    return game;
+}

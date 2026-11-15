@@ -91,7 +91,6 @@ DebugToggles :: struct {
     wireframes: bool;
     hitboxes:   bool;
     overlay:    bool;
-    plans:      bool;                       // The paths the bots plan
 }
 
 Game :: struct {
@@ -111,6 +110,12 @@ Game :: struct {
     mouseGround: ?Vector3;                  // The point on the ground under the mouse
     hoveredAbility: int = -1;               // The slot of the ability whose icon the mouse is on, set by the HUD
     sounds:      SoundPlayer;               // Silent until it is loaded, e.g in simulation_test.sd
+    inspector:   Inspector;                 // F4: what a bot thinks (inspector.sd)
+    recording:   Recording;                 // What was played so far (recording.sd)
+    replay:      *Replay;                   // The recording that is played back, or null
+    isStepping:  bool;                      // In a frame of advance, which is recorded or replayed
+    restartPending:  bool;                  // Keys of this frame, carried out by advance
+    nextHeroPending: bool;
     stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
     searchesLeft: int;                      // Searches for a way across the bots may still do this frame (bot.sd)
 }
@@ -133,6 +138,7 @@ newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1) -> *Game {
     game.rng = random.newRandom(seed);
     game.world = newWorld();
 
+    game.recording = Recording{seed: seed, bots: bots, humans: humans};
     if humans > 0 { game.addPlayer("You", null); }
     for i in 0..math.min(bots, MaxPlayers - game.players.count as int) {
         name := BotNames[i % BotNames.count];
@@ -171,6 +177,7 @@ free :: method (game: *Game) {
     game.stopSigns.free();
     for *player in game.players { player.commands.free(); }
     game.players.free();
+    if game.replay != null { mem.delete(game.replay); }
     mem.delete(game);
 }
 
@@ -203,7 +210,13 @@ announce :: method (game: *Game, player: int, color: Color, format: string, args
 
 // Once a frame: the keys and the mouse, the thoughts of the bots, then the world moves on by dt seconds
 update :: method (game: *Game, dt: f32) {
-    // Keys that work at any time
+    game.handleKeys();
+    game.advance(dt);
+    game.updateCamera(dt);
+}
+
+// The keys that work at any time, also while paused. Once a frame
+handleKeys :: method (game: *Game) {
     if IsKeyPressed(.p) || IsKeyPressed(.escape) {
         game.isPaused = !game.isPaused;
         game.sounds.setPaused(game.isPaused);
@@ -212,25 +225,63 @@ update :: method (game: *Game, dt: f32) {
     if IsKeyPressed(.f1) { game.debug.wireframes = !game.debug.wireframes; }
     if IsKeyPressed(.f2) { game.debug.hitboxes = !game.debug.hitboxes; }
     if IsKeyPressed(.f3) { game.debug.overlay = !game.debug.overlay; }
-    if IsKeyPressed(.f4) { game.debug.plans = !game.debug.plans; }
-    if IsKeyPressed(.f6) && game.you().isPlaying() {
-        // Debug: the next hero, in place of this one
-        game.spawnHero(game.local, ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind);
+    if IsKeyPressed(.f8) { game.saveRecordingNow(); }
+    game.updateInspector();
+    if game.replay != null { return; }      // A replay plays what was recorded
+
+    // Debug: the next hero, in place of this one. It is recorded, so a replay does the same
+    if IsKeyPressed(.f6) && game.you().isPlaying() && !game.you().isBot() { game.nextHeroPending = true; }
+    if IsKeyPressed(.f5) { game.restartPending = true; }
+}
+
+// One step of the game, unless it is paused: your orders, and the world moves on by dt seconds
+advance :: method (game: *Game, dt: f32) {
+    if game.isPaused { return; }
+    game.mouseGround = game.camera.groundPoint(GetMousePosition());
+    if game.replay == null { game.readInput(); }
+    game.step(dt);
+}
+
+// A frame of the game that is recorded, or in a replay, the next recorded frame instead, with its time step. Reads no
+// input, so it runs without a window, e.g in simulation_test.sd
+step :: method (game: *Game, dt: f32) {
+    step := dt;
+    restart := game.restartPending;
+    nextHero := game.nextHeroPending;
+    game.restartPending = false;
+    game.nextHeroPending = false;
+    if game.replay != null {
+        if game.replay.isFinished() { return; }
+        frame := game.replay.recording.frames[game.replay.frame];
+        step = frame.dt;
+        restart = frame.restart;
+        nextHero = frame.nextHero;
+    } else {
+        game.recordFrame(step, restart, nextHero);
     }
-    if IsKeyPressed(.f5) {
+
+    if restart {
         game.restart();
         game.showBanner(White, "New game");
     }
+    if nextHero && game.you().isPlaying() {
+        game.spawnHero(game.local, ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind);
+    }
 
-    if game.isPaused { return; }
+    game.isStepping = true;
+    game.simulate(step);
+    game.isStepping = false;
+    game.checkFrame();
+    if game.replay != null {
+        game.replay.frame += 1;
+        game.replay.reportEnd(game);
+    }
+}
 
-    game.mouseGround = game.camera.groundPoint(GetMousePosition());
-    game.readInput();
-    game.simulate(dt);
-
-    // The camera follows the hero, unless it is unlocked with Y. Space brings it back to the hero while held
+// The camera follows the hero, unless it is unlocked with Y. Space brings it back to the hero while held
+updateCamera :: method (game: *Game, dt: f32) {
     if IsKeyPressed(.y) { game.camera.isLocked = !game.camera.isLocked; }
-    game.camera.update(dt, game.you().hero.position, IsKeyDown(.space));
+    game.camera.update(dt, game.followedHero(), IsKeyDown(.space));
 }
 
 // The keys and the mouse, as commands of the player at the keyboard
@@ -267,6 +318,7 @@ simulate :: method (game: *Game, dt: f32) {
 
     for *player, i in game.players {
         if player.isBot() { player.brain.think(game, i as int, dt); }
+        if game.isStepping { game.recordOrReplay(i as int); }
         game.carryOut(i as int);
         game.updatePlayer(i as int, dt);
     }
