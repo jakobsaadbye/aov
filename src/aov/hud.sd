@@ -55,7 +55,7 @@ drawHeroCard :: (game: *Game) {
     hero := &game.hero;
     info := hero.info();
 
-    width  := 460;
+    width  := 560;
     height := 104;
     panel := Rectangle{(GetScreenWidth() - width) as f32 * 0.5, (GetScreenHeight() - height - 16) as f32, width as f32, height as f32};
     drawPanel(panel);
@@ -151,7 +151,7 @@ drawPaused :: () {
     text := "PAUSED";
     width := textWidth(text, 60);
     drawText(text, (GetScreenWidth() - width) / 2, GetScreenHeight() / 2 - 60, 60, White);
-    hint := "Press P to go on";
+    hint := "Press P or Esc to go on";
     drawText(hint, (GetScreenWidth() - textWidth(hint, 20)) / 2, GetScreenHeight() / 2 + 10, 20, DimColor);
 }
 

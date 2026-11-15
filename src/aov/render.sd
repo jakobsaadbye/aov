@@ -13,13 +13,16 @@ FrozenColor :: Color{170, 230, 255, 255};
 drawScene :: method (game: *Game, assets: *Assets) {
     assets.lighting.setCamera(game.camera.view);
 
+    // raylib's near plane of 0.01 leaves the depth buffer too little precision at the distance of the camera, and the
+    // flat layers on the ground (the grass, the road, the shadows) flicker through each other
+    rlSetClipPlanes(0.5, 1500);
     BeginMode3D(game.camera.view);
     defer EndMode3D();
 
     // The ground, below everything
-    DrawMesh(assets.outside, assets.outsideMaterial, MatrixTranslate(0, -0.05, 0));
+    DrawMesh(assets.outside, assets.outsideMaterial, MatrixTranslate(0, -0.4, 0));
     DrawMesh(assets.ground, assets.groundMaterial, MatrixIdentity());
-    DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.04, 0));
+    DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.06, 0));
     drawGoalStrip();
 
     if game.debug.wireframes { rlEnableWireMode(); }
@@ -36,7 +39,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     for *car in game.traffic.cars {
         if car.isActive {
             rect := car.rect();
-            DrawCube(rect.center().at(0.08), rect.width + 0.6, 0.02, rect.height + 0.6, ShadowColor);
+            DrawCube(rect.center().at(0.12), rect.width + 0.6, 0.02, rect.height + 0.6, ShadowColor);
         }
     }
     game.effects.draw();
@@ -54,9 +57,9 @@ drawScene :: method (game: *Game, assets: *Assets) {
 // A light strip on the far side of the road, where the heroes are going
 drawGoalStrip :: () {
     width := MapHalfWidth - GoalX;
-    center := Vector3{GoalX + width * 0.5, 0.03, 0};
+    center := Vector3{GoalX + width * 0.5, 0.08, 0};
     DrawCube(center, width, 0.02, MapHalfLength * 2, {255, 240, 150, 40});
-    DrawCube(Vector3{GoalX, 0.04, 0}, 0.25, 0.02, MapHalfLength * 2, {255, 240, 150, 160});
+    DrawCube(Vector3{GoalX, 0.1, 0}, 0.25, 0.02, MapHalfLength * 2, {255, 240, 150, 160});
 }
 
 drawWall :: (assets: *Assets, wall: Rectangle) {
@@ -139,8 +142,11 @@ drawHero :: (assets: *Assets, hero: *Hero, phase: Phase) {
     color := info.color;
     if hero.sprintTimeLeft > 0 { color = ColorBrightness(color, 0.3); }
 
-    // A shadow that stays on the ground
-    DrawCylinder(hero.position + Vector3{0, 0.08, 0}, info.width * 0.55, info.width * 0.55, 0.02, 16, ShadowColor);
+    // A shadow that stays on the ground, and the green circle of the selected unit, as in Warcraft
+    DrawCylinder(hero.position + Vector3{0, 0.12, 0}, info.width * 0.55, info.width * 0.55, 0.02, 16, ShadowColor);
+    ring := info.width * 0.85;
+    DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring, {1, 0, 0}, 90, {90, 255, 110, 220});
+    DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring * 0.94, {1, 0, 0}, 90, {90, 255, 110, 220});
 
     assets.drawBox(base + Vector3{0, bodyHeight * 0.5, 0}, {info.width, bodyHeight, info.width * 0.7}, hero.facing, color);
     assets.drawBox(base + Vector3{0, bodyHeight + headSize * 0.5, 0}, {headSize, headSize, headSize}, hero.facing, ColorBrightness(color, 0.15));
@@ -201,8 +207,9 @@ drawHitboxes :: (game: *Game) {
     }
 }
 
-// Two functions of rlgl, the layer under raylib, for the wireframes of F1. raylib.dll has them
+// Three functions of rlgl, the layer under raylib, for the wireframes of F1 and the depth range. raylib.dll has them
 extern "raylib.dll" {
     rlEnableWireMode  :: () -> void;
     rlDisableWireMode :: () -> void;
+    rlSetClipPlanes   :: (near: f64, far: f64) -> void;
 }

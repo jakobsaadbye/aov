@@ -8,8 +8,8 @@ use raylib;
 
 RtsCamera :: struct {
     focus:          Vector3;
-    distance:       f32 = 105;
-    targetDistance: f32 = 105;
+    distance:       f32 = 90;
+    targetDistance: f32 = 90;
     shake:          f32;            // Seconds of shaking left
     glideTo:        ?Vector3;       // A point the camera moves to by itself, e.g a new hero. Moving it by hand stops it
     view:           Camera3D;

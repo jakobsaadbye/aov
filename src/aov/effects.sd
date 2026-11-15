@@ -116,7 +116,7 @@ draw :: method (effects: *Effects) {
     for splat in effects.splats {
         if splat.radius <= 0 || splat.age >= SplatLifetime { continue; }
         fade := 1 - math.max(0, splat.age - SplatLifetime * 0.6) / (SplatLifetime * 0.4);
-        DrawCylinder(splat.position.at(0.07), splat.radius, splat.radius * 1.1, 0.02, 20, ColorAlpha(splat.color, 0.85 * fade));
+        DrawCylinder(splat.position.at(0.14), splat.radius, splat.radius * 1.1, 0.02, 20, ColorAlpha(splat.color, 0.85 * fade));
     }
 
     for ring in effects.rings {

@@ -49,25 +49,25 @@ definition :: method (kind: HeroKind) -> HeroDefinition {
     return switch kind {
         case .allan => HeroDefinition{
             name: "Allan", color: {214, 48, 49, 255},
-            width: 1.8, height: 3.6, moveSpeed: 9, hitRadius: 0.75,
+            width: 2.2, height: 4.4, moveSpeed: 9, hitRadius: 0.75,
             ability: {sprint: {speedMultiplier: 2.1, duration: 1.4, cooldown: 6}},
             abilityName: "Sprint", abilityText: "Runs twice as fast for a moment",
         };
         case .ghosty => HeroDefinition{
             name: "Ghosty", color: {190, 210, 255, 150},
-            width: 1.8, height: 3.0, moveSpeed: 7.5, hitRadius: 0.7,
+            width: 2.2, height: 3.8, moveSpeed: 7.5, hitRadius: 0.7,
             ability: .phaseWalk,
             abilityName: "Phase walk", abilityText: "Floats straight through the walls",
         };
         case .butcher => HeroDefinition{
             name: "Butcher", color: {120, 72, 52, 255},
-            width: 2.8, height: 3.8, moveSpeed: 6.5, hitRadius: 1.15,
+            width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15,
             ability: {hook: {range: 26, pullSpeed: 48, cooldown: 7}},
             abilityName: "Meat hook", abilityText: "Hooks the ground at the cursor and pulls himself there",
         };
         case .frosty => HeroDefinition{
             name: "Frosty", color: {110, 220, 235, 255},
-            width: 1.6, height: 3.2, moveSpeed: 8, hitRadius: 0.7,
+            width: 2.0, height: 4.0, moveSpeed: 8, hitRadius: 0.7,
             ability: {freeze: {radius: 20, duration: 2.5, cooldown: 10}},
             abilityName: "Cold snap", abilityText: "Freezes the cars around him",
         };
