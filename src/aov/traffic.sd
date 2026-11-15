@@ -21,9 +21,9 @@ Car :: struct {
     color:      Color;
     speed:      f32;
     frozenLeft: f32;        // Seconds it is frozen by Frosty
+    isBraking:  bool;       // Held up in a lane that Hilda stopped, with its brake lights on
     layer:      int;        // 0 to 3, different for cars after each other in a lane. Drawn a bit bigger by it, so two
                             // cars that drive through each other don't have their faces in the same place (z-fighting)
-    hasHonked:  bool;
 
     // The health it takes off a hero it is on, per second
     damagePerSecond :: method () -> f32 {
@@ -70,13 +70,20 @@ Lane :: struct {
     speed:      f32;        // The speed its cars drive around
     spawnTimer: f32;        // Seconds to the next car
     spawned:    int;        // Cars so far, for the layer of the next
+    haltLeft:   f32;        // Seconds the lane is stopped by Hilda. Its cars queue up before haltLine
+    haltLine:   f32;        // The z that the first car in the queue stops at with its front
 }
 
 Traffic :: struct {
     cars:  [MaxCars]Car;
     lanes: [LaneCount]Lane;
     level: int;
+    warpLeft: f32;          // Seconds left of Mira's time warp, which slows every car by warpSlow
+    warpSlow: f32;
 }
+
+// The room a car in a queue leaves to the car in front of it
+QueueGap :: 1.5;
 
 CarColors :: [
     Color{236, 240, 241, 255}, Color{ 44,  62,  80, 255}, Color{192,  57,  43, 255}, Color{ 41, 128, 185, 255},
@@ -130,7 +137,25 @@ SlowZone :: struct {
 }
 
 update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZone: ?SlowZone) {
-    for *car in traffic.cars {
+    // Where each car of a stopped lane may get to: up to the line, or the car in front of it in the queue
+    limits: [MaxCars]f32;
+    for *car, i in traffic.cars {
+        car.isBraking = false;
+        limits[i] = RoadEnd * 10;
+    }
+    for *lane, l in traffic.lanes {
+        if lane.haltLeft <= 0 { continue; }
+        lane.haltLeft -= dt;
+        traffic.queueUp(l as int, &limits);
+    }
+
+    warp: f32 = 1;
+    if traffic.warpLeft > 0 {
+        traffic.warpLeft -= dt;
+        warp = 1 - traffic.warpSlow;
+    }
+
+    for *car, i in traffic.cars {
         if !car.isActive { continue; }
 
         if car.frozenLeft > 0 {
@@ -143,7 +168,12 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZone: ?Sl
             zone := slowZone.value();
             if CheckCollisionCircleRec(zone.center, zone.radius, car.rect()) { speed *= 1 - zone.slow; }
         }
-        car.z += speed * dt;
+        next := car.z + speed * warp * dt;
+        if next > limits[i] {
+            next = math.max(car.z, limits[i]);
+            car.isBraking = true;
+        }
+        car.z = next;
         if car.z > RoadEnd + car.length() {
             car.isActive = false;
         }
@@ -188,6 +218,51 @@ spawn :: method (traffic: *Traffic, lane: int, rng: *random.Random) {
         return;
     }
     // Every car is on the road already
+}
+
+// The queue of a stopped lane: the cars that haven't got to its line, front to back. The first stops at the line, and
+// every other one behind the car in front of it
+@private
+queueUp :: method (traffic: *Traffic, lane: int, limits: *[MaxCars]f32) {
+    line := traffic.lanes[lane].haltLine;
+    queue: [MaxCars]int;
+    count := 0;
+    for car, i in traffic.cars {
+        if !car.isActive || car.lane != lane || car.z + car.length() * 0.5 > line + 0.5 { continue; }
+        // Sorted by z, the front of the queue first
+        at := count;
+        while at > 0 && traffic.cars[queue[at - 1]].z < car.z {
+            queue[at] = queue[at - 1];
+            at -= 1;
+        }
+        queue[at] = i as int;
+        count += 1;
+    }
+
+    front := line;
+    for k in 0..count {
+        car := &traffic.cars[queue[k]];
+        (*limits)[queue[k]] = front - car.length() * 0.5;
+        front = math.min(front, car.z - car.length() * 0.5) - QueueGap;
+    }
+}
+
+// Stops the lanes from first to last, inclusive: their cars queue up before the line, a z on the road
+halt :: method (traffic: *Traffic, first: int, last: int, line: f32, duration: f32) {
+    for lane in math.max(first, 0)...math.min(last, LaneCount - 1) {
+        traffic.lanes[lane].haltLeft = duration;
+        traffic.lanes[lane].haltLine = line;
+    }
+}
+
+// Every car on the road drives slower for a while
+warpTime :: method (traffic: *Traffic, slow: f32, duration: f32) {
+    traffic.warpLeft = duration;
+    traffic.warpSlow = slow;
+}
+
+isWarped :: method (traffic: *Traffic) -> bool {
+    return traffic.warpLeft > 0;
 }
 
 // Freezes the cars within the radius of a point

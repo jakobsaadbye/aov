@@ -1,102 +1,111 @@
-namespace aov.sound;
+namespace aov;
 
 import fmt;
 import math;
 import random;
 use raylib;
 
-// The sounds and the music of the game, by name:
+// The sounds and the music of the game, played by name through a SoundPlayer:
 //
-//     sound.play("car.horn");                      // data/sounds/car/horn.wav, or one of horn_1.wav, horn_2.wav, ...
-//     sound.playAt("hero.step", position);         // quieter the further it is from the listener, and panned
-//     sound.playMusic("theme");                    // data/music/theme.ogg, streamed and looped
+//     sounds.play("hero.crossed");                 // data/sounds/hero/crossed.wav, or one of crossed_1.wav, ...
+//     sounds.playAt("ability.blink", position);    // quieter the further it is from the listener, and panned
+//     sounds.playMusic("theme", 0.5);              // data/music/theme.ogg, streamed and looped
 //
 // Every .wav, .ogg and .mp3 in data/sounds/<group>/ is a sound named "<group>.<name>": a new sound is a file dropped in
 // there, without changing the game. Files that end in _<number> are variants of the same sound, and one is picked at
-// random each time. Before load(), or without an audio device, e.g in simulation_test.sd, nothing is played
+// random each time. A SoundPlayer that isn't loaded, e.g in simulation_test.sd, plays nothing
 
-VoicesPerSound :: 4;        // How many times one sound can play at the same time
+VoicesPerSound  :: 4;       // How many times one sound can play at the same time
 HearingDistance :: 70.0;    // How far away a sound played at a position can be heard
+PausedVolume    :: 0.12;    // Of the music while the game is paused. The sounds of the world stop
+DuckSpeed       :: 4.0;     // How fast the volume follows a pause, per second
 
 // One file of a sound, with copies of it that share its samples, so it can play over itself
-@private
-Variant :: struct {
+SoundVariant :: struct {
     voices: [VoicesPerSound]Sound;
     next:   int;
 }
 
-@private
-Entry :: struct {
-    variants: [..]Variant;
+SoundEntry :: struct {
+    variants: [..]SoundVariant;
 }
 
-@private
-Track :: struct {
-    music:     Music;
-    isPlaying: bool;
+MusicTrack :: struct {
+    music:       Music;
+    volume:      f32;               // As asked for, before muting and pausing
+    isPlaying:   bool;
+    isMuted:     bool;
+    pausesWithGame: bool;           // Stops while the game is paused, e.g the hum of the traffic, which has stopped too
 }
 
-@private isReady:  bool;
-@private bank:     Map<string, Entry>;
-@private tracks:   Map<string, Track>;
-@private missing:  Map<string, bool>;     // Names that were asked for and aren't there, warned about once
-@private listener: Vector3;
-@private rng:      random.Random;
+SoundPlayer :: struct {
+    isReady:  bool;
+    bank:     Map<string, SoundEntry>;
+    tracks:   Map<string, MusicTrack>;
+    missing:  Map<string, bool>;    // Names that were asked for and aren't there, warned about once
+    listener: Vector3;
+    rng:      random.Random;
+    isPaused: bool;
+    duck:     f32 = 1;              // 1 while playing, PausedVolume while paused, and in between while it fades
+}
 
 // Opens the audio device, and loads every sound and piece of music of the data folder
-load :: (dataFolder: string) {
+load :: method (player: *SoundPlayer, dataFolder: string) {
     InitAudioDevice();
     if !IsAudioDeviceReady() {
         fmt.print("WARNING: No audio device, so the game is silent");
         return;
     }
-    isReady = true;
-    rng = random.newRandom(1234);
+    player.isReady = true;
+    player.rng = random.newRandom(1234);
 
     soundsPath := fmt.sprint("%sounds", dataFolder);
     defer soundsPath.free();
-    eachFile(soundsPath, (path: string, key: string) {
-        cPath := path.toCString();
+    for file in soundFiles(soundsPath) {
+        cPath := file.path.toCString();
         defer cPath.free();
         source := LoadSound(cPath);
 
-        variant: Variant;
+        variant: SoundVariant;
         variant.voices[0] = source;
         for i in 1..VoicesPerSound { variant.voices[i] = LoadSoundAlias(source); }
 
-        if !bank.has(key) { bank[key] = Entry{}; }
-        entry := bank[key];
-        entry.variants.add(variant);
-        bank[key] = entry;
-    });
+        if !player.bank.has(file.key) { player.bank[file.key] = SoundEntry{}; }
+        player.bank[file.key].variants.add(variant);
+    }
 
     musicPath := fmt.sprint("%music", dataFolder);
     defer musicPath.free();
-    eachFile(musicPath, (path: string, key: string) {
-        cPath := path.toCString();
+    for file in soundFiles(musicPath) {
+        cPath := file.path.toCString();
         defer cPath.free();
         music := LoadMusicStream(cPath);
         music.looping = true;
         // The key of music is its name alone, e.g "theme" for music/theme.ogg
-        name := key.slice(key.indexOf(".") + 1).copy();
-        tracks[name] = Track{music: music};
-        key.free();
-    });
+        name := file.key.slice(file.key.indexOf(".") + 1);
+        player.tracks[name] = MusicTrack{music: music};
+    }
 
-    fmt.print("INFO: SOUND: % sounds and % pieces of music in %", bank.count, tracks.count, dataFolder);
+    fmt.print("INFO: SOUND: % sounds and % pieces of music in %", player.bank.count, player.tracks.count, dataFolder);
 }
 
-// Calls back with the path of every sound file in a folder and below, and its key: "<folder>.<name>", without the
-// number of a variant
 @private
-eachFile :: (folder: string, callback: (string, string)) {
+SoundFile :: struct {
+    path: string;
+    key:  string;           // "<folder>.<name>", without the number of a variant
+}
+
+// The sound files in a folder and below
+@private
+soundFiles :: (folder: string) -> [..]SoundFile {
     cFolder := folder.toCString();
     defer cFolder.free();
     files := LoadDirectoryFilesEx(cFolder, ".wav;.ogg;.mp3", true);
     defer UnloadDirectoryFiles(files);
 
+    result: [..]SoundFile;
     for i in 0..files.count {
-        path := files.paths[i].toString();
+        path := files.paths[i].toString().copy();
 
         file := GetFileNameWithoutExt(files.paths[i]).toString().copy();     // raylib's own buffer, used again below
         defer file.free();
@@ -109,8 +118,9 @@ eachFile :: (folder: string, callback: (string, string)) {
         directory := GetDirectoryPath(files.paths[i]);
         group := GetFileName(directory).toString();
 
-        callback(path, fmt.sprint("%.%", group, name));
+        result.add(SoundFile{path: path, key: fmt.sprint("%.%", group, name)});
     }
+    return result;
 }
 
 @private
@@ -120,80 +130,121 @@ isNumber :: (text: string) -> bool {
     return true;
 }
 
-// Plays a sound by its name, e.g "car.horn". pitchSpread changes the pitch a bit at random, e.g 0.05 for steps
-play :: (name: string, volume: f32 = 1, pitchSpread: f32 = 0) {
-    playPanned(name, volume, 0.5, pitchSpread);
+// Plays a sound by its name, e.g "hero.crossed". pitchSpread changes the pitch a bit at random, e.g 0.05
+play :: method (player: *SoundPlayer, name: string, volume: f32 = 1, pitchSpread: f32 = 0) {
+    player.playPanned(name, volume, 0.5, pitchSpread);
 }
 
 // Plays a sound at a place in the world: quieter the further it is from the listener, and to the left or right of it
-playAt :: (name: string, position: Vector3, volume: f32 = 1, pitchSpread: f32 = 0) {
-    distance := Vector3Distance(position, listener);
+playAt :: method (player: *SoundPlayer, name: string, position: Vector3, volume: f32 = 1, pitchSpread: f32 = 0) {
+    distance := Vector3Distance(position, player.listener);
     if distance > HearingDistance { return; }
     loudness := 1 - distance / HearingDistance;
-    pan := math.clamp(0.5 - (position.x - listener.x) / (HearingDistance * 2), 0.1, 0.9);   // raylib's pan: 1 is left
-    playPanned(name, volume * loudness * loudness, pan, pitchSpread);
+    pan := math.clamp(0.5 - (position.x - player.listener.x) / (HearingDistance * 2), 0.15, 0.85);   // raylib's pan: 1 is left
+    // Never quite silent near the edge, so what the hero does is always heard
+    player.playPanned(name, volume * (0.35 + 0.65 * loudness * loudness), pan, pitchSpread);
 }
 
 @private
-playPanned :: (name: string, volume: f32, pan: f32, pitchSpread: f32) {
-    if !isReady { return; }
-    if !bank.has(name) {
-        if !missing.has(name) {
+playPanned :: method (player: *SoundPlayer, name: string, volume: f32, pan: f32, pitchSpread: f32) {
+    if !player.isReady || player.isPaused { return; }
+    if !player.bank.has(name) {
+        if !player.missing.has(name) {
             fmt.print("WARNING: No sound named '%' in data/sounds", name);
-            missing[name.copy()] = true;
+            player.missing[name.copy()] = true;
         }
         return;
     }
 
-    entry := bank[name];
-    which := rng.between(0, entry.variants.count as int - 1);
+    entry := &player.bank[name];
+    which := player.rng.between(0, entry.variants.count as int - 1);
     variant := &entry.variants[which];
     voice := variant.voices[variant.next];
     variant.next = (variant.next + 1) % VoicesPerSound;
 
     SetSoundVolume(voice, volume);
     SetSoundPan(voice, pan);
-    SetSoundPitch(voice, 1 + rng.uniform(-pitchSpread, pitchSpread) as f32);
+    SetSoundPitch(voice, 1 + player.rng.uniform(-pitchSpread, pitchSpread) as f32);
     PlaySound(voice);
 }
 
 // Where the sounds played with playAt are heard from, e.g the point the camera looks at
-setListener :: (position: Vector3) {
-    listener = position;
+setListener :: method (player: *SoundPlayer, position: Vector3) {
+    player.listener = position;
 }
 
 // Starts a piece of music of data/music, looped, e.g "theme"
-playMusic :: (name: string, volume: f32 = 1) {
-    if !isReady || !tracks.has(name) { return; }
-    track := tracks[name];
-    SetMusicVolume(track.music, volume);
+playMusic :: method (player: *SoundPlayer, name: string, volume: f32 = 1, pausesWithGame := false) {
+    if !player.isReady || !player.tracks.has(name) { return; }
+    track := &player.tracks[name];
+    track.volume = volume;
+    track.pausesWithGame = pausesWithGame;
     if !track.isPlaying { PlayMusicStream(track.music); }
     track.isPlaying = true;
-    tracks[name] = track;
+    player.applyVolume(track);
 }
 
-setMusicVolume :: (name: string, volume: f32) {
-    if !isReady || !tracks.has(name) { return; }
-    SetMusicVolume(tracks[name].music, volume);
+// Turns a piece of music off and on again, e.g with the M key. It goes on where it was
+toggleMute :: method (player: *SoundPlayer, name: string) {
+    if !player.isReady || !player.tracks.has(name) { return; }
+    track := &player.tracks[name];
+    track.isMuted = !track.isMuted;
+    player.applyVolume(track);
 }
 
-// Once a frame: the music is streamed
-update :: () {
-    if !isReady { return; }
-    for _, track in tracks {
-        if track.isPlaying { UpdateMusicStream(track.music); }
+// While the game is paused, the sounds that play stop, the music is quiet, and the music of the world stops
+setPaused :: method (player: *SoundPlayer, isPaused: bool) {
+    if !player.isReady || player.isPaused == isPaused { return; }
+    player.isPaused = isPaused;
+
+    for _, entry in player.bank {
+        for variant in entry.variants {
+            for voice in variant.voices {
+                if isPaused { PauseSound(voice); } else { ResumeSound(voice); }
+            }
+        }
+    }
+    for *entry in player.tracks {
+        track := &entry.value;
+        if !track.pausesWithGame || !track.isPlaying { continue; }
+        if isPaused { PauseMusicStream(track.music); } else { ResumeMusicStream(track.music); }
     }
 }
 
-unload :: () {
-    if !isReady { return; }
-    for _, entry in bank {
+@private
+applyVolume :: method (player: *SoundPlayer, track: *MusicTrack) {
+    volume := track.volume * player.duck;
+    if track.isMuted { volume = 0; }
+    SetMusicVolume(track.music, volume);
+}
+
+// Once a frame: the music is streamed, and fades to and from the volume of a pause
+update :: method (player: *SoundPlayer, dt: f32) {
+    if !player.isReady { return; }
+
+    target: f32 = 1;
+    if player.isPaused { target = PausedVolume; }
+    step := DuckSpeed * dt;
+    if player.duck < target { player.duck = math.min(player.duck + step, target); }
+    else                    { player.duck = math.max(player.duck - step, target); }
+
+    for *entry in player.tracks {
+        track := &entry.value;
+        if !track.isPlaying { continue; }
+        player.applyVolume(track);
+        UpdateMusicStream(track.music);
+    }
+}
+
+unload :: method (player: *SoundPlayer) {
+    if !player.isReady { return; }
+    for _, entry in player.bank {
         for variant in entry.variants {
             for i in 1..VoicesPerSound { UnloadSoundAlias(variant.voices[i]); }
             UnloadSound(variant.voices[0]);
         }
     }
-    for _, track in tracks { UnloadMusicStream(track.music); }
+    for _, track in player.tracks { UnloadMusicStream(track.music); }
     CloseAudioDevice();
-    isReady = false;
+    player.isReady = false;
 }

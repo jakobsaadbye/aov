@@ -4,7 +4,6 @@
 //     saad run main.sd        from this folder
 
 import aov;
-import aov.sound;
 import math;
 import time;
 use raylib;
@@ -19,33 +18,25 @@ main :: () {
     assets := aov.loadAssets();
     defer assets.unload();
 
-    folder := aov.dataFolder();
-    sound.load(folder);
-    folder.free();
-    defer sound.unload();
-    MusicVolume   :: 0.45;
-    TrafficVolume :: 0.3;
-    sound.playMusic("theme", MusicVolume);
-    sound.playMusic("traffic", TrafficVolume);
-    musicOn := true;
-    HideCursor();       // The cursor of Warcraft is drawn instead
-
     game := aov.newGame(time.now().unixMilli() as u64);
     defer game.free();
+
+    folder := aov.dataFolder();
+    game.sounds.load(folder);
+    folder.free();
+    defer game.sounds.unload();
+    game.sounds.playMusic("theme", 0.5);
+    game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
+    HideCursor();       // The cursor of Warcraft is drawn instead
 
     while !WindowShouldClose() {
         // A long frame, e.g while the window is dragged, mustn't throw the hero through a car
         dt := math.min(GetFrameTime(), 0.05);
         game.update(dt);
 
-        if IsKeyPressed(.m) {
-            musicOn = !musicOn;
-            volume: f32 = 0;
-            if musicOn { volume = MusicVolume; }
-            sound.setMusicVolume("theme", volume);
-        }
-        sound.setListener(game.camera.focus);
-        sound.update();
+        if IsKeyPressed(.m) { game.sounds.toggleMute("theme"); }
+        game.sounds.setListener(game.camera.focus);
+        game.sounds.update(dt);
 
         BeginDrawing();
         ClearBackground(aov.SkyColor);

@@ -365,6 +365,124 @@ def make_frosty():
     m.write()
 
 
+def make_bjorn():
+    """A viking: broad, bearded, a horned helmet, a round shield on his back and an axe"""
+    m = Model("bjorn")
+    m.material("skin", (0.9, 0.7, 0.56))
+    m.material("tunic", (0.32, 0.42, 0.28))
+    m.material("fur", (0.48, 0.36, 0.24))
+    m.material("leather", (0.3, 0.19, 0.11))
+    m.material("beard", (0.85, 0.42, 0.12))
+    m.material("metal", (0.62, 0.63, 0.66))
+    m.material("horn", (0.93, 0.88, 0.74))
+    m.material("wood", (0.45, 0.27, 0.13))
+    m.material("shield", (0.7, 0.12, 0.1))      # Not "paint": with these names it hangs raylib's OBJ loader (a hash collision in tinyobj)
+    for side in (-1, 1):
+        m.box("leather", (side * 0.45, 0.22, 0.08), (0.62, 0.44, 0.9))                     # Boots
+        m.box("fur", (side * 0.45, 0.62, 0), (0.66, 0.36, 0.7))                          # Fur wraps
+        m.box("tunic", (side * 0.45, 1.15, 0), (0.6, 0.8, 0.6))                          # Legs
+        m.box("tunic", (side * 1.3, 2.5, 0), (0.62, 1.2, 0.66))                          # Arms
+        m.box("leather", (side * 1.3, 1.85, 0), (0.66, 0.3, 0.7))                        # Bracers
+        m.box("skin", (side * 1.3, 1.55, 0.05), (0.5, 0.4, 0.5))                         # Fists
+    m.frustum("tunic", (0, 1.5, 0), (1.9, 1.1), (2.3, 1.2), 1.7)                          # The chest, wider at the top
+    m.box("leather", (0, 1.65, 0), (2.0, 0.3, 1.2))                                       # Belt
+    m.box("metal", (0, 1.65, 0.62), (0.4, 0.34, 0.06))                                    # Buckle
+    m.box("fur", (0, 3.25, -0.05), (2.6, 0.45, 1.35))                                     # Fur over the shoulders
+    m.box("skin", (0, 3.85, 0.05), (0.95, 0.95, 0.9))                                     # Head
+    eyes(m, 3.95, 0.51, 0.22, 0.15)
+    m.frustum("beard", (0, 2.75, 0.45), (0.9, 0.35), (1.0, 0.4), 0.95)                   # Beard
+    m.box("beard", (0, 3.55, 0.5), (1.0, 0.18, 0.12))                                     # Moustache
+    for side in (-1, 1):
+        m.box("beard", (side * 0.22, 2.6, 0.62), (0.22, 0.4, 0.2))                        # Braids
+    m.sphere("metal", (0, 4.3, 0.05), 0.56, scale=(1, 0.75, 1), rings=6, segments=12)    # Helmet
+    m.box("metal", (0, 4.15, 0.52), (0.14, 0.5, 0.1))                                     # Nose guard
+    for side in (-1, 1):
+        m.cylinder("horn", (side * 0.82, 4.4, 0.05), 0.17, 0.6, axis="x", segments=6, radius_end=0.12 if side > 0 else 0.17)
+        m.cylinder("horn", (side * 1.12, 4.85, 0.05), 0.12, 0.6, axis="y", segments=6, radius_end=0.02)
+    m.cylinder("wood", (0, 2.5, -0.85), 1.05, 0.14, axis="z", segments=16)               # Shield on the back
+    m.cylinder("shield", (0, 2.5, -0.94), 0.75, 0.06, axis="z", segments=16)
+    m.cylinder("metal", (0, 2.5, -1.0), 0.25, 0.12, axis="z", segments=10)               # The boss
+    m.cylinder("wood", (1.3, 1.55, 0.6), 0.09, 1.9, axis="z", segments=6)                # The axe in his right hand
+    m.box("metal", (1.3, 1.85, 1.35), (0.12, 0.75, 0.55))
+    m.write()
+
+
+def make_hilda():
+    """A crossing guard: a long hi-vis coat, a white cap, and the stop sign on a stick"""
+    m = Model("hilda")
+    m.material("skin", SKIN)
+    m.material("coat", (0.98, 0.84, 0.08))
+    m.material("stripe", (0.85, 0.87, 0.9))
+    m.material("trousers", (0.15, 0.16, 0.2))
+    m.material("shoe", (0.1, 0.08, 0.07))
+    m.material("cap", (0.95, 0.95, 0.97))
+    m.material("peak", (0.1, 0.1, 0.12))
+    m.material("hair", (0.78, 0.78, 0.8))
+    m.material("glasses", (0.15, 0.15, 0.2))
+    m.material("pole", (0.75, 0.75, 0.78))
+    m.material("sign", (0.82, 0.1, 0.12))
+    m.material("rim", (0.97, 0.97, 0.97))
+    for side in (-1, 1):
+        m.box("shoe", (side * 0.3, 0.12, 0.12), (0.42, 0.24, 0.7))
+        m.box("trousers", (side * 0.3, 0.55, 0), (0.4, 0.7, 0.42))
+    m.frustum("coat", (0, 0.85, 0), (1.5, 1.0), (1.25, 0.75), 2.0)                        # Long coat
+    for y in (1.25, 2.15):
+        m.frustum("stripe", (0, y, 0), (1.47 - (y - 0.85) * 0.12, 1.02), (1.44 - (y - 0.85) * 0.12, 1.0), 0.16)
+    m.box("coat", (-0.82, 2.25, 0), (0.34, 1.0, 0.4))                                     # Left arm, down
+    m.box("skin", (-0.82, 1.65, 0), (0.28, 0.28, 0.3))
+    m.box("coat", (0.82, 2.75, 0.15), (0.34, 0.9, 0.4))                                   # Right arm, up with the sign
+    m.box("skin", (0.82, 3.3, 0.2), (0.28, 0.28, 0.3))
+    m.box("skin", (0, 3.0, 0), (0.3, 0.2, 0.3))                                           # Neck
+    m.box("skin", (0, 3.45, 0), (0.78, 0.78, 0.76))                                       # Head
+    m.box("glasses", (0, 3.5, 0.39), (0.66, 0.2, 0.04))
+    m.box("hair", (0, 3.4, -0.38), (0.82, 0.62, 0.12))
+    m.sphere("hair", (0, 3.55, -0.55), 0.24, rings=5, segments=8)                         # Bun
+    m.box("cap", (0, 3.92, -0.02), (0.86, 0.22, 0.84))
+    m.box("peak", (0, 3.84, 0.52), (0.8, 0.06, 0.3))
+    m.cylinder("pole", (0.82, 3.8, 0.2), 0.07, 2.6, axis="y", segments=6)                # The lollipop
+    m.cylinder("rim", (0.82, 5.3, 0.2), 0.78, 0.08, axis="z", segments=8)
+    m.cylinder("sign", (0.82, 5.3, 0.26), 0.66, 0.06, axis="z", segments=8)
+    m.cylinder("sign", (0.82, 5.3, 0.14), 0.66, 0.06, axis="z", segments=8)
+    m.write()
+
+
+def make_mira():
+    """A chronomancer: a starry robe and pointed hat, and a staff with an hourglass on top"""
+    m = Model("mira")
+    m.material("robe", (0.32, 0.18, 0.55))
+    m.material("trim", (0.9, 0.72, 0.25))
+    m.material("skin", (0.95, 0.8, 0.7))
+    m.material("hair", (0.88, 0.9, 0.95))
+    m.material("star", (1.0, 0.88, 0.4))
+    m.material("staff", (0.35, 0.22, 0.14))
+    m.material("glass", (0.55, 0.85, 1.0))
+    m.material("sand", (1.0, 0.78, 0.35))
+    m.frustum("robe", (0, 0, 0), (1.6, 1.4), (0.9, 0.7), 2.9)                              # The robe, wide at the hem
+    m.frustum("trim", (0, 0, 0), (1.66, 1.46), (1.58, 1.38), 0.18)
+    m.box("trim", (0, 1.55, 0.58), (0.18, 2.6, 0.06))                                     # The front of the robe
+    for k, (x, y) in enumerate(((-0.45, 0.8), (0.4, 1.4), (-0.3, 2.1), (0.5, 0.45))):
+        m.box("star", (x, y, 0.72 - y * 0.12), (0.18, 0.18, 0.05))
+    for side in (-1, 1):
+        m.frustum("robe", (side * 0.75, 1.75, 0), (0.55, 0.55), (0.35, 0.4), 1.1)         # Sleeves
+        m.box("skin", (side * 0.75, 1.65, 0.05), (0.25, 0.25, 0.25))
+    m.box("skin", (0, 3.25, 0), (0.7, 0.72, 0.7))                                         # Head
+    eyes(m, 3.3, 0.36, 0.17, 0.13)
+    m.box("hair", (0, 2.95, -0.32), (0.8, 1.0, 0.14))                                     # Long hair down her back
+    for side in (-1, 1):
+        m.box("hair", (side * 0.38, 3.05, 0.05), (0.1, 0.9, 0.6))
+    m.cylinder("robe", (0, 3.67, 0), 0.95, 0.08, axis="y", segments=16)                  # Hat brim
+    m.cylinder("robe", (0, 4.4, 0), 0.5, 1.4, axis="y", segments=12, radius_end=0.04)    # Pointed hat
+    m.cylinder("trim", (0, 3.78, 0), 0.51, 0.14, axis="y", segments=12)
+    m.box("star", (0, 4.25, 0.36), (0.2, 0.2, 0.05))
+    m.cylinder("staff", (-0.95, 2.2, 0.25), 0.07, 4.4, axis="y", segments=6)             # The staff, in her left hand
+    m.cylinder("trim", (-0.95, 4.42, 0.25), 0.3, 0.08, axis="y", segments=8)
+    m.cylinder("glass", (-0.95, 4.65, 0.25), 0.28, 0.4, axis="y", segments=8, radius_end=0.04)   # The hourglass
+    m.cylinder("glass", (-0.95, 5.05, 0.25), 0.04, 0.4, axis="y", segments=8, radius_end=0.28)
+    m.cylinder("sand", (-0.95, 4.6, 0.25), 0.2, 0.2, axis="y", segments=8, radius_end=0.1)
+    m.cylinder("trim", (-0.95, 5.3, 0.25), 0.3, 0.08, axis="y", segments=8)
+    m.write()
+
+
 #
 # The wall: a segment of a concrete barrier, standing on y = 0, WALL_SEGMENT long
 #
@@ -439,3 +557,6 @@ if __name__ == "__main__":
     make_ghosty()
     make_butcher()
     make_frosty()
+    make_bjorn()
+    make_hilda()
+    make_mira()

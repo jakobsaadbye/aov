@@ -139,12 +139,12 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     x := panel.x as int + 12;
     y := panel.y as int + 10;
 
-    // The portrait: the color of the hero, with eyes
+    // The portrait: the hero itself, in 3D. A render texture is upside down, so it is drawn with a negative height
+    assets.drawPortrait(hero.kind);
     portrait := Rectangle{x as f32, (y + 8) as f32, portraitSize as f32, portraitSize as f32};
-    DrawRectangleRec(portrait, info.color);
-    DrawRectangleLinesEx(portrait, 2, {255, 255, 255, 90});
-    DrawRectangle(x + 26, y + 44, 12, 14, {20, 20, 20, 255});
-    DrawRectangle(x + 58, y + 44, 12, 14, {20, 20, 20, 255});
+    size := PortraitResolution as f32;
+    DrawTexturePro(assets.portrait.texture, {0, 0, size, -size}, portrait, {0, 0}, 0, White);
+    DrawRectangleLinesEx(portrait, 2, {200, 180, 120, 160});
 
     left = x + portraitSize + 20;
     drawTitle(info.name, left, y - 2, 26, TextColor);
@@ -227,6 +227,7 @@ drawAbilityButton :: (game: *Game, assets: *Assets, ability: Ability, slot: int,
         case .sprint { isActive = hero.sprintLeft > 0; }
         case .fade   { isActive = hero.fadeLeft > 0; }
         case .hook   { isActive = hero.hook.hasValue(); }
+        case .leap   { isActive = hero.leap.hasValue(); }
         else         { }
     }
 
