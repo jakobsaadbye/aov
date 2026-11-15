@@ -1,6 +1,7 @@
 namespace aov;
 
 import fmt;
+import math;
 use raylib;
 
 // The textures, models and the shader of the game, from the data folder of the repository
@@ -20,6 +21,9 @@ Assets :: struct {
     vehicles: [CarKind.count]Model;
     vehicleBody: [CarKind.count]int;   // The material of each vehicle that gets the color of the car
     heroes:   [HeroKind.count]Model;
+    wall:     Model;                   // A segment of the wall, repeated along it
+
+    icons: Map<string, Texture>;       // The icon of each ability, by its name in heroes.sd
 
     cursor: Texture;
 }
@@ -39,7 +43,7 @@ loadAssets :: () -> Assets {
     assets.lit      = assets.lighting.newMaterial(White);
 
     // The field: grass, tiled
-    grass := loadTexture("textures/grass/Grass_02.png");
+    grass := loadTexture("textures/grass/grass.png");
     assets.ground = GenMeshPlane(MapHalfWidth * 2, MapHalfLength * 2, 1, 1);
     tileTexture(&assets.ground, 10, 8);
     assets.groundMaterial = assets.lighting.newMaterial(White);
@@ -48,14 +52,14 @@ loadAssets :: () -> Assets {
     // The land around it, darker, so the field stands out
     assets.outside = GenMeshPlane(900, 900, 1, 1);
     tileTexture(&assets.outside, 56, 56);
-    assets.outsideMaterial = assets.lighting.newMaterial({120, 140, 120, 255});
+    assets.outsideMaterial = assets.lighting.newMaterial({150, 160, 140, 255});
     assets.outsideMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = grass;
 
-    // The road: stones, about a lane to a tile
+    // The road: asphalt, a tile every 16
     assets.road = GenMeshPlane(RoadHalfWidth * 2, RoadEnd * 2, 1, 1);
-    tileTexture(&assets.road, RoadHalfWidth * 2 / 8, RoadEnd * 2 / 8);
+    tileTexture(&assets.road, RoadHalfWidth * 2 / 16, RoadEnd * 2 / 16);
     assets.roadMaterial = assets.lighting.newMaterial(White);
-    assets.roadMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = loadTexture("textures/road/Ground_03.png");
+    assets.roadMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = loadTexture("textures/road/asphalt.png");
 
     // The models, lit by the sun like the rest
     for kind in CarKind.values {
@@ -68,7 +72,15 @@ loadAssets :: () -> Assets {
         file := fmt.sprint("models/%.obj", HeroKind.names[kind]);
         assets.heroes[kind] = assets.lighting.loadModel(file);
         file.free();
+
+        for ability in kind.definition().abilities {
+            if assets.icons.has(ability.icon) { continue; }
+            iconFile := fmt.sprint("icons/%.png", ability.icon);
+            assets.icons[ability.icon] = loadTexture(iconFile);
+            iconFile.free();
+        }
     }
+    assets.wall = assets.lighting.loadModel("models/wall.obj");
 
     assets.cursor = loadTexture("textures/cursor/human.png");
 
@@ -89,6 +101,8 @@ unload :: method (assets: *Assets) {
 
     for model in assets.vehicles { UnloadModel(model); }
     for model in assets.heroes   { UnloadModel(model); }
+    UnloadModel(assets.wall);
+    for _, icon in assets.icons  { UnloadTexture(icon); }
 
     UnloadMesh(assets.cube);
     UnloadMesh(assets.ground);
@@ -103,6 +117,17 @@ drawBox :: method (assets: *Assets, center: Vector3, size: Vector3, color: Color
     assets.lit.maps[MaterialMapIndex.materialMapAlbedo].color = color;
     transform := MatrixScale(size.x, size.y, size.z) * MatrixTranslate(center.x, center.y, center.z);
     DrawMesh(assets.cube, assets.lit, transform);
+}
+
+// Draws a wall: its segment, repeated along it, and stretched a bit so a whole number of them fits
+drawWall :: method (assets: *Assets, wall: Rectangle) {
+    count := math.max(1, math.roundf(wall.height / WallSegmentLength) as int);
+    stretch := wall.height / (count as f32 * WallSegmentLength);
+    x := wall.x + wall.width * 0.5;
+    for i in 0..count {
+        z := wall.y + (i as f32 + 0.5) * WallSegmentLength * stretch;
+        DrawModelEx(assets.wall, {x, 0, z}, {0, 1, 0}, 0, {1, 1, stretch}, White);
+    }
 }
 
 // Draws a vehicle with the color of the car on its body

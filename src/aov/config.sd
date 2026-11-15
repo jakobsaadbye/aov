@@ -24,9 +24,11 @@ WallHeight      :: 4.0;
 OpeningLength   :: 18.0;
 OpeningInset    :: 10.0;    // From the end of the field to the opening
 
-// Where heroes start, and where they have to get to
+// Where heroes start on the left side, and how far past the middle they have to get. Mirrored on the right side
 SpawnX    :: -MapHalfWidth + 8;
 GoalX     :: RoadHalfWidth + WallWidth + 4;   // Past the wall on the far side
+
+WallSegmentLength :: 5.0;     // The length of data/models/wall.obj, which is repeated along each wall
 
 // Traffic. The sizes of the vehicles are those of their models in data/models (see tools/make_models.py)
 MaxCars         :: 160;

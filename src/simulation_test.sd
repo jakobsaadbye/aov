@@ -83,7 +83,7 @@ testTraffic :: () {
     for 0..3000 {
         before: [aov.MaxCars]f32;
         for car, i in traffic.cars { before[i] = car.z; }
-        traffic.update(Dt, &rng);
+        traffic.update(Dt, &rng, null);
         for car, i in traffic.cars {
             if !car.isActive { continue; }
             assert(car.speed > 0);
@@ -99,7 +99,7 @@ testTraffic :: () {
     clear.lanes[0].spawnTimer = 100000;
     clear.cars[0] = aov.Car{isActive: true, lane: 0, z: 0, speed: 5};
     clear.cars[1] = aov.Car{isActive: true, lane: 0, z: -10, speed: 20};
-    for 0..60 { clear.update(Dt, &rng); }
+    for 0..60 { clear.update(Dt, &rng, null); }
     assert(clear.cars[1].z > clear.cars[0].z);
     assert(near(clear.cars[0].z, 5, 0.01) && near(clear.cars[1].z, 10, 0.01));
 
@@ -137,14 +137,14 @@ testFrozenCars :: () {
     positions: [aov.MaxCars]f32;
     for car, i in traffic.cars { positions[i] = car.z; }
 
-    for 0..(4 * 60) { traffic.update(Dt, &rng); }
+    for 0..(4 * 60) { traffic.update(Dt, &rng, null); }
     for car, i in traffic.cars {
         if car.isActive && car.frozenLeft > 0 { assert(car.z == positions[i]); }
     }
     assert(traffic.cars.countWhere(car => car.isActive && car.frozenLeft > 0) == frozen);
 
     // And drive on when they thaw
-    for 0..(10 * 60) { traffic.update(Dt, &rng); }
+    for 0..(10 * 60) { traffic.update(Dt, &rng, null); }
     assert(traffic.cars.countWhere(car => car.isActive && car.frozenLeft > 0) == 0);
 }
 
@@ -163,11 +163,11 @@ testRunOver :: () {
     assert(game.phase.kind == .runOver);
     assert(game.stats.deaths == 1 && game.stats.deathsBy[kind] == 1);
 
-    // After a moment the next hero comes, never the same one
+    // After a moment the next hero comes, never the same one, on the same side
     for 0..((aov.RespawnDelay + 0.1) * 60) as int { game.simulate(Dt); }
     assert(game.phase.kind == .playing);
     assert(game.hero.kind != kind);
-    assert(near(game.hero.position.x, aov.SpawnX));
+    assert(game.startSide == .left && near(game.hero.position.x, aov.SpawnX));
 }
 
 testCrossing :: () {
@@ -188,6 +188,16 @@ testCrossing :: () {
     for 0..(2 * 60) { game.simulate(Dt); }
     assert(game.phase.kind == .playing && game.stats.level == 1);
     assert(game.hero.kind != .allan);
+
+    // The next hero starts on the far side, and crosses back, in at the opening there and out at the first one
+    assert(game.startSide == .right && near(game.hero.position.x, -aov.SpawnX));
+    walkTo(game, game.world.exit.at() + Vector3{4, 0, 0});
+    walkTo(game, game.world.exit.at() - Vector3{4, 0, 0});
+    walkTo(game, game.world.entrance.at() + Vector3{4, 0, 0});
+    walkTo(game, game.world.entrance.at() - Vector3{6, 0, 0});
+    assert(game.phase.kind == .crossed && game.stats.crossings == 2);
+    for 0..(2 * 60) { game.simulate(Dt); }
+    assert(game.startSide == .left && near(game.hero.position.x, aov.SpawnX));
 }
 
 testAbilities :: () {
@@ -195,52 +205,89 @@ testAbilities :: () {
     defer game.free();
     clearRoad(game);
 
-    // Allan's sprint makes him faster, then it runs out and has to cool down
+    // Every hero has abilities, no more than there are keys, each with an icon
+    for kind in aov.HeroKind.values {
+        abilities := kind.definition().abilities;
+        assert(abilities.count >= 1 && abilities.count <= aov.MaxAbilities);
+        for ability in abilities {
+            assert(ability.icon.len > 0 && ability.name.len > 0);
+            assert(ability.isPassive() == (ability.cooldown == 0));
+        }
+    }
+
+    // Allan: Q sprints, then cools down. His passive makes him faster all the time
     game.spawnHero(.allan);
     normal := game.hero.speed();
-    game.useAbility();
+    assert(near(normal, aov.HeroKind.allan.definition().moveSpeed * 1.1));
+    game.useAbility(0);
     assert(game.hero.speed() > normal * 2);
-    assert(!game.hero.abilityReady());
+    assert(!game.hero.abilityReady(0) && game.hero.abilityReady(1));
     for 0..(7 * 60) { game.simulate(Dt); }
-    assert(near(game.hero.speed(), normal) && game.hero.abilityReady());
+    assert(near(game.hero.speed(), normal) && game.hero.abilityReady(0));
+
+    // W blinks to the cursor, no further than its range
+    game.hero.position = Vector3{-70, 0, 0};
+    game.mouseGround = Vector3{-70, 0, 40};
+    game.useAbility(1);
+    assert(game.hero.position.distance(Vector3{-70, 0, 12}) < 0.01);
+    assert(!game.hero.abilityReady(1));
+
+    // A passive can't be cast, and slots past the last ability do nothing
+    game.useAbility(2);
+    game.useAbility(5);
+    assert(game.hero.cooldowns[2] == 0 && game.hero.cooldowns[5] == 0);
 
     // The butcher hooks a point and is pulled to it, no further than the hook reaches
     game.spawnHero(.butcher);
-    start := Vector3{-70, 0, 0};
-    game.hero.position = start;
+    game.hero.position = Vector3{-70, 0, 0};
     game.mouseGround = Vector3{-55, 0, 10};
-    game.useAbility();
+    game.useAbility(0);
     assert(game.hero.hook.hasValue());
     for 0..60 { game.simulate(Dt); }
     assert(!game.hero.hook.hasValue());
     assert(game.hero.position.distance(Vector3{-55, 0, 10}) < 0.5);
 
     // Aimed past its reach, it goes as far as it reaches
-    game.hero.cooldownLeft = 0;
+    game.hero.cooldowns[0] = 0;
     game.mouseGround = Vector3{-55, 0, -190};
-    game.useAbility();
+    game.useAbility(0);
     for 0..120 { game.simulate(Dt); }
     assert(game.hero.position.distance(Vector3{-55, 0, 10 - 26}) < 0.5);
 
     // A wall in the way stops the pull at the wall
-    game.hero.cooldownLeft = 0;
+    game.hero.cooldowns[0] = 0;
     game.mouseGround = Vector3{0, 0, -16};
-    game.useAbility();
+    game.useAbility(0);
     for 0..120 { game.simulate(Dt); }
     assert(!game.hero.hook.hasValue());
     assert(near(game.hero.position.x, -aov.RoadHalfWidth - aov.WallWidth - game.hero.info().hitRadius, 0.05));
 
-    // Frosty freezes the cars around him
+    // Frosty freezes the cars around him, and his chill aura slows the cars near him
     game.spawnHero(.frosty);
     game.traffic = aov.newTraffic(0, &game.rng);
     game.hero.position = Vector3{-aov.RoadHalfWidth + 2, 0, 0};
-    game.useAbility();
+    game.useAbility(0);
     assert(game.traffic.cars.some(car => car.isActive && car.frozenLeft > 0));
 
-    // Ghosty's phase walk is passive: Q does nothing
+    slowed: aov.Traffic;
+    slowed.lanes[0].spawnTimer = 100000;
+    slowed.cars[0] = aov.Car{isActive: true, lane: 0, z: 0, speed: 10};
+    slowed.cars[1] = aov.Car{isActive: true, lane: 0, z: -40, speed: 10};
+    zone := aov.SlowZone{{aov.laneCenter(0), 0}, 12, 0.4};
+    slowed.update(1, &game.rng, zone);
+    assert(near(slowed.cars[0].z, 6) && near(slowed.cars[1].z, -30));
+
+    // Ghosty: Q fades, and the cars drive through him while he is faded
     game.spawnHero(.ghosty);
-    game.useAbility();
-    assert(game.hero.cooldownLeft == 0);
+    game.traffic = aov.newTraffic(5, &game.rng);
+    game.useAbility(0);
+    assert(game.hero.isFaded() && !game.hero.abilityReady(0));
+    for 0..60 {
+        game.hero.position = Vector3{aov.laneCenter(4), 0, 0};
+        game.simulate(Dt);
+        if !game.hero.isFaded() { break; }
+        assert(game.phase.kind == .playing);
+    }
 }
 
 //
