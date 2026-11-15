@@ -501,6 +501,26 @@ def ability_sounds():
     place(out, mix(crack(0.02, 3000), thud(150, 90, 0.15, 1.2) * 0.5), 0.98)
     save_sound("ability", "rewind", out, level=0.65, room=1.0, wet=0.3)
 
+    # Shield bash: a heavy wooden thump with iron in it, and a grunt
+    length = 1.2
+    wood = modal([180, 410, 690, 1130], [18, 24, 32, 45], [1, 0.6, 0.35, 0.2], 0.4)
+    out = mix(thud(95, 45, 0.5, 3.0) * 1.2, wood * 0.6, metal(260, 0.6, ring=0.4) * env(0.6, 0.0005, 5) * 0.35, crack(0.03, 900) * 1.4)
+    place(out, saturate(voice(glide(180, 120, 0.22), 0.22, "uh", breath=0.5) * env(0.22, 0.01, 2.5) * 2, 2) * 0.35, 0.0)
+    save_sound("ability", "shield_bash", out, level=0.85, room=1.0)
+
+    # Time lock: a clock that stops with a clunk, inside a deep shimmer, and chains
+    length = 2.2
+    out = np.zeros(n_of(length))
+    tick = lambda f: mix(bandpass(noise(0.03), f * 0.8, f * 1.2) * env(0.03, 0.0005, 7), modal([f, f * 2.7], [60, 90], [0.5, 0.2], 0.05))
+    for k in range(4):
+        place(out, tick(1700 if k % 2 == 0 else 1400) * 0.35, k * 0.09)
+    place(out, mix(thud(70, 50, 0.6, 1.5) * 0.8, metal(130, 1.2, ring=1.5) * env(1.2, 0.001, 3) * 0.4), 0.36)
+    hum = sum(osc(glide(f, f * 0.98, 1.6), "saw") for f in (110, 110.6, 165))
+    place(out, lowpass(hum, 900) * adsr(1.6, 0.2, 0.8, 0.8) * 0.12, 0.36)
+    for k in range(6):
+        place(out, metal(rng.uniform(450, 700), 0.08, ring=0.15) * env(0.08, 0.0003, 6) * 0.3, 0.4 + k * 0.05)
+    save_sound("ability", "time_lock", out, level=0.75, room=2.0, wet=0.35)
+
 
 def ui_sounds():
     # Not ready: a short, muted knock of wood, low enough not to annoy

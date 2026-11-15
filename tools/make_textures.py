@@ -300,6 +300,37 @@ def icon_rewind():
     finish(image, "rewind")
 
 
+def icon_shield_bash():
+    image, draw = icon_base((170, 110, 60), (70, 35, 15))
+    for i, r in enumerate((110, 90)):                                                       # The impact
+        draw.arc([150 - r, 128 - r, 150 + r, 128 + r], start=-50, end=50, fill=(255, 240, 180), width=10 - i * 3)
+    draw.ellipse([30, 50, 186, 206], fill=(120, 70, 35), outline=(25, 20, 15), width=8)     # The shield, side on
+    draw.ellipse([60, 80, 156, 176], fill=(170, 30, 25), outline=(25, 20, 15), width=5)
+    draw.ellipse([92, 112, 124, 144], fill=(210, 210, 215), outline=(30, 30, 35), width=4)
+    for k in range(3):                                                                      # Stars of the stun
+        x, y = 200 + k * 14 - 14, 50 + k * 70
+        poly(draw, [(x, y - 14), (x + 5, y - 4), (x + 15, y - 4), (x + 7, y + 3), (x + 10, y + 14), (x, y + 7), (x - 10, y + 14), (x - 7, y + 3), (x - 15, y - 4), (x - 5, y - 4)], (255, 230, 90), width=2)
+    finish(image, "shield_bash")
+
+
+def icon_time_lock():
+    image, draw = icon_base((90, 60, 160), (20, 10, 50))
+    c = S / 2
+    draw.ellipse([c - 92, c - 92, c + 92, c + 92], fill=(235, 225, 250), outline=(30, 20, 40), width=8)   # A clock face
+    for k in range(12):
+        a = math.pi / 6 * k
+        draw.line([(c + math.cos(a) * 70, c + math.sin(a) * 70), (c + math.cos(a) * 84, c + math.sin(a) * 84)], fill=(60, 40, 90), width=6)
+    draw.line([(c, c), (c, c - 60)], fill=(30, 20, 40), width=10)
+    draw.line([(c, c), (c + 44, c + 18)], fill=(30, 20, 40), width=10)
+    for x0 in (30, 200):                                                                    # Chains across it
+        for k in range(4):
+            y = 40 + k * 50
+            draw.ellipse([x0, y, x0 + 28, y + 40], outline=(200, 200, 210), width=7)
+    draw.rectangle([96, 180, 160, 236], fill=(200, 170, 70), outline=(30, 20, 10), width=5)  # A padlock
+    draw.arc([104, 150, 152, 206], start=180, end=360, fill=(200, 200, 210), width=9)
+    finish(image, "time_lock")
+
+
 if __name__ == "__main__":
     make_grass()
     make_asphalt()
@@ -318,3 +349,5 @@ if __name__ == "__main__":
     icon_stop_sign()
     icon_time_warp()
     icon_rewind()
+    icon_shield_bash()
+    icon_time_lock()
