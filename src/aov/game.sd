@@ -24,6 +24,7 @@ Phase :: union {
 Stats :: struct {
     crossings: int;
     deaths:    int;
+    kills:     int;                         // Enemies a car got soon after this player hooked, bashed or locked them
     bestTime:  ?f32;                        // The fastest crossing, in seconds
     deathsBy:  [HeroKind.count]int;         // How many of each hero the road has taken
 }
@@ -114,6 +115,8 @@ Game :: struct {
     recording:   Recording;                 // What was played so far (recording.sd)
     replay:      *Replay;                   // The recording that is played back, or null
     isStepping:  bool;                      // In a frame of advance, which is recorded or replayed
+    difficulty:  Difficulty;                // Of the bots
+    nextDifficulty: ?Difficulty;            // Chosen while paused, for the next game
     restartPending:  bool;                  // Keys of this frame, carried out by advance
     nextHeroPending: bool;
     stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
@@ -131,18 +134,31 @@ StopSign :: struct {
     line:     f32;                          // Where the cars stop
 }
 
-// A game with you and a number of bots. Without you (humans: 0), the bots play on their own, e.g in bot_arena.sd, and
-// the camera follows the first of them
-newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1) -> *Game {
+// A game with you and a number of bots of a difficulty. Without you (humans: 0), the bots play on their own, e.g in
+// bot_arena.sd, and the camera follows the first of them
+newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
+    rng := random.newRandom(seed ^ 0x5bd1e995);
+    personalities: [..]BotPersonality;
+    defer personalities.free();
+    for 0..bots { personalities.add(personalityFor(difficulty, &rng)); }
+    game := newGameWith(seed, personalities, humans);
+    game.recording.difficulty = difficulty;
+    game.difficulty = difficulty;
+    return game;
+}
+
+// A game with bots of these personalities, e.g of genomes that are being trained (bot_train.sd)
+newGameWith :: (seed: u64, personalities: []BotPersonality, humans: int = 1) -> *Game {
     game := new(Game);
     game.rng = random.newRandom(seed);
     game.world = newWorld();
 
-    game.recording = Recording{seed: seed, bots: bots, humans: humans};
+    game.recording = Recording{seed: seed, bots: personalities.count as int, humans: humans};
     if humans > 0 { game.addPlayer("You", null); }
-    for i in 0..math.min(bots, MaxPlayers - game.players.count as int) {
+    for personality, i in personalities {
+        if game.players.count >= MaxPlayers { break; }
         name := BotNames[i % BotNames.count];
-        game.addPlayer(name, newBot(seed + 101 * (i as u64 + 1), BotPersonalities[i % BotPersonalities.count]));
+        game.addPlayer(name, newBot(seed + 101 * (i as u64 + 1), personality));
     }
     game.restart();
     return game;
@@ -226,6 +242,16 @@ handleKeys :: method (game: *Game) {
     if IsKeyPressed(.f2) { game.debug.hitboxes = !game.debug.hitboxes; }
     if IsKeyPressed(.f3) { game.debug.overlay = !game.debug.overlay; }
     if IsKeyPressed(.f8) { game.saveRecordingNow(); }
+    if game.isPaused && game.replay == null {
+        // The difficulty of the bots, for the next game (F5)
+        step := 0;
+        if IsKeyPressed(.left)  { step = -1; }
+        if IsKeyPressed(.right) { step = 1; }
+        if step != 0 {
+            current := (game.nextDifficulty ?? game.difficulty) as int;
+            game.nextDifficulty = ((current + step + Difficulty.count) % Difficulty.count) as Difficulty;
+        }
+    }
     game.updateInspector();
     if game.replay != null { return; }      // A replay plays what was recorded
 
@@ -250,16 +276,23 @@ step :: method (game: *Game, dt: f32) {
     nextHero := game.nextHeroPending;
     game.restartPending = false;
     game.nextHeroPending = false;
+    difficulty: ?Difficulty = null;
+    if restart && game.nextDifficulty.hasValue() && game.nextDifficulty.value() != game.difficulty {
+        difficulty = game.nextDifficulty;
+    }
     if game.replay != null {
         if game.replay.isFinished() { return; }
         frame := game.replay.recording.frames[game.replay.frame];
         step = frame.dt;
         restart = frame.restart;
         nextHero = frame.nextHero;
+        difficulty = frame.difficulty;
     } else {
         game.recordFrame(step, restart, nextHero);
+        game.recording.frames[game.recording.frames.count - 1].difficulty = difficulty;
     }
 
+    if difficulty.hasValue() { game.setDifficulty(difficulty.value()); }
     if restart {
         game.restart();
         game.showBanner(White, "New game");
@@ -568,6 +601,8 @@ pullHook :: method (game: *Game, index: int, dt: f32) {
             hero.hook = hook;
             victim := &game.players[caught].hero;
             forward := (hero.ground() - victim.ground()).normalize();
+            victim.harmedBy = index;
+            victim.harmedAt = game.time;
             victim.displacement = Displacement{to: (hero.ground() - forward * (hero.info().hitRadius + victim.info().hitRadius + 0.6)).at(), speed: pullSpeed};
             victim.stop();
             victim.hook = null;
@@ -715,6 +750,8 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             if away.lengthSqr() < 0.01 { away = Vector2{player.startSide.opposite().sign(), 0}; }
             away = away.normalize();
             hero.facing = math.atan2f(away.x, away.y);
+            enemy.harmedBy = index;
+            enemy.harmedAt = game.time;
             enemy.stunLeft = math.max(enemy.stunLeft, v.stun);
             enemy.displacement = Displacement{to: (enemy.ground() + away * v.knockback).at(), speed: KnockbackSpeed};
             enemy.stop();
@@ -728,6 +765,8 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             victim := game.enemyNear(index, aim, TargetSnapRadius);
             if victim < 0 { return; }
             enemy := &game.players[victim].hero;
+            enemy.harmedBy = index;
+            enemy.harmedAt = game.time;
             enemy.stunLeft = math.max(enemy.stunLeft, v.duration);
             enemy.lockedLeft = v.duration;
             enemy.stop();
@@ -773,6 +812,13 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
     player.stats.deaths += 1;
     player.stats.deathsBy[hero.kind] += 1;
 
+    // An enemy who hooked, bashed or locked it just before gets the kill
+    killer := -1;
+    if hero.harmedBy >= 0 && hero.harmedBy != index && game.time - hero.harmedAt < KillCredit {
+        killer = hero.harmedBy;
+        game.players[killer].stats.kills += 1;
+    }
+
     // The car throws the bits along the road
     push := Vector3{0, 0, car.speed * 0.6};
     game.effects.burst(hero.position + Vector3{0, info.height * 0.5, 0}, ColorAlpha(info.color, 1), 70, push, &game.rng);
@@ -785,7 +831,10 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
         case .van   => "a van";
         case .truck => "a truck";
     };
-    if index == game.local {
+    if killer >= 0 {
+        game.announce(index, {255, 90, 80, 255}, "% (%) was run over by %, thanks to %", info.name, player.name, vehicle, game.players[killer].name);
+        if killer == game.local && index != game.local { game.showBanner({255, 210, 90, 255}, "You got % run over!", player.name); }
+    } else if index == game.local {
         game.showBanner({255, 90, 80, 255}, "% was run over by %!", info.name, vehicle);
     } else {
         game.announce(index, {255, 90, 80, 255}, "% (%) was run over by %", info.name, player.name, vehicle);
@@ -820,6 +869,20 @@ heroCrossed :: method (game: *Game, index: int) {
     player.phase = Phase{crossed: {timeLeft: 1.6}};
 }
 
+// Gives the bots the personalities of a difficulty, e.g for a new game
+setDifficulty :: method (game: *Game, difficulty: Difficulty) {
+    game.difficulty = difficulty;
+    game.nextDifficulty = null;
+    rng := random.newRandom(game.recording.seed ^ 0x5bd1e995 + game.recording.frames.count as u64);
+    for *player in game.players {
+        if !player.isBot() { continue; }
+        bot, isBot := player.brain as *Bot;
+        if !isBot { continue; }
+        bot.personality = personalityFor(difficulty, &rng);
+        bot.reset();
+    }
+}
+
 // A random hero, never the same as the one before
 spawnNextHero :: method (game: *Game, index: int) {
     next := game.rng.between(0, HeroKind.count as int - 2);
@@ -842,4 +905,5 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
 }
 
 SpawnSpacing :: 7.0;
+KillCredit   :: 3.0;    // Seconds after a hook, bash or lock that a car getting the enemy counts as a kill
 

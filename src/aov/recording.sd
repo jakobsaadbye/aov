@@ -35,7 +35,9 @@ RecordedFrame :: struct {
     @json.Field(omitEmpty: true)
     restart:    bool;           // F5: a new game, before this frame
     @json.Field(omitEmpty: true)
-    nextHero:   bool;           // F6: the next hero for the player at the keyboard, before this frame
+    nextHero:   bool;
+    @json.Field(omitEmpty: true)
+    difficulty: ?Difficulty;    // Set before this frame, with a restart           // F6: the next hero for the player at the keyboard, before this frame
 }
 
 Checksum :: struct {
@@ -48,6 +50,7 @@ Recording :: struct {
     seed:      u64;
     bots:      int;
     humans:    int;
+    difficulty: Difficulty = .normal;
     firstHero: int = -1;        // The hero the player at the keyboard started with (--hero), or -1 for a random one
     frames:    [..]RecordedFrame;
     checksums: [..]Checksum;
@@ -163,7 +166,7 @@ loadRecording :: (path: string) -> Recording, error {
 
 // A new game that plays a recording back
 newReplay :: (recording: Recording) -> *Game {
-    game := newGame(recording.seed, bots: recording.bots, humans: recording.humans);
+    game := newGame(recording.seed, bots: recording.bots, humans: recording.humans, difficulty: recording.difficulty);
     if recording.firstHero >= 0 && recording.humans > 0 {
         game.spawnHero(game.local, recording.firstHero as HeroKind);
     }

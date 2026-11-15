@@ -14,6 +14,7 @@ use raylib;
 // What can be given on the command line. Mostly for trying things out and testing, e.g by an agent that can't play:
 //
 //     --bots N            How many bots (0 to 5, 3 when not given)
+//     --difficulty D      How good the bots are: easy, normal (when not given), hard or expert
 //     --spectate          No hero of your own: the camera follows the first bot
 //     --seed N            The same seed gives the same game
 //     --hero NAME         Your first hero, e.g --hero butcher
@@ -26,6 +27,7 @@ use raylib;
 //     --replay FILE       Play a recording back (recording.sd). The other options of the game are the recording's
 Options :: struct {
     bots:       int = aov.DefaultBots;
+    difficulty: aov.Difficulty = .normal;
     spectate:   bool;
     seed:       ?u64;
     hero:       ?aov.HeroKind;
@@ -54,6 +56,12 @@ readOptions :: () -> Options {
         switch arg {
             case "--bots"     { options.bots = (next.toInt() ?? aov.DefaultBots) as int; i += 1; }
             case "--spectate" { options.spectate = true; }
+            case "--difficulty" {
+                index := aov.Difficulty.names.indexOf(next);
+                if index >= 0 { options.difficulty = index as aov.Difficulty; }
+                else          { fmt.print("WARNING: No difficulty named '%': easy, normal, hard or expert", next); }
+                i += 1;
+            }
             case "--seed"     { options.seed = (next.toInt() ?? 1) as u64; i += 1; }
             case "--inspect"  { options.inspect = (next.toInt() ?? 1) as int; i += 1; }
             case "--speed"    { options.speed = (next.toFloat() ?? 1) as f32; i += 1; }
@@ -104,7 +112,7 @@ main :: () {
         seed := options.seed ?? time.now().unixMilli() as u64;
         humans := 1;
         if options.spectate { humans = 0; }
-        game = aov.newGame(seed, bots: options.bots, humans: humans);
+        game = aov.newGame(seed, bots: options.bots, humans: humans, difficulty: options.difficulty);
         if options.hero.hasValue() && !options.spectate {
             game.spawnHero(game.local, options.hero.value());
             game.recording.firstHero = options.hero.value() as int;

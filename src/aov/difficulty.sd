@@ -1,0 +1,93 @@
+namespace aov;
+
+// How good the bots are. Every level starts from the best genome training found (bot_train.sd), in
+// data/bots/genomes.json, or the hand tuned genes when there is none. Expert plays it as it is; the others play it with
+// a handicap: slower to react, planning less often, later to step away from a car, less keen on abilities and on enemies.
+// The handicaps are numbers, so a level can be tuned, and bot_arena.sd --difficulty shows how each level does.
+
+import fmt;
+import json;
+import os;
+import random;
+
+Difficulty :: enum {
+    easy,
+    normal,
+    hard,
+    expert,
+}
+
+// What a level takes away from the best genome
+Handicap :: struct {
+    reactionDelay: f32;     // Added to the reaction time
+    planSlower:    f32;     // Times the time between plans
+    dodgeLater:    f32;     // Times the time before a car that it dodges
+    castBarRaise:  f32;     // Added to the bar of the abilities
+    aggression:    f32;     // Times the aggression
+    recklessness:  f32;     // Taken from the time it keeps before a car
+}
+
+handicap :: method (difficulty: Difficulty) -> Handicap {
+    return switch difficulty {
+        case .easy   => Handicap{reactionDelay: 0.35, planSlower: 2.2, dodgeLater: 0.45, castBarRaise: 0.3, aggression: 0.3, recklessness: 0.2};
+        case .normal => Handicap{reactionDelay: 0.18, planSlower: 1.6, dodgeLater: 0.7, castBarRaise: 0.15, aggression: 0.6, recklessness: 0.1};
+        case .hard   => Handicap{reactionDelay: 0.06, planSlower: 1.2, dodgeLater: 0.9, castBarRaise: 0.05, aggression: 0.85};
+        case .expert => Handicap{planSlower: 1, dodgeLater: 1, aggression: 1};
+    };
+}
+
+apply :: method (handicap: Handicap, genome: Genome) -> Genome {
+    result := genome;
+    result.set(.reactionTime, genome.get(.reactionTime) + handicap.reactionDelay);
+    result.set(.replanEvery, genome.get(.replanEvery) * handicap.planSlower);
+    result.set(.dodgeTime, genome.get(.dodgeTime) * handicap.dodgeLater);
+    result.set(.castBar, genome.get(.castBar) + handicap.castBarRaise);
+    result.set(.aggression, genome.get(.aggression) * handicap.aggression);
+    result.set(.leadTime, genome.get(.leadTime) - handicap.recklessness);
+    return result;
+}
+
+// The file of the trained genomes: the best one, and how it was found
+TrainedGenomes :: struct {
+    best:        GenomeJson;
+    fitness:     f32;
+    generations: int;
+    trained:     string;        // When, e.g 2026-11-16 10:30
+}
+
+TrainedGenomesFile :: "bots/genomes.json";
+
+@private
+bestGenome: ?Genome;
+
+// The best genome there is: the trained one, read once, or the hand tuned genes
+trainedGenome :: () -> Genome {
+    if bestGenome.hasValue() { return bestGenome.value(); }
+    genome := defaultGenome();
+    folder := dataFolder();
+    path := fmt.sprint("%%", folder, TrainedGenomesFile);
+    folder.free();
+    defer path.free();
+    if os.fileExists(path) {
+        text, err := os.readFile(path);
+        if err == null {
+            trained, decodeErr := json.decode<TrainedGenomes>(text);
+            if decodeErr == null { genome = fromJson(trained.best); }
+            else { fmt.print("WARNING: % isn't a file of genomes: %", path, decodeErr.message); }
+        }
+    }
+    bestGenome = genome;
+    return genome;
+}
+
+// Uses this genome as the best one, e.g one that is being trained
+useGenome :: (genome: Genome) {
+    bestGenome = genome;
+}
+
+// The bots of a level, each a little different from the others, so they don't all do the same
+personalityFor :: (difficulty: Difficulty, rng: *random.Random) -> BotPersonality {
+    genome := difficulty.handicap().apply(trainedGenome());
+    genome = mutate(genome, rng, 0.5, 0.02);
+    return BotPersonality{label: Difficulty.names[difficulty], genome: genome};
+}

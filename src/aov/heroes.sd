@@ -268,6 +268,8 @@ Hero :: struct {
     leap:             ?LeapState;
 
     // What the enemies did to the hero
+    harmedBy:     int = -1;             // The player that last hooked, bashed or locked it, who gets the kill if a car
+    harmedAt:     f32;                  // gets it soon after: at this time of the game
     stunLeft:     f32;                  // Seconds it can't move or cast
     lockedLeft:   f32;                  // Seconds it is locked in time (and stunned): drawn in Mira's color
     displacement: ?Displacement;

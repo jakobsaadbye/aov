@@ -67,7 +67,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
     if game.showHelp       { drawHelp(); }
     if game.debug.overlay  { drawDebug(game); }
     drawInspectorPanel(game);
-    if game.isPaused       { drawPaused(); }
+    if game.isPaused       { drawPaused(game); }
 
     mouse := GetMousePosition();
     DrawTexture(assets.cursor, mouse.x as int - 2, mouse.y as int, White);
@@ -87,16 +87,18 @@ drawScoreboard :: (game: *Game) {
     }
 
     rowHeight := 24;
-    panel := Rectangle{16, 16, 330, (66 + order.count * rowHeight) as f32};
+    panel := Rectangle{16, 16, 380, (66 + order.count * rowHeight) as f32};
     drawPanel(panel);
     x := panel.x as int + 14;
     y := panel.y as int + 10;
     drawTitle("Allan over vejen", x, y, 22, {255, 210, 90, 255});
-    drawText(fmt.sprint("Level %", game.level() + 1), x + 230, y + 4, 16, DimColor);
+    difficulty := Difficulty.names[game.difficulty];
+    drawText(fmt.sprint("Level %  ·  %", game.level() + 1, difficulty), x + 230, y + 4, 16, DimColor);
 
     headerY := y + 32;
     drawText("Across", x + 200, headerY, 14, DimColor);
     drawText("Run over", x + 254, headerY, 14, DimColor);
+    drawText("Kills", x + 318, headerY, 14, DimColor);
     for index, row in order {
         player := game.players[index];
         rowY := headerY + 20 + row as int * rowHeight;
@@ -107,6 +109,7 @@ drawScoreboard :: (game: *Game) {
         drawText(name, x + 18, rowY - 1, 17, TextColor);
         drawText(fmt.sprint("%", player.stats.crossings), x + 214, rowY - 1, 17, TextColor);
         drawText(fmt.sprint("%", player.stats.deaths), x + 274, rowY - 1, 17, DimColor);
+        drawText(fmt.sprint("%", player.stats.kills), x + 326, rowY - 1, 17, DimColor);
     }
 }
 
@@ -387,13 +390,23 @@ drawDebug :: (game: *Game) {
     }
 }
 
-drawPaused :: () {
+drawPaused :: (game: *Game) {
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {0, 0, 0, 120});
+    centerX := GetScreenWidth() / 2;
+    centerY := GetScreenHeight() / 2;
     text := "Paused";
-    width := titleWidth(text, 64);
-    drawTitle(text, (GetScreenWidth() - width) / 2, GetScreenHeight() / 2 - 60, 64, White);
+    drawTitle(text, centerX - titleWidth(text, 64) / 2, centerY - 90, 64, White);
     hint := "Press P or Esc to go on";
-    drawText(hint, (GetScreenWidth() - textWidth(hint, 20)) / 2, GetScreenHeight() / 2 + 16, 20, DimColor);
+    drawText(hint, centerX - textWidth(hint, 20) / 2, centerY - 14, 20, DimColor);
+
+    // The difficulty of the bots, which changes with the arrow keys and is for the next game
+    chosen := game.nextDifficulty ?? game.difficulty;
+    name := Difficulty.names[chosen];
+    level := fmt.sprint("Bots:   <  %%  >", name.slice(0, 1).toUpper(), name.slice(1));
+    drawTitle(level, centerX - titleWidth(level, 30) / 2, centerY + 30, 30, {255, 210, 90, 255});
+    note := "Left and right to change";
+    if chosen != game.difficulty { note = "From the next game: press F5"; }
+    drawText(note, centerX - textWidth(note, 18) / 2, centerY + 72, 18, DimColor);
 }
 
 drawPanel :: (rect: Rectangle) {

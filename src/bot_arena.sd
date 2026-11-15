@@ -5,11 +5,15 @@
 //     saad run bot_arena.sd                                    4 bots, 3 games of 3 minutes
 //     saad run bot_arena.sd -- --bots 6 --games 5 --seconds 300 --seed 42
 //     saad run bot_arena.sd -- --peaceful                      they don't cast on each other: how well they cross
+//     saad run bot_arena.sd -- --difficulty normal             bots of a difficulty (expert when not given)
+//
+// Build it with --llvm (saad build bot_arena.sd --llvm): the bots think about 10 times as fast
 
 import aov;
 import fmt;
 import os;
 import time;
+import random;
 use raylib;
 
 Dt :: 1.0 / 60.0;
@@ -20,6 +24,9 @@ main :: () {
     seconds := 180;
     seed: u64 = 1;
     peaceful := false;
+    mixed := false;         // A bot of each difficulty in each game, and how each difficulty did
+    byDifficulty: [aov.Difficulty.count]aov.Stats;
+    difficulty := aov.Difficulty.expert;
     args := os.args();
     i := 1;
     while i < args.count {
@@ -31,6 +38,12 @@ main :: () {
             case "--seconds"  { seconds = (next.toInt() ?? 180) as int; i += 1; }
             case "--seed"     { seed = (next.toInt() ?? 1) as u64; i += 1; }
             case "--peaceful" { peaceful = true; }
+            case "--mixed"    { mixed = true; }
+            case "--difficulty" {
+                index := aov.Difficulty.names.indexOf(next);
+                if index >= 0 { difficulty = index as aov.Difficulty; }
+                i += 1;
+            }
             case "--hits"     { aov.debugHits = true; }
             else              { fmt.print("Unknown option '%'", args[i]); }
         }
@@ -44,10 +57,18 @@ main :: () {
     frames := 0;
 
     for g in 0..games {
-        game := aov.newGame(seed + g as u64, bots: bots, humans: 0);
+        game: *aov.Game = null;
+        if mixed {
+            rng := random.newRandom(seed + g as u64);
+            personalities: [..]aov.BotPersonality;
+            for d in aov.Difficulty.values { personalities.add(aov.personalityFor(d, &rng)); }
+            game = aov.newGameWith(seed + g as u64, personalities, humans: 0);
+        } else {
+            game = aov.newGame(seed + g as u64, bots: bots, humans: 0, difficulty: difficulty);
+        }
         defer game.free();
         if peaceful {
-            for *player in game.players { (player.brain as *aov.Bot).personality.aggression = 0; }
+            for *player in game.players { (player.brain as *aov.Bot).personality.genome.set(.aggression, 0); }
         }
 
         steps := (seconds as f32 / Dt) as int;
@@ -61,7 +82,7 @@ main :: () {
         }
 
         fmt.print("Game % (seed %), % s, level %:", g + 1, seed + g as u64, seconds, game.level() + 1);
-        for player in game.players {
+        for player, i in game.players {
             best := "-";
             if player.stats.bestTime.hasValue() { best = fmt.sprint("% s", fmt.fixed(player.stats.bestTime.value(), 1)); }
             profile := player.brain.profile();
@@ -71,11 +92,23 @@ main :: () {
                 profile.waiting as int, profile.walking as int, profile.noPlan as int, profile.dodges,
                 fmt.fixed((profile.planSeconds / plans as f64 * 1000) as f32, 1), profile.plans, profile.forecasts,
                 profile.expanded / plans as i64, fmt.fixed(profile.reachedGoal as f32 / plans as f32, 2));
+            if mixed {
+                level := &byDifficulty[i];
+                level.crossings += player.stats.crossings;
+                level.deaths += player.stats.deaths;
+                level.kills += player.stats.kills;
+            }
             totalCrossings += player.stats.crossings;
             totalDeaths += player.stats.deaths;
         }
     }
 
+    if mixed {
+        fmt.print("");
+        for level, d in byDifficulty {
+            fmt.print("%:  across %, run over %, kills %", aov.Difficulty.names[d], level.crossings, level.deaths, level.kills);
+        }
+    }
     fmt.print("");
     fmt.print("Crossings %, run over % (% crossings for each death)", totalCrossings, totalDeaths, fmt.fixed(totalCrossings as f32 / atLeastOne(totalDeaths) as f32, 2));
     fmt.print("A frame took % ms on average, % ms at most", fmt.fixed((thinking / frames as f64 * 1000) as f32, 3), fmt.fixed((worstFrame * 1000) as f32, 2));

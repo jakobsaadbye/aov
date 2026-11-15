@@ -30,6 +30,8 @@ main :: () {
     testForecast();
     testBotCrosses();
     testRecording();
+    testGenomes();
+    testKills();
     fmt.print("All simulation tests passed");
 }
 
@@ -543,9 +545,14 @@ testRecording :: () {
     for frame in 0..900 {
         if frame == 100 { game.you().order(aov.Command{move: {-60, 20}}); }
         if frame == 400 { game.you().order(aov.Command{cast: {slot: 0, target: {-40, 0}}}); }
+        if frame == 600 {
+            // A new game with easier bots, as F5 after changing the difficulty while paused
+            game.nextDifficulty = .easy;
+            game.restartPending = true;
+        }
         game.step((1.0 / 60.0) * rng.uniform(0.8, 1.2) as f32);    // Frames aren't all as long
     }
-    assert(game.recording.frames.count == 900 && game.recording.checksums.count == 15);
+    assert(game.recording.frames.count == 900 && game.recording.checksums.count == 15 && game.difficulty == .easy);
 
     // Through JSON, like a file
     text := json.encode(game.recording);
@@ -555,7 +562,7 @@ testRecording :: () {
     replay := aov.newReplay(recording);
     defer replay.free();
     while !replay.replay.isFinished() { replay.step(0); }
-    assert(!replay.replay.diverged.hasValue());
+    assert(!replay.replay.diverged.hasValue() && replay.difficulty == .easy);
     for player, i in game.players {
         assert(replay.players[i].hero.position == player.hero.position && replay.players[i].stats.deaths == player.stats.deaths);
     }
@@ -566,6 +573,58 @@ testRecording :: () {
     changed.players[1].hero.position.x += 3;
     while !changed.replay.isFinished() { changed.step(0); }
     assert(changed.replay.diverged.hasValue());
+}
+
+testGenomes :: () {
+    rng := random.newRandom(4);
+    genome := aov.randomGenome(&rng);
+
+    // Through JSON by the names of the genes, and a gene that a file doesn't have starts at its default
+    values := genome.toJson();
+    back := aov.fromJson(values);
+    for gene in aov.Gene.values { assert(back.get(gene) == genome.get(gene)); }
+    values.remove("castBar");
+    assert(aov.fromJson(values).get(.castBar) == aov.GeneRanges[aov.Gene.castBar].default);
+
+    // Mutation and crossover stay in the ranges
+    for 0..200 {
+        genome = aov.mutate(aov.crossover(genome, aov.randomGenome(&rng), &rng), &rng, 1, 1);
+        for gene in aov.Gene.values {
+            range := aov.GeneRanges[gene];
+            assert(genome.get(gene) >= range.low && genome.get(gene) <= range.high);
+        }
+    }
+
+    // The easier the level, the slower it reacts and plans, and the less keen it is
+    best := aov.defaultGenome();
+    for d in 1..aov.Difficulty.count {
+        easier := (d as int - 1) as aov.Difficulty;
+        harder := d as aov.Difficulty;
+        a := easier.handicap().apply(best);
+        b := harder.handicap().apply(best);
+        assert(a.get(.reactionTime) >= b.get(.reactionTime) && a.get(.replanEvery) >= b.get(.replanEvery));
+        assert(a.get(.castBar) >= b.get(.castBar) && a.get(.aggression) <= b.get(.aggression));
+    }
+    expert := aov.Difficulty.expert.handicap().apply(best);
+    for gene in aov.Gene.values { assert(near(expert.get(gene), best.get(gene))); }
+}
+
+// A car that gets an enemy just after a bash is a kill of the basher
+testKills :: () {
+    game := aov.newGame(11, bots: 1);
+    defer game.free();
+    clearRoad(game);
+    enemy := &game.players[1];
+    enemy.brain = null;
+    game.spawnHero(0, .bjorn);
+    game.spawnHero(1, .allan);
+    game.you().hero.position = Vector3{aov.laneCenter(2) - 4, 0, 0};
+    enemy.hero.position = Vector3{aov.laneCenter(2) - 1, 0, 0};
+    game.cast(0, 1, enemy.hero.ground());
+    for 0..30 { game.simulate(Dt); }
+    game.traffic.cars[0] = aov.Car{isActive: true, kind: .truck, lane: aov.laneAt(enemy.hero.position.x), z: enemy.hero.position.z - 9, speed: 30};
+    for 0..60 { game.simulate(Dt); }
+    assert(enemy.stats.deaths == 1 && game.you().stats.kills == 1);
 }
 
 //
