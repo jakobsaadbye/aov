@@ -29,10 +29,8 @@ drawHud :: method (game: *Game, assets: *Assets) {
     if game.debug.overlay  { drawDebug(game); }
     if game.isPaused       { drawPaused(); }
 
-    if assets.cursor.hasValue() {
-        mouse := GetMousePosition();
-        DrawTexture(assets.cursor.value(), mouse.x as int - 2, mouse.y as int, White);
-    }
+    mouse := GetMousePosition();
+    DrawTexture(assets.cursor, mouse.x as int - 2, mouse.y as int, White);
 }
 
 drawScore :: (game: *Game) {

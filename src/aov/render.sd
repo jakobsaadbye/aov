@@ -23,6 +23,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     DrawMesh(assets.outside, assets.outsideMaterial, MatrixTranslate(0, -0.4, 0));
     DrawMesh(assets.ground, assets.groundMaterial, MatrixIdentity());
     DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.06, 0));
+    drawLaneMarkings();
     drawGoalStrip();
 
     if game.debug.wireframes { rlEnableWireMode(); }
@@ -39,7 +40,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     for *car in game.traffic.cars {
         if car.isActive {
             rect := car.rect();
-            DrawCube(rect.center().at(0.12), rect.width + 0.6, 0.02, rect.height + 0.6, ShadowColor);
+            DrawCube(rect.center().at(0.12), rect.width + 0.4, 0.02, rect.height + 0.4, ShadowColor);
         }
     }
     game.effects.draw();
@@ -54,6 +55,27 @@ drawScene :: method (game: *Game, assets: *Assets) {
     if game.debug.hitboxes { drawHitboxes(game); }
 }
 
+// The lines along the edges of the road, and dashed lines between the lanes
+drawLaneMarkings :: () {
+    LineColor  :: Color{235, 235, 225, 255};
+    LineY      :: 0.09;
+    DashLength :: 3.0;
+    DashPeriod :: 9.0;
+
+    for side in [-1.0, 1.0] {
+        DrawCube({side * (RoadHalfWidth - 0.4), LineY, 0}, 0.3, 0.02, RoadEnd * 2, LineColor);
+    }
+
+    dashes := (RoadEnd * 2 / DashPeriod) as int;
+    for lane in 1..LaneCount {
+        x := -RoadHalfWidth + LaneWidth * lane as f32;
+        for i in 0..dashes {
+            z := -RoadEnd + (i as f32 + 0.5) * DashPeriod;
+            DrawCube({x, LineY, z}, 0.2, 0.02, DashLength, LineColor);
+        }
+    }
+}
+
 // A light strip on the far side of the road, where the heroes are going
 drawGoalStrip :: () {
     width := MapHalfWidth - GoalX;
@@ -64,65 +86,19 @@ drawGoalStrip :: () {
 
 drawWall :: (assets: *Assets, wall: Rectangle) {
     center := wall.center();
-    assets.drawBox(center.at(WallHeight * 0.5), {wall.width, WallHeight, wall.height}, 0, WallColor);
+    assets.drawBox(center.at(WallHeight * 0.5), {wall.width, WallHeight, wall.height}, WallColor);
     // A darker cap on top
-    assets.drawBox(center.at(WallHeight + 0.15), {wall.width + 0.3, 0.3, wall.height + 0.3}, 0, ColorBrightness(WallColor, -0.25));
+    assets.drawBox(center.at(WallHeight + 0.15), {wall.width + 0.3, 0.3, wall.height + 0.3}, ColorBrightness(WallColor, -0.25));
 }
 
 drawCar :: (assets: *Assets, car: *Car) {
-    position  := car.position();
-    direction := laneDirection(car.lane);
-    angle: f32 = 0;
-    if direction < 0 { angle = Pi; }
-
-    body := car.color;
-    if car.frozenLeft > 0 { body = ColorLerp(body, FrozenColor, 0.75); }
-    glass := Color{40, 55, 70, 255};
-
-    // Points along the car: positive is towards its front
-    along :: (car: *Car, offset: f32, y: f32) -> Vector3 {
-        return Vector3{laneCenter(car.lane), y, car.z + offset * laneDirection(car.lane)};
-    };
-
-    wheelY :: 0.45;
-    switch car.kind {
-        case .car {
-            assets.drawBox(along(car, 0, 0.95), {CarWidth, 1.0, car.length}, angle, body);
-            assets.drawBox(along(car, -0.4, 1.85), {CarWidth * 0.86, 0.85, car.length * 0.5}, angle, glass);
-            assets.drawBox(along(car, -0.4, 2.33), {CarWidth * 0.84, 0.12, car.length * 0.46}, angle, body);
-        }
-        case .van {
-            assets.drawBox(along(car, -0.4, 1.55), {CarWidth, 2.2, car.length - 0.8}, angle, body);
-            assets.drawBox(along(car, car.length * 0.5 - 0.6, 1.0), {CarWidth, 1.1, 1.2}, angle, body);
-            assets.drawBox(along(car, car.length * 0.5 - 1.15, 2.0), {CarWidth * 0.9, 0.8, 0.2}, angle, glass);
-        }
-        case .truck {
-            cabLength :: 3.2;
-            trailerLength := car.length - cabLength - 0.4;
-            assets.drawBox(along(car, car.length * 0.5 - cabLength * 0.5, 1.7), {CarWidth, 2.6, cabLength}, angle, body);
-            assets.drawBox(along(car, car.length * 0.5 - 0.3, 2.35), {CarWidth * 0.9, 0.9, 0.2}, angle, glass);
-            assets.drawBox(along(car, -car.length * 0.5 + trailerLength * 0.5, 2.35), {CarWidth + 0.2, TruckHeight - 0.5, trailerLength}, angle, {225, 225, 220, 255});
-        }
-    }
-
-    // Wheels, and lights in front and at the back
-    axle := car.length * 0.5 - 1.3;
-    for side in [-1.0, 1.0] {
-        x := laneCenter(car.lane) + side * (CarWidth * 0.5 - 0.15);
-        assets.drawBox({x, wheelY, car.z + axle}, {0.5, 0.9, 1.1}, 0, {25, 25, 25, 255});
-        assets.drawBox({x, wheelY, car.z - axle}, {0.5, 0.9, 1.1}, 0, {25, 25, 25, 255});
-
-        front := along(car, car.length * 0.5, 0.95);
-        back  := along(car, -car.length * 0.5, 0.95);
-        front.x = x - side * 0.5;
-        back.x  = x - side * 0.5;
-        assets.drawBox(front, {0.8, 0.35, 0.1}, 0, {255, 245, 200, 255});
-        assets.drawBox(back, {0.8, 0.35, 0.1}, 0, {200, 30, 30, 255});
-    }
+    color := car.color;
+    if car.frozenLeft > 0 { color = ColorLerp(color, FrozenColor, 0.75); }
+    assets.drawVehicle(car.kind, car.position(), color);
 
     if car.frozenLeft > 0 {
         // A shell of ice
-        DrawCube(position + Vector3{0, car.height() * 0.5 + 0.2, 0}, CarWidth + 0.5, car.height() + 0.6, car.length + 0.5, {200, 240, 255, 70});
+        DrawCube(car.position() + Vector3{0, car.height() * 0.5 + 0.2, 0}, CarWidth + 0.5, car.height() + 0.6, car.length() + 0.5, {200, 240, 255, 70});
     }
 }
 
@@ -135,37 +111,25 @@ drawHero :: (assets: *Assets, hero: *Hero, phase: Phase) {
     if phase.kind == .crossed                { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
     if info.ability.kind == .phaseWalk      { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
 
-    base := hero.position + Vector3{0, bob, 0};
-    bodyHeight := info.height * 0.62;
-    headSize   := info.width * 0.62;
-
-    color := info.color;
-    if hero.sprintTimeLeft > 0 { color = ColorBrightness(color, 0.3); }
-
     // A shadow that stays on the ground, and the green circle of the selected unit, as in Warcraft
     DrawCylinder(hero.position + Vector3{0, 0.12, 0}, info.width * 0.55, info.width * 0.55, 0.02, 16, ShadowColor);
     ring := info.width * 0.85;
     DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring, {1, 0, 0}, 90, {90, 255, 110, 220});
     DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring * 0.94, {1, 0, 0}, 90, {90, 255, 110, 220});
 
-    assets.drawBox(base + Vector3{0, bodyHeight * 0.5, 0}, {info.width, bodyHeight, info.width * 0.7}, hero.facing, color);
-    assets.drawBox(base + Vector3{0, bodyHeight + headSize * 0.5, 0}, {headSize, headSize, headSize}, hero.facing, ColorBrightness(color, 0.15));
+    tint := White;
+    if info.ability.kind == .phaseWalk { tint.a = 150; }     // Ghosty is see-through
+    assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
 
-    // Eyes, so you can see which way he looks
-    forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
-    right   := Vector3{forward.z, 0, -forward.x};
-    eyes    := base + Vector3{0, bodyHeight + headSize * 0.62, 0} + forward * (headSize * 0.5);
-    eyeColor := Color{20, 20, 20, color.a};
-    assets.drawBox(eyes + right * (headSize * 0.22), {0.18, 0.22, 0.08}, hero.facing, eyeColor);
-    assets.drawBox(eyes - right * (headSize * 0.22), {0.18, 0.22, 0.08}, hero.facing, eyeColor);
-
-    // The hook and its chain
+    // The hook flies from the butcher's hand, with its chain
     if hero.hook.hasValue() {
         hook := hero.hook.value();
-        hand := hero.position + Vector3{0, bodyHeight * 0.7, 0} + forward * (info.width * 0.5);
+        forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
+        right   := Vector3{forward.z, 0, -forward.x};
+        hand := hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45;
         head := hand.lerp(hook.point + Vector3{0, 0.4, 0}, hook.flight);
         DrawCylinderEx(hand, head, 0.08, 0.08, 6, {90, 90, 95, 255});
-        assets.drawBox(head, {0.6, 0.6, 0.6}, hero.facing, {60, 60, 65, 255});
+        assets.drawBox(head, {0.6, 0.6, 0.6}, {60, 60, 65, 255});
     }
 }
 

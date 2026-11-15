@@ -15,7 +15,8 @@ main :: () {
     testPushOutOfRect();
     testWalls();
     testTraffic();
-    testFrozenCarsQueue();
+    testNoGapBetweenLanes();
+    testFrozenCars();
     testRunOver();
     testCrossing();
     testAbilities();
@@ -78,41 +79,71 @@ testTraffic :: () {
     traffic := aov.newTraffic(0, &rng);
     assert(traffic.activeCount() > 20);
 
+    // Every car drives from the far end of the road towards the camera, and never back
     for 0..3000 {
+        before: [aov.MaxCars]f32;
+        for car, i in traffic.cars { before[i] = car.z; }
         traffic.update(Dt, &rng);
-        checkNoOverlaps(&traffic);
+        for car, i in traffic.cars {
+            if !car.isActive { continue; }
+            assert(car.speed > 0);
+            justSpawned := car.z == -aov.RoadEnd - car.length() * 0.5;     // A new car in the place of one that left
+            if !justSpawned { assert(car.z >= before[i]); }
+            if car.isActive { assert(car.z >= -aov.RoadEnd - car.length() && car.z <= aov.RoadEnd + car.length()); }
+        }
     }
 
-    // The cars drive their way: the left carriageway towards +z, the right one towards -z
-    for car in traffic.cars {
-        if !car.isActive { continue; }
-        expected: f32 = 1;
-        if car.lane >= aov.LanesPerDirection { expected = -1; }
-        assert(aov.laneDirection(car.lane) == expected);
-        assert(math.fabsf(car.z) <= aov.RoadEnd + car.length);
-    }
+    // A faster car drives straight through a slower one in its lane: nobody waits
+    clear: aov.Traffic;
+    clear.lanes[0].speed = 10;
+    clear.lanes[0].spawnTimer = 100000;
+    clear.cars[0] = aov.Car{isActive: true, lane: 0, z: 0, speed: 5};
+    clear.cars[1] = aov.Car{isActive: true, lane: 0, z: -10, speed: 20};
+    for 0..60 { clear.update(Dt, &rng); }
+    assert(clear.cars[1].z > clear.cars[0].z);
+    assert(near(clear.cars[0].z, 5, 0.01) && near(clear.cars[1].z, 10, 0.01));
 
     // A higher level is faster
-    slow := traffic.lanes[3].speed;
+    slowLane := traffic.lanes[3].speed;
     traffic.setLevel(10, &rng);
-    assert(traffic.lanes[3].speed > slow);
+    assert(traffic.lanes.reduce(0.0, (sum, lane) => sum + lane.speed) > slowLane);
 }
 
-testFrozenCarsQueue :: () {
+testNoGapBetweenLanes :: () {
+    // Between two cars side by side there is less room than the smallest hero takes
+    for kind in aov.HeroKind.values {
+        assert(aov.LaneWidth - aov.CarWidth < kind.definition().hitRadius * 2);
+    }
+
+    // Standing on the line between two lanes, a car in either lane gets you
+    for lane in 0..aov.LaneCount {
+        traffic: aov.Traffic;
+        traffic.cars[0] = aov.Car{isActive: true, lane: lane as int, z: 0, speed: 10};
+        left  := aov.laneCenter(lane as int) - aov.LaneWidth * 0.5;
+        right := aov.laneCenter(lane as int) + aov.LaneWidth * 0.5;
+        assert(traffic.carHitting({left, 0}, 0.7).hasValue());
+        assert(traffic.carHitting({right, 0}, 0.7).hasValue());
+        assert(aov.laneAt(aov.laneCenter(lane as int)) == lane);
+    }
+}
+
+testFrozenCars :: () {
     rng := random.newRandom(7);
     traffic := aov.newTraffic(3, &rng);
 
-    // Freeze everything in the middle of the road for a long time: the cars behind queue up without overlapping
+    // Frozen cars stay where they are, and the cars behind them drive on through them
     frozen := traffic.freezeAround({0, 0}, 30, 8);
     assert(frozen > 0);
-    for 0..(4 * 60) {
-        traffic.update(Dt, &rng);
-        checkNoOverlaps(&traffic);
-    }
-    frozenCount := traffic.cars.countWhere(car => car.isActive && car.frozenLeft > 0);
-    assert(frozenCount == frozen);
+    positions: [aov.MaxCars]f32;
+    for car, i in traffic.cars { positions[i] = car.z; }
 
-    // And drive on when it thaws
+    for 0..(4 * 60) { traffic.update(Dt, &rng); }
+    for car, i in traffic.cars {
+        if car.isActive && car.frozenLeft > 0 { assert(car.z == positions[i]); }
+    }
+    assert(traffic.cars.countWhere(car => car.isActive && car.frozenLeft > 0) == frozen);
+
+    // And drive on when they thaw
     for 0..(10 * 60) { traffic.update(Dt, &rng); }
     assert(traffic.cars.countWhere(car => car.isActive && car.frozenLeft > 0) == 0);
 }
@@ -229,18 +260,4 @@ walkTo :: (game: *aov.Game, point: Vector3) {
         if !game.hero.isMoving || game.phase.kind != .playing { return; }
     }
     assert(false);
-}
-
-checkNoOverlaps :: (traffic: *aov.Traffic) {
-    for a, i in traffic.cars {
-        if !a.isActive { continue; }
-        for b, j in traffic.cars {
-            if j <= i || !b.isActive || a.lane != b.lane { continue; }
-            gap := math.fabsf(a.z - b.z) - (a.length + b.length) * 0.5;
-            if gap < 0 {
-                fmt.print("Cars % and % overlap in lane % by %", i, j, a.lane, -gap);
-                assert(false);
-            }
-        }
-    }
 }

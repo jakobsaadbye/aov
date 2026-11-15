@@ -8,6 +8,10 @@ A remake of the Warcraft 3 map *Allan over vejen*, written in [Saad](https://git
 Get your hero across a busy motorway without being run over. Every time a car gets you, you go on with a new hero at
 random. Every crossing makes the traffic faster.
 
+The traffic all drives one way, from the top of the screen to the bottom. Every car has a speed of its own and drives
+straight through slower cars in its lane, and the cars are nearly as wide as their lanes, so there is nowhere to hide
+between them.
+
 ## Running it
 
 With `saad` on the PATH (see the readme of Saad):
@@ -17,8 +21,21 @@ cd src
 saad run main.sd
 ```
 
-The game needs no files of its own: the textures and the shader are made when it starts. When the `data` folder is next
-to `src` (it isn't in git), its grass and asphalt textures, the Warcraft cursor and the window icon are used instead.
+It can be started from any folder: it finds `data/` next to `src/` from where the program is (`src/build/out.exe`).
+
+## The data folder
+
+| | |
+| --- | --- |
+| `data/textures/` | The grass, the road, the Warcraft cursor |
+| `data/models/` | The vehicles (car, van, truck) and the heroes, as OBJ with a MTL of their colors |
+| `data/shaders/` | `lighting.vs` and `lighting.fs`: the sun, ambient light and the haze in the distance |
+| `data/window_icon.png` | |
+
+The models were made by `tools/make_models.py` (`python3 tools/make_models.py` writes them again), but they are plain OBJ
+and can just as well be edited in Blender. The game expects a model to look towards +z and stand on y = 0, in the units
+of the game. The body of a vehicle, the part that gets the color of the car, is the material that is pure white
+(`Kd 1 1 1`), and the sizes of the vehicles are those of `config.sd` (`CarWidth`, `CarLength`, ...).
 
 ## Controls
 
@@ -53,15 +70,15 @@ All of the game is in the namespace `aov`, in `src/aov/`. `src/main.sd` opens th
 | `config.sd` | The numbers that tune the game: the size of the field, the road, the traffic |
 | `heroes.sd` | The heroes, their stats and their abilities (a union) |
 | `world.sd` | The walls with their openings, and the collisions of the heroes with them |
-| `traffic.sd` | The lanes and the cars, which keep their distance to the car in front |
+| `traffic.sd` | The lanes and the cars |
 | `game.sd` | The game itself: input, the hero, being run over, crossing, the next hero |
 | `camera.sd` | The RTS camera |
 | `effects.sd` | The click marker, the stains, the bits flying and the rings of the abilities |
-| `assets.sd`, `lighting.sd` | The textures and meshes that are made at the start, and the shader of the sun |
+| `assets.sd`, `lighting.sd` | The textures, models and shader of the data folder |
 | `render.sd`, `hud.sd` | The 3D scene and the 2D overlay |
 
-`src/simulation_test.sd` plays the game without a window and checks the rules: the walls, the traffic, being run over,
-crossing and the abilities.
+`src/simulation_test.sd` plays the game without a window and checks the rules: the walls, the traffic (one way, cars
+passing through each other, no room between the lanes), being run over, crossing and the abilities.
 
 ```
 cd src
