@@ -21,6 +21,7 @@ main :: () {
     testHealth();
     testCrossing();
     testAbilities();
+    testNewHeroes();
     fmt.print("All simulation tests passed");
 }
 
@@ -334,6 +335,77 @@ testAbilities :: () {
         if !game.hero.isFaded() { break; }
         assert(game.phase.kind == .playing);
     }
+}
+
+testNewHeroes :: () {
+    game := aov.newGame(3);
+    defer game.free();
+
+    // Bjørn leaps over the wall and the cars, which can't hit him in the air, and lands where he aimed
+    game.spawnHero(.bjorn);
+    game.traffic = aov.newTraffic(8, &game.rng);
+    start := Vector3{-aov.RoadHalfWidth - aov.WallWidth - 2, 0, 0};
+    game.hero.position = start;
+    game.mouseGround = Vector3{-aov.RoadHalfWidth + 9, 0, 0};
+    game.useAbility(0);
+    assert(game.hero.isAirborne() && !game.hero.abilityReady(0));
+    for 0..30 {
+        game.simulate(Dt);
+        assert(game.phase.kind == .playing && game.hero.health == game.hero.info().maxHealth);
+    }
+    assert(game.hero.isAirborne());
+    for 0..30 { game.simulate(Dt); }
+    assert(!game.hero.isAirborne() || game.phase.kind != .playing);
+
+    // His iron hide halves the damage of a car
+    assert(near(game.hero.damageTaken(), 0.5));
+    game.spawnHero(.allan);
+    assert(near(game.hero.damageTaken(), 1));
+
+    // Hilda stops the lanes around her: the cars queue up before the line, one behind the other, and drive on after
+    game.spawnHero(.hilda);
+    clearRoad(game);
+    lane := 6;
+    game.hero.position = Vector3{aov.laneCenter(lane), 0, 20};
+    for i in 0..3 {
+        game.traffic.cars[i] = aov.Car{isActive: true, lane: lane as int, z: -20 - i as f32 * 12, speed: 15};
+    }
+    game.traffic.cars[3] = aov.Car{isActive: true, lane: lane as int + 4, z: -20, speed: 15};     // Outside of her lanes
+    game.useAbility(0);
+    assert(game.stopSign.hasValue());
+    for 0..150 { game.simulate(Dt); }
+    line := game.stopSign.value().line;
+    first := game.traffic.cars[0];
+    assert(near(first.z + first.length() * 0.5, line, 0.05) && first.isBraking);
+    for i in 1..3 {
+        ahead := game.traffic.cars[i - 1];
+        behind := game.traffic.cars[i];
+        gap := (ahead.z - ahead.length() * 0.5) - (behind.z + behind.length() * 0.5);
+        assert(near(gap, aov.QueueGap, 0.05));
+    }
+    assert(near(game.traffic.cars[3].z, -20 + 15 * 2.5, 0.1));         // Drove on as if nothing happened
+    for 0..120 { game.simulate(Dt); }
+    assert(game.traffic.cars[0].z > line);
+
+    // Mira's time warp slows every car on the road
+    game.spawnHero(.mira);
+    warped: aov.Traffic;
+    warped.lanes[0].spawnTimer = 100000;
+    warped.cars[0] = aov.Car{isActive: true, lane: 0, z: 0, speed: 10};
+    warped.warpTime(0.7, 3);
+    warped.update(1, &game.rng, null);
+    assert(near(warped.cars[0].z, 3) && warped.isWarped());
+
+    // Her rewind takes her back to where she was, with the health she had then
+    clearRoad(game);
+    game.hero.position = Vector3{-70, 0, 0};
+    walkTo(game, Vector3{-60, 0, 0});
+    game.hero.health = 5;
+    for 0..200 { game.simulate(Dt); }            // Standing still, so the last 3 seconds are all here
+    game.hero.moveTo(Vector3{-70, 0, 20});
+    for 0..60 { game.simulate(Dt); }
+    game.useAbility(1);
+    assert(game.hero.position.distance(Vector3{-60, 0, 0}) < 2.5);
 }
 
 //

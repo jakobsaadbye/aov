@@ -244,6 +244,62 @@ def icon_quick_feet():
     finish(image, "quick_feet")
 
 
+def icon_leap():
+    image, draw = icon_base((200, 140, 80), (90, 50, 20))
+    draw.arc([30, 70, 226, 330], start=195, end=345, fill=(30, 20, 10), width=26)      # The arc of the leap
+    draw.arc([30, 70, 226, 330], start=195, end=345, fill=(255, 235, 190), width=14)
+    for x in (40, 216):
+        draw.ellipse([x - 22, 196, x + 22, 222], fill=(90, 60, 30), outline=(30, 20, 10), width=4)   # Dust
+    poly(draw, [(118, 40), (150, 62), (138, 92), (100, 96), (88, 66)], (180, 180, 190))    # A helmet at the top
+    poly(draw, [(88, 66), (60, 40), (70, 74)], (240, 230, 200), width=4)                    # with horns
+    poly(draw, [(150, 62), (180, 34), (168, 72)], (240, 230, 200), width=4)
+    finish(image, "leap")
+
+
+def icon_iron_hide():
+    image, draw = icon_base((140, 140, 150), (50, 50, 60))
+    draw.ellipse([38, 38, 218, 218], fill=(120, 70, 35), outline=(25, 20, 15), width=8)     # A round shield
+    draw.ellipse([62, 62, 194, 194], fill=(170, 30, 25), outline=(25, 20, 15), width=5)
+    for a in range(0, 360, 45):
+        x, y = 128 + math.cos(math.radians(a)) * 78, 128 + math.sin(math.radians(a)) * 78
+        draw.ellipse([x - 7, y - 7, x + 7, y + 7], fill=(210, 210, 215))                     # Rivets
+    draw.ellipse([100, 100, 156, 156], fill=(200, 200, 210), outline=(30, 30, 35), width=5) # The boss
+    finish(image, "iron_hide")
+
+
+def icon_stop_sign():
+    image, draw = icon_base((60, 120, 70), (20, 50, 30))
+    draw.rectangle([120, 150, 136, 250], fill=(200, 200, 205), outline=(30, 30, 30), width=3)
+    c, r = 128, 92
+
+    def octagon(radius):
+        return [(c + math.cos(math.pi / 8 + k * math.pi / 4) * radius, 98 + math.sin(math.pi / 8 + k * math.pi / 4) * radius) for k in range(8)]
+    poly(draw, octagon(r), (245, 245, 245), width=6)
+    poly(draw, octagon(r - 12), (210, 25, 30), outline=(210, 25, 30), width=1)
+    draw.rectangle([74, 86, 182, 110], fill=(255, 255, 255))                                # The bar of a stop sign
+    finish(image, "stop_sign")
+
+
+def icon_time_warp():
+    image, draw = icon_base((110, 70, 190), (25, 10, 60))
+    c = S / 2
+    for k in range(4):                                                                      # A spiral
+        r = 100 - k * 22
+        draw.arc([c - r, c - r, c + r, c + r], start=k * 70, end=k * 70 + 250, fill=(220, 190, 255), width=10)
+    draw.ellipse([c - 46, c - 46, c + 46, c + 46], fill=(250, 240, 220), outline=(30, 20, 40), width=6)   # A clock face
+    draw.line([(c, c), (c, c - 34)], fill=(30, 20, 40), width=8)
+    draw.line([(c, c), (c + 24, c + 10)], fill=(30, 20, 40), width=8)
+    finish(image, "time_warp")
+
+
+def icon_rewind():
+    image, draw = icon_base((60, 150, 200), (10, 40, 80))
+    for x in (40, 120):                                                                     # Two arrows back
+        poly(draw, [(x + 90, 60), (x + 90, 196), (x, 128)], (230, 250, 255))
+    draw.arc([30, 30, 226, 226], start=200, end=520, fill=(160, 220, 255), width=8)
+    finish(image, "rewind")
+
+
 if __name__ == "__main__":
     make_grass()
     make_asphalt()
@@ -257,3 +313,8 @@ if __name__ == "__main__":
     icon_phase_walk()
     icon_fade()
     icon_quick_feet()
+    icon_leap()
+    icon_iron_hide()
+    icon_stop_sign()
+    icon_time_warp()
+    icon_rewind()

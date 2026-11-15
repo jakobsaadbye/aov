@@ -50,7 +50,6 @@ RespawnDelay         :: 1.25;   // Seconds from being run over to the next hero
 CarDamagePerSecond   :: 100.0;  // The health a car takes while it is on a hero. Vans and trucks take more
 HealDelay            :: 1.5;    // Seconds without being hit before a hero heals
 HealPerSecond        :: 20.0;
-HornDistance         :: 14.0;   // A car honks at a hero this far ahead of it in its lane
 
 // Effects
 MaxParticles :: 256;

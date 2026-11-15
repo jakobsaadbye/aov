@@ -21,6 +21,7 @@ Assets :: struct {
     vehicles: [CarKind.count]Model;
     vehicleBody: [CarKind.count]int;   // The material of each vehicle that gets the color of the car
     heroes:   [HeroKind.count]Model;
+    portrait: RenderTexture;          // The hero of the HUD, drawn in 3D
     wall:     Model;                   // A segment of the wall, repeated along it
 
     icons: Map<string, Texture>;       // The icon of each ability, by its name in heroes.sd
@@ -88,6 +89,8 @@ loadAssets :: () -> Assets {
         }
     }
     assets.wall = assets.lighting.loadModel("models/wall.obj");
+    assets.portrait = LoadRenderTexture(PortraitResolution, PortraitResolution);
+    SetTextureFilter(assets.portrait.texture, .bilinear);
 
     for kind in SceneryKind.values {
         file := fmt.sprint("models/%.obj", SceneryModels[kind]);
@@ -118,6 +121,7 @@ unload :: method (assets: *Assets) {
     for model in assets.vehicles { UnloadModel(model); }
     for model in assets.heroes   { UnloadModel(model); }
     UnloadModel(assets.wall);
+    UnloadRenderTexture(assets.portrait);
     for model in assets.sceneryModels { UnloadModel(model); }
     assets.scenery.free();
     unloadFonts();
@@ -168,6 +172,35 @@ drawVehicle :: method (assets: *Assets, kind: CarKind, position: Vector3, color:
 // Draws a hero turned to look along the angle, in radians around y (0 looks towards +z)
 drawHero :: method (assets: *Assets, kind: HeroKind, position: Vector3, facing: f32, tint: Color) {
     DrawModelEx(assets.heroes[kind], position, {0, 1, 0}, facing * Rad2Deg, {1, 1, 1}, tint);
+}
+
+PortraitResolution :: 256;
+
+// Draws the hero into the portrait of the HUD, from the front, slowly turning, against a backdrop of its color
+drawPortrait :: method (assets: *Assets, kind: HeroKind) {
+    info := kind.definition();
+    height := info.height;
+    target := Vector3{0, height * 0.66, 0};
+    camera := Camera3D{
+        position:   target + Vector3{0, height * 0.12, height * 1.05 + 1.5},
+        target:     target,
+        up:         {0, 1, 0},
+        fovy:       34,
+        projection: .perspective,
+    };
+
+    BeginTextureMode(assets.portrait);
+    defer EndTextureMode();
+    ClearBackground(Black);
+    DrawRectangleGradientV(0, 0, PortraitResolution, PortraitResolution, ColorBrightness(info.color, -0.55), {12, 12, 16, 255});
+    // A soft light behind the head
+    DrawCircleGradient(PortraitResolution / 2, PortraitResolution * 2 / 5, PortraitResolution * 0.45, ColorAlpha(ColorBrightness(info.color, 0.2), 0.45), Blank);
+
+    assets.lighting.setCamera(camera);
+    BeginMode3D(camera);
+    turn := math.sinf(GetTime() as f32 * 0.7) * 0.45;
+    assets.drawHero(kind, {0, 0, 0}, turn, White);
+    EndMode3D();
 }
 
 // The material that a vehicle's body has: the one that is pure white (see tools/make_models.py)

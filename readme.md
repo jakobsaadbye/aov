@@ -45,20 +45,27 @@ of the game. The body of a vehicle, the part that gets the color of the car, is 
 
 ## Sounds
 
-A sound is played by its name, e.g `sound.play("car.horn")`, or `sound.playAt("hero.step", position)` for one that is
-quieter the further it is from the camera (`src/aov/sound.sd`). The name is the folder and the file in `data/sounds`:
-`car.horn` is `data/sounds/car/horn.wav`. Files that end in a number are variants that are picked at random, e.g
-`hero/step_1.wav` to `step_4.wav` are all `hero.step`. So a new sound is a file dropped into a folder there (`.wav`, `.ogg`
-or `.mp3`), and a line that plays it. An ability plays the sound in its `sound` in `heroes.sd`.
+The game plays its sounds through a `SoundPlayer` (`src/aov/sound.sd`), which the `Game` owns:
+`game.sounds.play("hero.crossed")`, or `game.sounds.playAt("ability.blink", position)` for one that is quieter the further
+it is from the camera. The name is the folder and the file in `data/sounds`: `hero.crossed` is
+`data/sounds/hero/crossed.wav`. Files that end in a number are variants that are picked at random, e.g `hero/hurt_1.wav`
+and `hurt_2.wav` are both `hero.hurt`. So a new sound is a file dropped into a folder there (`.wav`, `.ogg` or `.mp3`), and
+a line that plays it. An ability plays the sound in its `sound` in `heroes.sd`.
+
+While the game is paused, the sounds that are playing stop, the hum of the traffic stops with the cars, and the music
+fades down to a murmur. M turns the music off and on.
 
 | Sound | When |
 | --- | --- |
-| `hero.step` | Each step |
 | `hero.hurt`, `hero.death` | A car on the hero, and run over |
 | `hero.spawn`, `hero.crossed` | A new hero, and across the road |
-| `car.horn` | A car coming up behind the hero honks, once |
-| `ability.*` | The abilities: `sprint`, `charge`, `blink`, `hook_throw`, `hook_hit`, `freeze`, `fade` |
-| `ui.click`, `ui.not_ready` | An order to walk, and an ability that is cooling down |
+| `ability.*` | The abilities: `sprint`, `charge`, `blink`, `hook_throw`, `hook_hit`, `freeze`, `fade`, `leap`, `land`, `stop_sign`, `time_warp`, `rewind` |
+| `ui.not_ready` | An ability that is cooling down |
+
+The music (`theme`) is a loop of a minute for a small orchestra in D minor: strings, cellos, horns, a choir, a harp and
+war drums. `tools/make_sounds.py` synthesizes all of it in layers (a low body, a sharp front and a tail of reverb), from
+noise, filters, struck metal, formant voices and plucked strings, so it sounds like a fantasy game rather than an 8-bit one.
+Any of the files can be replaced by a recording.
 
 ## Fonts
 
@@ -86,6 +93,7 @@ A font is a `.ttf` in `data/fonts`, loaded in `loadFonts()` in `hud.sd`.
 | F5 | New game |
 | H | Hide the help |
 | F1 / F2 / F3 | Wireframes / hitboxes / debug numbers |
+| F6 | Debug: switch to the next hero |
 
 The mouse on the icon of an ability shows what it does, and how far it reaches.
 
@@ -97,9 +105,12 @@ The mouse on the icon of an ability shows what it does, and how far it reaches.
 | Ghosty | **Fade** (Q): the cars drive through him for 1.5 seconds. **Phase walk** (passive): floats through the walls |
 | Butcher | **Meat hook** (Q): hooks the ground at the cursor and pulls himself there. **Charge** (W): very fast for a short moment |
 | Frosty | **Cold snap** (Q): freezes the cars around him. **Slide** (W): slides to the cursor. **Chill aura** (passive): cars near him drive 40% slower |
+| Bjørn | A viking. **Leap** (Q): jumps to the cursor, high over the cars and the walls. **Iron hide** (passive): half the damage from the cars |
+| Hilda | A crossing guard. **Stop!** (Q): raises her stop sign, and the five lanes around her stop for 3 seconds while their cars queue up. **Brisk walker** (passive): 15% faster |
+| Mira | A chronomancer. **Time warp** (Q): every car on the road drives 70% slower for 3 seconds. **Rewind** (W): back to where she was 3 seconds ago, with the health she had. A ring shows where that is |
 
 Every hero has health. A car on a hero takes 100 a second (vans and trucks more), and a hero heals after 1.5 seconds without
-one. Allan (25) and Ghosty (15) don't last long, but the Butcher (100) survives a car driving over him.
+one. Allan (25), Ghosty (15) and Mira (20) don't last long, but the Butcher (100) and Bjørn (60, at half the damage) survive a car driving over them.
 
 A hero can have any number of abilities, as many cast ones as there are keys, and passives. They are defined in `defineHeroes()` in `heroes.sd`: a
 name, a description, an icon, a cooldown and an effect. A new kind of effect is a variant of `AbilityEffect`, and what it
@@ -119,7 +130,8 @@ All of the game is in the namespace `aov`, in `src/aov/`. `src/main.sd` opens th
 | `camera.sd` | The RTS camera |
 | `effects.sd` | The click marker, the stains, the bits flying and the rings of the abilities |
 | `assets.sd`, `lighting.sd` | The textures, models and shader of the data folder |
-| `render.sd`, `hud.sd` | The 3D scene and the 2D overlay |
+| `render.sd`, `hud.sd` | The 3D scene and the 2D overlay, with the hero drawn in 3D in its portrait |
+| `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
 
 `src/simulation_test.sd` plays the game without a window and checks the rules: the walls, the traffic (one way, cars
 passing through each other, no room between the lanes), being run over, crossing and crossing back, and the abilities.
