@@ -1,14 +1,82 @@
 // Allan over vejen: get the hero across the motorway without being run over. Every time a car gets you, you go on
-// with a new hero at random.
+// with a new hero at random. Bots race you across.
 //
-//     saad run main.sd        from this folder
+//     saad run main.sd                                   from this folder
+//     saad run main.sd -- --bots 5 --seed 7              options after --, see Options below
 
 import aov;
+import fmt;
 import math;
+import os;
 import time;
 use raylib;
 
+// What can be given on the command line. Mostly for trying things out and testing, e.g by an agent that can't play:
+//
+//     --bots N            How many bots (0 to 5, 3 when not given)
+//     --spectate          No hero of your own: the camera follows the first bot
+//     --seed N            The same seed gives the same game
+//     --hero NAME         Your first hero, e.g --hero butcher
+//     --plans             Show what the bots plan (F4)
+//     --speed X           Run the game X times as fast, e.g 4 to see a lot quickly
+//     --screenshot S F    Save a screenshot to the file F after S seconds of game time
+//     --quit S            Close after S seconds of game time
+//     --mute              No sound
+Options :: struct {
+    bots:       int = aov.DefaultBots;
+    spectate:   bool;
+    seed:       ?u64;
+    hero:       ?aov.HeroKind;
+    plans:      bool;
+    speed:      f32 = 1;
+    shots:      [..]Screenshot;
+    quitAt:     ?f32;
+    mute:       bool;
+}
+
+Screenshot :: struct {
+    at:   f32;
+    file: string;
+}
+
+readOptions :: () -> Options {
+    options: Options;
+    args := os.args();
+    i := 1;
+    while i < args.count {
+        arg := args[i];
+        next := "";
+        if i + 1 < args.count { next = args[i + 1]; }
+        switch arg {
+            case "--bots"     { options.bots = (next.toInt() ?? aov.DefaultBots) as int; i += 1; }
+            case "--spectate" { options.spectate = true; }
+            case "--seed"     { options.seed = (next.toInt() ?? 1) as u64; i += 1; }
+            case "--plans"    { options.plans = true; }
+            case "--speed"    { options.speed = (next.toFloat() ?? 1) as f32; i += 1; }
+            case "--quit"     { options.quitAt = (next.toFloat() ?? 10) as f32; i += 1; }
+            case "--mute"     { options.mute = true; }
+            case "--hero" {
+                index := aov.HeroKind.names.indexOf(next);
+                if index >= 0 { options.hero = index as aov.HeroKind; }
+                else          { fmt.print("WARNING: No hero named '%'", next); }
+                i += 1;
+            }
+            case "--screenshot" {
+                if i + 2 < args.count {
+                    options.shots.add(Screenshot{(next.toFloat() ?? 5) as f32, args[i + 2]});
+                }
+                i += 2;
+            }
+            else { fmt.print("WARNING: Unknown option '%'", arg); }
+        }
+        i += 1;
+    }
+    return options;
+}
+
 main :: () {
+    options := readOptions();
+
     SetConfigFlags(.msaa4xHint | .windowResizable | .vsyncHint);
     InitWindow(aov.WindowWidth, aov.WindowHeight, "Allan over vejen");
     defer CloseWindow();
@@ -18,21 +86,34 @@ main :: () {
     assets := aov.loadAssets();
     defer assets.unload();
 
-    game := aov.newGame(time.now().unixMilli() as u64);
+    seed := options.seed ?? time.now().unixMilli() as u64;
+    humans := 1;
+    if options.spectate { humans = 0; }
+    game := aov.newGame(seed, bots: options.bots, humans: humans);
     defer game.free();
+    if options.hero.hasValue() && !options.spectate { game.spawnHero(game.local, options.hero.value()); }
+    game.debug.plans = options.plans;
 
-    folder := aov.dataFolder();
-    game.sounds.load(folder);
-    folder.free();
+    if !options.mute {
+        folder := aov.dataFolder();
+        game.sounds.load(folder);
+        folder.free();
+        game.sounds.playMusic("theme", 0.5);
+        game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
+    }
     defer game.sounds.unload();
-    game.sounds.playMusic("theme", 0.5);
-    game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
     HideCursor();       // The cursor of Warcraft is drawn instead
 
+    nextShot := 0;
     while !WindowShouldClose() {
-        // A long frame, e.g while the window is dragged, mustn't throw the hero through a car
-        dt := math.min(GetFrameTime(), 0.05);
+        // A long frame, e.g while the window is dragged, mustn't throw the hero through a car. Faster with --speed, in
+        // steps that are no longer
+        steps := math.max(1, math.ceilf(options.speed) as int);
+        dt := math.min(GetFrameTime(), 0.05) * options.speed / steps as f32;
         game.update(dt);
+        for 1..steps {
+            if !game.isPaused { game.simulate(dt); }
+        }
 
         if IsKeyPressed(.m) { game.sounds.toggleMute("theme"); }
         game.sounds.setListener(game.camera.focus);
@@ -43,5 +124,13 @@ main :: () {
         game.drawScene(&assets);
         game.drawHud(&assets);
         EndDrawing();
+
+        if nextShot < options.shots.count && game.time >= options.shots[nextShot].at {
+            file := options.shots[nextShot].file.toCString();
+            TakeScreenshot(file);
+            file.free();
+            nextShot += 1;
+        }
+        if options.quitAt.hasValue() && game.time >= options.quitAt.value() { break; }
     }
 }

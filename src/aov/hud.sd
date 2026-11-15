@@ -57,8 +57,11 @@ drawHud :: method (game: *Game, assets: *Assets) {
     defer frameArena.clear();
     defer mem.setAllocator(previous);
 
-    if game.phase.kind != .runOver { drawHealthOverHero(game); }
-    drawScore(game);
+    for player, i in game.players {
+        if player.phase.kind != .runOver { drawHealthOverHero(game, i as int); }
+    }
+    drawScoreboard(game);
+    drawFeed(game);
     drawHeroCard(game, assets);
     drawBanner(game);
     if game.showHelp       { drawHelp(); }
@@ -69,36 +72,73 @@ drawHud :: method (game: *Game, assets: *Assets) {
     DrawTexture(assets.cursor, mouse.x as int - 2, mouse.y as int, White);
 }
 
-drawScore :: (game: *Game) {
-    panel := Rectangle{16, 16, 270, 136};
-    drawPanel(panel);
+// The players, the one furthest ahead first: their hero, crossings and deaths. Yours is lit up
+drawScoreboard :: (game: *Game) {
+    order: [..]int;
+    for _, i in game.players { order.add(i as int); }
+    // By crossings, then by fewer deaths
+    for i in 1..order.count {
+        j := i;
+        while j > 0 && isAhead(game.players[order[j]], game.players[order[j - 1]]) {
+            order.swap(j, j - 1);
+            j -= 1;
+        }
+    }
 
+    rowHeight := 24;
+    panel := Rectangle{16, 16, 330, (66 + order.count * rowHeight) as f32};
+    drawPanel(panel);
     x := panel.x as int + 14;
     y := panel.y as int + 10;
     drawTitle("Allan over vejen", x, y, 22, {255, 210, 90, 255});
+    drawText(fmt.sprint("Level %", game.level() + 1), x + 230, y + 4, 16, DimColor);
 
-    best := "-";
-    if game.stats.bestTime.hasValue() { best = fmt.sprint("% s", fmt.fixed(game.stats.bestTime.value(), 1)); }
-    rows := [
-        ["Level",     fmt.sprint("%", game.stats.level + 1)],
-        ["Crossings", fmt.sprint("%", game.stats.crossings)],
-        ["Run over",  fmt.sprint("%", game.stats.deaths)],
-        ["Best time", best],
-    ];
-    for row, i in rows {
-        drawText(row[0], x, y + 34 + i as int * 22, 18, DimColor);
-        drawText(row[1], x + 120, y + 34 + i as int * 22, 18, TextColor);
+    headerY := y + 32;
+    drawText("Across", x + 200, headerY, 14, DimColor);
+    drawText("Run over", x + 254, headerY, 14, DimColor);
+    for index, row in order {
+        player := game.players[index];
+        rowY := headerY + 20 + row as int * rowHeight;
+        if index == game.local { DrawRectangle(panel.x as int + 4, rowY - 3, panel.width as int - 8, rowHeight, {255, 255, 255, 22}); }
+        DrawRectangle(x, rowY + 3, 10, 10, player.color);
+        name := player.name;
+        if player.isPlaying() || player.phase.kind == .crossed { name = fmt.sprint("%  ·  %", player.name, player.hero.info().name); }
+        drawText(name, x + 18, rowY - 1, 17, TextColor);
+        drawText(fmt.sprint("%", player.stats.crossings), x + 214, rowY - 1, 17, TextColor);
+        drawText(fmt.sprint("%", player.stats.deaths), x + 274, rowY - 1, 17, DimColor);
     }
 }
 
-// The health of the hero over its head, like in Warcraft 3
-drawHealthOverHero :: (game: *Game) {
-    hero := &game.hero;
+isAhead :: (a: Player, b: Player) -> bool {
+    if a.stats.crossings != b.stats.crossings { return a.stats.crossings > b.stats.crossings; }
+    return a.stats.deaths < b.stats.deaths;
+}
+
+// What happened to the other players, under the scoreboard
+drawFeed :: (game: *Game) {
+    y := 16 + 66 + game.players.count as int * 24 + 12;
+    for line in game.feed {
+        alpha := math.min(1, line.timeLeft);
+        drawText(line.text, 22, y + 1, 16, ColorAlpha(Black, 0.8 * alpha));
+        drawText(line.text, 20, y, 16, ColorAlpha(line.color, alpha));
+        y += 21;
+    }
+}
+
+// The health of a hero over its head, like in Warcraft 3, and the name of its player
+drawHealthOverHero :: (game: *Game, index: int) {
+    player := &game.players[index];
+    hero := &player.hero;
     info := hero.info();
     head := GetWorldToScreen(hero.position + Vector3{0, info.height + 1.0, 0}, game.camera.view);
     width: f32 = 60;
     bar := Rectangle{head.x - width * 0.5, head.y, width, 8};
     drawHealthBar(bar, hero.health / info.maxHealth);
+    if index != game.local {
+        nameWidth := textWidth(player.name, 15);
+        drawText(player.name, head.x as int - nameWidth / 2 + 1, head.y as int - 18, 15, ColorAlpha(Black, 0.8));
+        drawText(player.name, head.x as int - nameWidth / 2, head.y as int - 19, 15, player.color);
+    }
 }
 
 drawHealthBar :: (bar: Rectangle, fraction: f32) {
@@ -117,7 +157,7 @@ AbilityButtonGap  :: 10;
 PassiveGap        :: 26;     // Between the abilities that are cast and the passives
 
 drawHeroCard :: (game: *Game, assets: *Assets) {
-    hero := &game.hero;
+    hero := &game.you().hero;
     info := hero.info();
     abilities := hero.abilities();
 
@@ -183,7 +223,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
 }
 
 drawAbilityButton :: (game: *Game, assets: *Assets, ability: Ability, slot: int, button: Rectangle) {
-    hero := &game.hero;
+    hero := &game.you().hero;
     x := button.x as int;
     y := button.y as int;
     size := AbilityButtonSize;
@@ -312,6 +352,7 @@ drawHelp :: () {
         HelpLine{"M", "Music on or off"},
         HelpLine{"P", "Pause"},
         HelpLine{"F5", "New game"},
+        HelpLine{"F4", "Show what the bots plan"},
         HelpLine{"H", "Hide this"},
     ];
 
@@ -327,14 +368,14 @@ drawHelp :: () {
 
 drawDebug :: (game: *Game) {
     camera := game.camera.view;
-    hero := game.hero;
+    hero := game.you().hero;
     lines := [
         fmt.sprint("FPS %", GetFPS()),
         fmt.sprint("Camera % % %", fmt.fixed(camera.position.x, 1), fmt.fixed(camera.position.y, 1), fmt.fixed(camera.position.z, 1)),
         fmt.sprint("Hero % %", fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1)),
         fmt.sprint("Cars %", game.traffic.activeCount()),
-        fmt.sprint("Phase %", game.phase.kind),
-        "F1 wireframes   F2 hitboxes",
+        fmt.sprint("Phase %", game.you().phase.kind),
+        "F1 wireframes   F2 hitboxes   F4 bot plans",
     ];
 
     width := 300;

@@ -1,0 +1,257 @@
+namespace aov;
+
+// The way a bot crosses: Safe Interval Path Planning (SIPP, Phillips and Likhachev, 2011) on a Forecast.
+//
+// A* over (cell, time) has a state for every cell at every step of time, most of which are the same: standing on the
+// grass at 1.0 s or at 1.1 s makes no difference. SIPP has a state for every cell and *safe interval* instead: a time
+// when no car is on the cell, which is only a few per cell. Moving to a neighbor arrives at the earliest time it can
+// that is inside one of the neighbor's safe intervals, waiting where it is for as long as it has to and can. So it finds
+// the fastest way across that waits for gaps in the traffic, with a small fraction of the states.
+//
+// The result is a Plan: points on the ground, each with the time to leave for it and to arrive there.
+
+import math;
+import mem;
+import collections;
+use raylib;
+
+Waypoint :: struct {
+    point:  Vector2;
+    depart: f32;            // When to leave the point before for this one, in the time of the game
+    arrive: f32;
+}
+
+PlanResult :: struct {
+    waypoints: [..]Waypoint;
+    reachesGoal: bool;      // Else it ends at the place nearest the goal that it can wait at safely
+    expanded:    int;       // States looked at, for the debug overlay and the tests
+}
+
+PlanRequest :: struct {
+    start:       Vector2;
+    goalSide:    Side;              // Done when past GoalX on this side
+    speed:       f32;               // Normal walking speed
+    sprintSpeed: f32;               // While sprintLeft lasts
+    sprintLeft:  f32;
+    now:         f32;               // The time of the game when the forecast was made
+    maxExpanded: int = 6000;
+}
+
+@private
+SearchState :: struct {
+    cell:     int;
+    interval: int;          // In forecast.safe
+    arrive:   f32;          // Seconds from the forecast
+    parent:   int;          // In the list of states, -1 for the start
+}
+
+OpenEntry :: struct {
+    cost:   f32;            // The arrival and the least time it can take from there
+    arrive: f32;
+    state:  int;
+}
+
+// The cheapest first, and of two as cheap, the one further along: it is nearer the goal
+operator < :: (a: OpenEntry, b: OpenEntry) -> bool {
+    if a.cost != b.cost { return a.cost < b.cost; }
+    return a.arrive > b.arrive;
+}
+
+// When there is no way across yet, the plan goes as far as it safely can, to a cell it can then wait in at least this
+// long, so there is time to plan again before it has to move. More is known about the cars by then
+FallbackWait       :: 2.0;
+FallbackWaitOnRoad :: 5.0;      // On the road, where what the forecast doesn't know of yet can come
+
+// The eight neighbors of a cell: the offsets of the column and the row
+@private
+Neighbors :: [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+];
+
+planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
+    result: PlanResult;
+    start := cellAt(request.start);
+    if start < 0 { return result; }
+    field := distanceField(forecast, request.goalSide);
+
+    states: [..]SearchState;
+    open: collections.PriorityQueue<OpenEntry>;
+    best: [..]f32;                  // The earliest arrival found in each safe interval, as the forecast works them out
+
+    // The start: in the safe interval it is in. When a car is about to be on it, it may still leave at once
+    startInterval := forecast.intervalAt(start, 0);
+    leaveStartBy: f32 = 0;
+    if startInterval >= 0 {
+        leaveStartBy = forecast.safe[startInterval].end;
+    } else {
+        // Too close to a car for the margins of the forecast: it may still leave until the car really gets there
+        leaveStartBy = math.max(0.15, forecast.hitTime(request.start, 0) - 0.05);
+    }
+    while best.count < forecast.safe.count { best.add(Forever); }
+    states.add(SearchState{cell: start, interval: startInterval, arrive: 0, parent: -1});
+    open.push(OpenEntry{field.distances[start] / request.sprintSpeed, 0, 0});
+
+    goalState := -1;
+    fallback := -1;                 // The state nearest the goal that can be waited in for a while
+    fallbackDistance := Forever;
+    safest := -1;                   // Without such a state: the one it can stay in the longest, the furthest across of those
+    safestUntil: f32 = -1;
+    safestDistance := Forever;
+
+    while !open.isEmpty() && result.expanded < request.maxExpanded {
+        entry := open.pop();
+        state := states[entry.state];
+        if state.interval >= 0 && state.arrive > best[state.interval] { continue; }    // Found a quicker way since
+        result.expanded += 1;
+
+        center := cellCenter(state.cell);
+        if hasCrossed(center, request.goalSide.opposite()) {
+            goalState = entry.state;
+            break;
+        }
+
+        leaveBy := leaveStartBy;
+        if state.parent < 0 {
+            safest = entry.state;
+            safestUntil = math.min(leaveBy, ForecastHorizon);
+            safestDistance = field.distances[state.cell];
+        }
+        if state.interval >= 0 {
+            leaveBy = forecast.safe[state.interval].end;
+            toGoal := field.distances[state.cell];
+            wait: f32 = FallbackWait;
+            if math.fabsf(center.x) < RoadHalfWidth + CellSize { wait = FallbackWaitOnRoad; }
+            if leaveBy - state.arrive >= wait && toGoal < fallbackDistance {
+                fallback = entry.state;
+                fallbackDistance = toGoal;
+            }
+            // Staying safe longer wins, and of two that are about as safe, the one further across
+            later := math.min(leaveBy, ForecastHorizon);
+            if later > safestUntil + 0.25 || (later > safestUntil - 0.25 && toGoal < safestDistance) {
+                safest = entry.state;
+                safestUntil = later;
+                safestDistance = toGoal;
+            }
+        }
+
+        column := state.cell % GridColumns;
+        row := state.cell / GridColumns;
+        for offset in Neighbors {
+            nextColumn := column + offset[0];
+            nextRow := row + offset[1];
+            if nextColumn < 0 || nextColumn >= GridColumns || nextRow < 0 || nextRow >= GridRows { continue; }
+            next := nextRow * GridColumns + nextColumn;
+            if forecast.blocked[next] { continue; }
+            // Not diagonally past the corner of a wall
+            if offset[0] != 0 && offset[1] != 0 {
+                if forecast.blocked[row * GridColumns + nextColumn] || forecast.blocked[nextRow * GridColumns + column] { continue; }
+            }
+
+            distance: f32 = CellSize;
+            if offset[0] != 0 && offset[1] != 0 { distance = CellSize * 1.41421; }
+            speed := request.speed;
+            if state.arrive < request.sprintLeft { speed = request.sprintSpeed; }
+            travel := distance / speed;
+
+            // Leave between arriving here and half the way before this cell's interval ends, and arrive in a safe
+            // interval of the next cell that started half the way before
+            earliest := state.arrive + travel;
+            latest := leaveBy + travel * 0.5;
+            first, count := forecast.intervalsOf(next);
+            while best.count < forecast.safe.count { best.add(Forever); }
+            for i in first..first + count {
+                interval := forecast.safe[i];
+                arrive := math.max(earliest, interval.start + travel * 0.5);
+                if interval.start > latest { break; }
+                if arrive > latest || arrive > interval.end { continue; }
+                if arrive >= best[i] { continue; }
+                best[i] = arrive;
+                states.add(SearchState{cell: next, interval: i as int, arrive: arrive, parent: entry.state});
+                open.push(OpenEntry{arrive + field.distances[next] / request.sprintSpeed, arrive, states.count as int - 1});
+            }
+        }
+    }
+
+    end := goalState;
+    result.reachesGoal = goalState >= 0;
+    if end < 0 { end = fallback; }
+    if end < 0 { end = safest; }
+    if end < 0 { return result; }
+
+    // Back from the end to the start, then turned around
+    at := end;
+    while at >= 0 && states[at].parent >= 0 {
+        state := states[at];
+        parent := states[state.parent];
+        speed := request.speed;
+        if parent.arrive < request.sprintLeft { speed = request.sprintSpeed; }
+        travel := cellCenter(state.cell).distance(cellCenter(parent.cell)) / speed;
+        result.waypoints.add(Waypoint{
+            point:  cellCenter(state.cell),
+            depart: request.now + state.arrive - travel,
+            arrive: request.now + state.arrive,
+        });
+        at = state.parent;
+    }
+    result.waypoints.reverse();
+    return result;
+}
+
+// How far each cell is from the goal around the walls, without the cars: the heuristic of the search, which is then
+// exact where no car is in the way, so the search only spreads out where the cars make it. It only depends on the
+// walls, the side and the size of the hero, so it is made once for each and kept
+DistanceField :: struct {
+    distances: [GridCells]f32;      // Forever where the goal can't be reached from
+}
+
+@private
+distanceFields: Map<int, *DistanceField>;
+
+distanceField :: (forecast: *Forecast, goalSide: Side) -> *DistanceField {
+    options := forecast.options;
+    key := goalSide as int * 100000 + (options.throughWalls as int) * 10000 + (options.radius * 100) as int;
+    if distanceFields.has(key) { return distanceFields[key]; }
+
+    // It is kept for the rest of the game, so on the heap, whatever the allocator of the thread is, e.g a bot's arena
+    previous := mem.setAllocator(mem.heap());
+    defer mem.setAllocator(previous);
+
+    // Dijkstra from every cell past the goal line, over the cells that aren't blocked
+    field := new(DistanceField, mem.heap());
+    open: collections.PriorityQueue<OpenEntry>;
+    defer open.free();
+    for cell in 0..GridCells {
+        field.distances[cell] = Forever;
+        if forecast.blocked[cell] { continue; }
+        if hasCrossed(cellCenter(cell as int), goalSide.opposite()) {
+            field.distances[cell] = 0;
+            open.push(OpenEntry{0, 0, cell as int});
+        }
+    }
+    while !open.isEmpty() {
+        entry := open.pop();
+        if entry.cost > field.distances[entry.state] { continue; }
+        column := entry.state % GridColumns;
+        row := entry.state / GridColumns;
+        for offset in Neighbors {
+            nextColumn := column + offset[0];
+            nextRow := row + offset[1];
+            if nextColumn < 0 || nextColumn >= GridColumns || nextRow < 0 || nextRow >= GridRows { continue; }
+            next := nextRow * GridColumns + nextColumn;
+            if forecast.blocked[next] { continue; }
+            step: f32 = CellSize;
+            if offset[0] != 0 && offset[1] != 0 {
+                if forecast.blocked[row * GridColumns + nextColumn] || forecast.blocked[nextRow * GridColumns + column] { continue; }
+                step = CellSize * 1.41421;
+            }
+            distance := entry.cost + step;
+            if distance < field.distances[next] {
+                field.distances[next] = distance;
+                open.push(OpenEntry{distance, 0, next});
+            }
+        }
+    }
+    distanceFields[key] = field;
+    return field;
+}

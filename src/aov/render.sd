@@ -23,7 +23,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     DrawMesh(assets.ground, assets.groundMaterial, MatrixIdentity());
     DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.06, 0));
     drawLaneMarkings();
-    drawGoalStrip(game.startSide.opposite());
+    drawGoalStrip(game.you().startSide.opposite());
 
     if game.debug.wireframes { rlEnableWireMode(); }
 
@@ -36,7 +36,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     for *car in game.traffic.cars {
         if car.isActive { drawCar(assets, car, warped); }
     }
-    drawStopSign(assets, game);
+    for sign in game.stopSigns { drawStopSign(assets, sign); }
 
     // Shadows, stains and rings lie on the ground, above the road
     for *car in game.traffic.cars {
@@ -47,11 +47,12 @@ drawScene :: method (game: *Game, assets: *Assets) {
     }
     game.effects.draw();
 
-    heroVisible := game.phase.kind != .runOver;
-    if heroVisible {
-        drawAbilityHints(game);
-        drawHero(assets, &game.hero, game.phase);
+    if game.you().isPlaying() { drawAbilityHints(game); }
+    for player, i in game.players {
+        if player.phase.kind == .runOver { continue; }
+        drawHero(assets, game, i as int);
     }
+    if game.debug.plans { drawPlans(game); }
 
     if game.debug.wireframes { rlDisableWireMode(); }
     if game.debug.hitboxes { drawHitboxes(game); }
@@ -111,10 +112,7 @@ drawCar :: (assets: *Assets, car: *Car, warped: bool) {
 WarpColor :: Color{150, 110, 230, 255};
 
 // Hilda's stop sign where she raised it, and a stop line across the lanes it stops
-drawStopSign :: (assets: *Assets, game: *Game) {
-    if !game.stopSign.hasValue() { return; }
-    sign := game.stopSign.value();
-
+drawStopSign :: (assets: *Assets, sign: StopSign) {
     left  := laneCenter(sign.lanes[0]) - LaneWidth * 0.5;
     right := laneCenter(sign.lanes[1]) + LaneWidth * 0.5;
     fade := math.min(1, sign.timeLeft * 2);
@@ -129,44 +127,80 @@ drawStopSign :: (assets: *Assets, game: *Game) {
     DrawCylinderEx(top + Vector3{0, 0, -0.2}, top + Vector3{0, 0, -0.1}, 1.08, 1.08, 8, {205, 30, 35, 255});
 }
 
-drawHero :: (assets: *Assets, hero: *Hero, phase: Phase) {
+drawHero :: (assets: *Assets, game: *Game, index: int) {
+    player := &game.players[index];
+    hero := &player.hero;
     info := hero.info();
+    isYou := index == game.local;
 
     // Bobbing while walking, jumping when across
     bob: f32 = 0;
     if hero.isMoving || hero.hook.hasValue() { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
-    if phase.kind == .crossed                { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
+    if player.phase.kind == .crossed         { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
     if hero.walksThroughWalls()             { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
     if hero.leap.hasValue()                 { bob = math.sinf(hero.leap.value().flight * Pi) * LeapHeight; }
+    if hero.stunLeft > 0                     { bob = 0; }
 
-    // A shadow that stays on the ground, and the green circle of the selected unit, as in Warcraft
+    // A shadow that stays on the ground, and a circle in the color of the player, as under the units of Warcraft.
+    // Yours is thicker
     shadow := info.width * 0.55 * (1 - bob / (LeapHeight * 2));
     DrawCylinder(hero.position + Vector3{0, 0.12, 0}, shadow, shadow, 0.02, 16, ShadowColor);
     ring := info.width * 0.85;
-    DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring, {1, 0, 0}, 90, {90, 255, 110, 220});
-    DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring * 0.94, {1, 0, 0}, 90, {90, 255, 110, 220});
+    ringColor := ColorAlpha(player.color, 0.85);
+    DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring, {1, 0, 0}, 90, ringColor);
+    DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring * 0.94, {1, 0, 0}, 90, ringColor);
+    if isYou { DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring * 0.88, {1, 0, 0}, 90, ringColor); }
 
     tint := White;
     if hero.walksThroughWalls() { tint.a = 150; }      // Ghosty is see-through
     if hero.isFaded()           { tint.a = 70; }       // and more so when he fades
+    if hero.lockedLeft > 0      { tint = {200, 160, 255, 255}; }
     assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
 
-    // The hook flies from the butcher's hand, with its chain
+    // Stunned: stars going round over the head. Locked in time: a clock face over it
+    top := hero.position + Vector3{0, info.height + 0.6, 0};
+    if hero.lockedLeft > 0 {
+        DrawCylinderEx(top, top + Vector3{0, 0.1, 0}, 1.2, 1.2, 20, {230, 210, 255, 200});
+        angle := -GetTime() as f32 * 6;
+        DrawCylinderEx(top + Vector3{0, 0.12, 0}, top + Vector3{math.sinf(angle) * 0.9, 0.12, math.cosf(angle) * 0.9}, 0.08, 0.08, 4, {60, 30, 90, 255});
+    } else if hero.stunLeft > 0 {
+        for k in 0..3 {
+            angle := GetTime() as f32 * 5 + k as f32 * Pi * 2 / 3;
+            DrawSphere(top + Vector3{math.sinf(angle) * 0.9, 0, math.cosf(angle) * 0.9}, 0.22, {255, 230, 90, 255});
+        }
+    }
+
+    // The hook flies from the butcher's hand, with its chain, and drags back an enemy it caught
     if hero.hook.hasValue() {
         hook := hero.hook.value();
         forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
         right   := Vector3{forward.z, 0, -forward.x};
         hand := hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45;
-        head := hand.lerp(hook.point + Vector3{0, 0.4, 0}, hook.flight);
+        head := hook.from.lerp(hook.point, hook.flight) + Vector3{0, 1.2, 0};
+        if hook.victim >= 0 { head = game.players[hook.victim].hero.position + Vector3{0, 1.5, 0}; }
         DrawCylinderEx(hand, head, 0.08, 0.08, 6, {90, 90, 95, 255});
         assets.drawBox(head, {0.6, 0.6, 0.6}, {60, 60, 65, 255});
     }
 }
 
+// The plans of the bots (F4): their way across, a dot a waypoint, in the color of the player
+drawPlans :: (game: *Game) {
+    for player in game.players {
+        if !player.isBot() || !player.isPlaying() { continue; }
+        path := player.brain.plannedPath();
+        previous := player.hero.position + Vector3{0, 0.4, 0};
+        for waypoint in path {
+            point := waypoint.point.at(0.4);
+            DrawLine3D(previous, point, player.color);
+            previous = point;
+        }
+        if path.count > 0 { DrawSphere(path[path.count - 1].point.at(0.5), 0.5, player.color); }
+    }
+}
+
 // The reach of an ability while the mouse is on its icon, and the chill aura all the time
 drawAbilityHints :: (game: *Game) {
-    hero := &game.hero;
-    if game.phase.kind != .playing { return; }
+    hero := &game.you().hero;
     ground := hero.ground();
 
     aura := hero.chillAura();
@@ -197,6 +231,8 @@ drawAbilityHints :: (game: *Game) {
         case .blink  { reach = v.range; }
         case .freeze { reach = v.radius; }
         case .leap   { reach = v.range; }
+        case .bash   { reach = v.range; }
+        case .timeLock { reach = v.range; }
         else         { }
     }
     if reach > 0 {
@@ -214,10 +250,12 @@ drawHitboxes :: (game: *Game) {
     for wall in game.world.walls {
         DrawCubeWires(wall.center().at(0.2), wall.width, 0.1, wall.height, Orange);
     }
-    hero := &game.hero;
-    DrawCircle3D(hero.position + Vector3{0, 0.2, 0}, hero.info().hitRadius, {1, 0, 0}, 90, Lime);
-    if hero.isMoving {
-        DrawSphere(hero.target, 0.3, Lime);
+    for player in game.players {
+        hero := player.hero;
+        DrawCircle3D(hero.position + Vector3{0, 0.2, 0}, hero.info().hitRadius, {1, 0, 0}, 90, Lime);
+        if hero.isMoving {
+            DrawSphere(hero.target, 0.3, Lime);
+        }
     }
 }
 

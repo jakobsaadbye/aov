@@ -1,0 +1,565 @@
+namespace aov;
+
+// The bots. A bot is a Brain: something that looks at the game and gives its player's hero orders, with the same
+// Commands that your keys and mouse give (game.sd). So a bot can't do anything you can't, and a new kind of bot, e.g one
+// that learns, or plays a team game, is a new struct with the methods of Brain, without changing the game.
+//
+// The Bot of this file thinks in three parts, each of which can be changed on its own:
+//
+//   * Forecast (forecast.sd): when each cell of the ground is free of cars, for the next seconds
+//   * planCrossing (planner.sd): the fastest way across through those free times (Safe Interval Path Planning)
+//   * Tactics (below): when to cast which ability. Every effect of an ability has a case in scoreAbility, which the
+//     compiler checks is there, so a new ability can't be forgotten by the bots
+//
+// How a bot plays (how careful, how quick, how mean) is a BotPersonality: numbers, not code.
+
+import allocators;
+import math;
+import mem;
+import random;
+import time;
+import fmt;
+use raylib;
+
+Brain :: interface {
+    // Looks at the game and gives the hero of player me its orders for this frame, with player.order(command)
+    think :: method * (game: *Game, me: int, dt: f32);
+
+    // Forgets what it was doing, e.g for a new game
+    reset :: method * ();
+
+    // What it means to do, for the debug overlay (F4): the points of its way
+    plannedPath :: method () -> []Waypoint;
+
+    // What its thinking has cost so far
+    profile :: method () -> BotProfile;
+}
+
+BotPersonality :: struct {
+    label:          string;
+    replanEvery:    f32 = 0.3;      // Seconds between two plans
+    reactionTime:   f32 = 0.2;      // Seconds between two looks at the abilities
+    margin:         f32 = 0.1;      // Room it keeps to the cars, besides half a cell that the forecast keeps anyway
+    leadTime:       f32 = 0.5;      // Seconds it keeps between itself and a car that is coming
+    trailTime:      f32 = 0.1;      // and one that has gone past
+    aggression:     f32 = 0.5;      // 0 to 1: how keen it is to cast on enemies
+    abilityUse:     f32 = 0.7;      // 0 to 1: how keen it is to use abilities at all
+}
+
+BotPersonalities :: [
+    BotPersonality{label: "steady"},
+    BotPersonality{label: "bully",  aggression: 0.9, reactionTime: 0.25},
+    BotPersonality{label: "daring", margin: 0.0, leadTime: 0.35, trailTime: 0.05, abilityUse: 0.9},
+    BotPersonality{label: "timid",  margin: 0.3, leadTime: 0.75, trailTime: 0.2, aggression: 0.2, reactionTime: 0.3},
+    BotPersonality{label: "quick",  replanEvery: 0.2, reactionTime: 0.12},
+];
+
+BotNames :: ["Lars", "Mette", "Søren", "Freja", "Jens"];
+
+DefaultBots :: 3;
+
+Bot :: struct {
+    personality: BotPersonality;
+    rng:         random.Random;
+    arena:       allocators.Arena;  // The forecast and the search of the last plan
+    forecast:    Forecast;
+    forecastAt:  f32;               // The time of the game it was made
+    hasForecast: bool;
+    plan:        [..]Waypoint;      // On the heap: it lives longer than the arena
+    next:        int;               // The waypoint it is going to
+    reachesGoal: bool;
+    replanIn:    f32;
+    searchedAt:  f32;               // The time of the game of the last search
+    mustSearch:  bool;              // The plan is no good any more, e.g after an ability moved the hero
+    thinkIn:     f32;
+    lastKind:    HeroKind;
+    wasActing:   bool;
+    stats:       BotProfile;
+}
+
+// What the thinking of a bot has cost, for bot_arena.sd and the debug overlay
+BotProfile :: struct {
+    forecasts:       int;
+    plans:           int;           // Searches for a way across
+    forecastSeconds: f64;
+    planSeconds:     f64;
+    expanded:        i64;
+    reachedGoal:     int;           // Plans that found a way all the way across
+    waiting:         f64;           // Seconds it stood still waiting for a gap, while playing
+    walking:         f64;
+    noPlan:          f64;           // Seconds it had no plan to follow
+    dodges:          int;
+}
+
+newBot :: (seed: u64, personality: BotPersonality) -> *Bot {
+    bot := new(Bot, mem.heap());
+    bot.personality = personality;
+    bot.rng = random.newRandom(seed);
+    bot.plan.allocator = mem.heap();
+    return bot;
+}
+
+reset :: method (bot: *Bot) {
+    bot.plan.clear();
+    bot.next = 0;
+    bot.replanIn = 0;
+    bot.mustSearch = true;
+    bot.hasForecast = false;
+    bot.arena.clear();
+}
+
+plannedPath :: method (bot: *Bot) -> []Waypoint {
+    return bot.plan;
+}
+
+profile :: method (bot: *Bot) -> BotProfile {
+    return bot.stats;
+}
+
+think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
+    player := &game.players[me];
+    if !player.isPlaying() {
+        bot.plan.clear();
+        bot.replanIn = 0;
+        return;
+    }
+    hero := &player.hero;
+
+    // A new hero, or one that was moved by something else, needs a new plan
+    canAct := hero.canAct();
+    if hero.kind != bot.lastKind || (canAct && !bot.wasActing) {
+        bot.replanIn = 0;
+        bot.mustSearch = true;
+    }
+    bot.lastKind = hero.kind;
+    bot.wasActing = canAct;
+    if !canAct { return; }
+
+    bot.replanIn -= dt;
+    if bot.isBehindPlan(game.time) { bot.mustSearch = true; }
+    if bot.replanIn <= 0 || bot.mustSearch {
+        bot.replan(game, me);
+        bot.replanIn = bot.personality.replanEvery * bot.rng.uniform(0.8, 1.2) as f32;
+    }
+
+    bot.thinkIn -= dt;
+    if bot.thinkIn <= 0 {
+        bot.thinkIn = bot.personality.reactionTime;
+        cast := bot.chooseAbility(game, me);
+        if cast.hasValue() {
+            player.order(cast.value());
+            bot.replanIn = 0;           // Where it is going to be has changed
+            bot.mustSearch = true;
+            return;
+        }
+    }
+
+    if bot.dodge(game, me) { return; }
+    bot.follow(game, me, dt);
+}
+
+// The reflex under the plan: a car that is about to be on the hero, which the plan doesn't take it away from, e.g as
+// the forecast changed, or an enemy moved it. It goes to the point near it it can get to without a car on the way, that
+// then stays free the longest. On the road without a plan, it doesn't wait for a car to come
+dodge :: method (bot: *Bot, game: *Game, me: int) -> bool {
+    if !bot.hasForecast { return false; }
+    player := &game.players[me];
+    hero := &player.hero;
+    now := game.time - bot.forecastAt;
+    here := hero.ground();
+    hit := bot.forecast.hitTime(here, now, 0);
+    hasPlan := bot.next < bot.plan.count;
+    stranded := !hasPlan && isOnRoad(here);
+    if hit - now > DodgeTime && !stranded { return false; }
+
+    // The plan moves on before the car gets here: it leaves for its next point in time
+    if hasPlan && bot.plan[bot.next].depart - bot.forecastAt < hit - 0.1 {
+        return false;
+    }
+
+    best := here;
+    bestFree := math.min(hit - now, DodgeEnough);
+    speed := hero.speed();
+    for k in 0..16 {
+        angle := k as f32 * Pi / 8;
+        for reach in [1.5, 3.0, 4.5, 6.0] {
+            point := here + Vector2{math.cosf(angle), math.sinf(angle)} * reach;
+            cell := cellAt(point);
+            if cell < 0 || bot.forecast.blocked[cell] { continue; }
+            arrive := now + reach / speed;
+            free := math.min(bot.forecast.hitTime(point, arrive, 0) - arrive, DodgeEnough);
+            if free <= bestFree + 0.05 { continue; }
+            if !bot.wayIsFree(here, point, now, speed, 0) { continue; }
+            best = point;
+            bestFree = free;
+        }
+    }
+    if best.distance(here) < 0.01 { return false; }
+    if !hero.isMoving || hero.target.xz().distance(best) > 0.5 { player.order(Command{move: best}); }
+    bot.mustSearch = true;
+    bot.stats.dodges += 1;
+    return true;
+}
+
+DodgeEnough :: 3.0;     // Seconds free that are as good as any more, so a nearer point wins
+
+// If a hero going straight from one point to another at a speed, from a time, has no car on it on the way
+wayIsFree :: method (bot: *Bot, from: Vector2, to: Vector2, start: f32, speed: f32, margin: f32) -> bool {
+    distance := from.distance(to);
+    steps := math.max(2, math.ceilf(distance / CellSize) as int);
+    for k in 1...steps {
+        t := k as f32 / steps as f32;
+        point := from.lerp(to, t);
+        at := start + distance * t / speed;
+        if bot.forecast.hitTime(point, at, margin) <= at + 0.05 { return false; }
+    }
+    return true;
+}
+
+DodgeTime   :: 1.0;     // Seconds before a car gets there that the reflex steps away
+
+// Makes a new forecast of the cars. When the plan doesn't hold up against it, or it is time to look for a better one,
+// it searches for a new plan through them
+replan :: method (bot: *Bot, game: *Game, me: int) {
+    hero := &game.players[me].hero;
+    bot.arena.clear();
+    previous := mem.setAllocator(&bot.arena);
+    defer mem.setAllocator(previous);
+
+    started := time.clock();
+    bot.forecast = newForecast(game, ForecastOptions{
+        radius:       hero.info().hitRadius,
+        throughWalls: hero.walksThroughWalls(),
+        margin:       bot.personality.margin,
+        leadTime:     bot.personality.leadTime,
+        trailTime:    bot.personality.trailTime,
+    });
+    bot.forecastAt = game.time;
+    bot.hasForecast = true;
+    forecastDone := time.clock();
+    bot.stats.forecasts += 1;
+    bot.stats.forecastSeconds += forecastDone - started;
+
+    lookForBetter := !bot.reachesGoal && game.time - bot.searchedAt > 1.0;
+    if !bot.mustSearch && !lookForBetter && bot.planHolds() { return; }
+
+    // Another bot searched this frame: its turn is next frame. Unless it is by the road, where a plan that doesn't hold
+    // any more can't wait
+    if game.searchesLeft <= 0 && !isNearRoad(game.players[me].hero.ground()) {
+        bot.mustSearch = true;
+        return;
+    }
+    game.searchesLeft -= 1;
+    bot.mustSearch = false;
+    bot.searchedAt = game.time;
+
+    speed := hero.speed();
+    sprintSpeed := speed;
+    if hero.sprintLeft > 0 { speed = speed / hero.sprintMultiplier; }
+    result := planCrossing(&bot.forecast, PlanRequest{
+        start:       hero.ground(),
+        goalSide:    game.players[me].startSide.opposite(),
+        speed:       speed,
+        sprintSpeed: sprintSpeed,
+        sprintLeft:  hero.sprintLeft,
+        now:         game.time,
+    });
+
+    bot.stats.plans += 1;
+    bot.stats.planSeconds += time.clock() - forecastDone;
+    bot.stats.expanded += result.expanded;
+    if result.reachesGoal { bot.stats.reachedGoal += 1; }
+
+    bot.plan.clear();
+    for waypoint in result.waypoints { bot.plan.add(waypoint); }
+    bot.next = 0;
+    bot.reachesGoal = result.reachesGoal;
+}
+
+// If the rest of the plan is still free of cars in the new forecast: the hero can wait where it is until it leaves for
+// the next point, and each point is free from when it gets there until it leaves for the one after
+planHolds :: method (bot: *Bot) -> bool {
+    if bot.next >= bot.plan.count { return false; }
+    for i in bot.next..bot.plan.count {
+        waypoint := bot.plan[i];
+        leave := waypoint.arrive;
+        if i + 1 < bot.plan.count { leave = bot.plan[i + 1].depart; }
+        cell := cellAt(waypoint.point);
+        if cell < 0 { return false; }
+        interval := bot.forecast.intervalAt(cell, waypoint.arrive - bot.forecastAt + PlanSlack);
+        if interval < 0 || bot.forecast.safe[interval].end < leave - bot.forecastAt - PlanSlack { return false; }
+    }
+    return true;
+}
+
+PlanSlack :: 0.15;      // Seconds a plan may be off in the new forecast, which isn't quite the same as the old
+
+// Late for the next point of the plan: the cars won't be where the plan thought
+isBehindPlan :: method (bot: *Bot, now: f32) -> bool {
+    if bot.next >= bot.plan.count { return false; }
+    return now > bot.plan[bot.next].arrive + 0.35;
+}
+
+// Walks the plan: to each point in turn, waiting before it until it is time to leave for it
+follow :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
+    player := &game.players[me];
+    hero := &player.hero;
+
+    while bot.next < bot.plan.count && hero.ground().distance(bot.plan[bot.next].point) < 0.25 {
+        bot.next += 1;
+    }
+    if bot.next >= bot.plan.count {
+        if hero.isMoving { player.order(.stop); }
+        bot.stats.noPlan += dt;
+        return;
+    }
+
+    waypoint := bot.plan[bot.next];
+    if game.time < waypoint.depart - 0.02 {
+        if hero.isMoving { player.order(.stop); }       // Waiting for a gap
+        bot.stats.waiting += dt;
+        return;
+    }
+    bot.stats.walking += dt;
+    if !hero.isMoving || hero.target.xz().distance(waypoint.point) > 0.01 {
+        player.order(Command{move: waypoint.point});
+    }
+}
+
+//
+// Tactics: which ability to cast, and where. Each ability gets a score from 0 (no) to 1 (now!), and the best one over
+// the bar of the personality is cast
+//
+
+// What the tactics look at
+TacticsView :: struct {
+    me:          int;
+    ground:      Vector2;
+    danger:      f32;           // Seconds until a car is on the hero, as forecast. Large when it is safe
+    onRoad:      bool;
+    nearRoad:    bool;          // On the road, or about to step onto it
+    progress:    f32;           // 0 at the start side to 1 at the goal
+    goalSide:    Side;
+    healthShare: f32;
+}
+
+chooseAbility :: method (bot: *Bot, game: *Game, me: int) -> ?Command {
+    if !bot.hasForecast { return null; }
+    player := &game.players[me];
+    hero := &player.hero;
+
+    view := TacticsView{
+        me:          me,
+        ground:      hero.ground(),
+        danger:      bot.forecast.safeFor(hero.ground(), game.time - bot.forecastAt),
+        onRoad:      isOnRoad(hero.ground()),
+        nearRoad:    math.fabsf(hero.position.x) < RoadHalfWidth + 3,
+        progress:    progressOf(hero.ground(), player.startSide),
+        goalSide:    player.startSide.opposite(),
+        healthShare: hero.health / hero.info().maxHealth,
+    };
+
+    bestScore: f32 = 1 - bot.personality.abilityUse * 0.7;     // The bar: from 0.3 for the keenest to 1 for none
+    best: ?Command = null;
+    for ability, slot in hero.abilities() {
+        if !hero.abilityReady(slot as int) { continue; }
+        choice := bot.scoreAbility(game, view, ability);
+        if choice.score > bestScore {
+            bestScore = choice.score;
+            best = Command{cast: {slot: slot as int, target: choice.target}};
+        }
+    }
+    return best;
+}
+
+AbilityChoice :: struct {
+    score:  f32;
+    target: Vector2;
+}
+
+// How much it wants to cast an ability now, and at what
+scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Ability) -> AbilityChoice {
+    no := AbilityChoice{0, view.ground};
+    here := AbilityChoice{0, view.ground};
+    inDanger := view.danger < 0.6;
+    aggression := bot.personality.aggression;
+
+    switch v in ability.effect {
+        case .sprint {
+            // Across the road faster, or away from a car
+            if inDanger            { here.score = 0.8; }
+            else if view.nearRoad  { here.score = 0.5; }
+            return here;
+        }
+        case .hook {
+            // An enemy that is ahead, or on the road, is dragged back. Else it is a way out of trouble
+            enemy := bot.enemyToPunish(game, view, v.range * 0.9);
+            if enemy >= 0 && aggression > 0 {
+                return AbilityChoice{0.2 + 0.7 * aggression, game.players[enemy].hero.ground()};
+            }
+            if inDanger {
+                // It pulls him through what is between, so the way must be free too
+                choice := bot.escape(game, view, v.range, v.range / HookSpeed, 0.9);
+                if choice.score > 0 && bot.wayIsFree(view.ground, choice.target, game.time - bot.forecastAt + v.range / HookSpeed, v.pullSpeed, 0.3) {
+                    return choice;
+                }
+            }
+            return no;
+        }
+        case .freeze {
+            if inDanger { here.score = 0.9; }
+            else if view.onRoad && bot.isWaiting(game) { here.score = 0.6; }
+            return here;
+        }
+        case .blink {
+            if inDanger { return bot.escape(game, view, v.range, 0, 1.0); }
+            if view.nearRoad { return bot.shortcut(game, view, v.range, 0, 0.45); }
+            return no;
+        }
+        case .fade {
+            if view.danger < 0.35 { here.score = 1.0; }
+            return here;
+        }
+        case .leap {
+            if inDanger { return bot.escape(game, view, v.range, v.duration, 1.0); }
+            if view.nearRoad { return bot.shortcut(game, view, v.range, v.duration, 0.5); }
+            return no;
+        }
+        case .halt {
+            if inDanger { here.score = 0.8; }
+            else if view.onRoad && bot.isWaiting(game) { here.score = 0.65; }
+            return here;
+        }
+        case .timeWarp {
+            if inDanger { here.score = 0.85; }
+            else if view.onRoad && bot.isWaiting(game) { here.score = 0.5; }
+            return here;
+        }
+        case .rewind {
+            if view.danger < 0.4 || view.healthShare < 0.4 { here.score = 0.9; }
+            return here;
+        }
+        case .bash {
+            enemy := game.enemyNear(view.me, view.ground, v.range);
+            if enemy < 0 || aggression <= 0 { return no; }
+            return AbilityChoice{bot.bashScore(game, view, enemy, v.knockback) * aggression, game.players[enemy].hero.ground()};
+        }
+        case .timeLock {
+            enemy := bot.enemyToPunish(game, view, v.range);
+            if enemy < 0 || aggression <= 0 { return no; }
+            return AbilityChoice{0.2 + 0.8 * aggression, game.players[enemy].hero.ground()};
+        }
+        case .phaseWalk
+        case .quickFeet
+        case .chillAura
+        case .ironHide {
+            return no;          // Passives are always on
+        }
+    }
+}
+
+// An enemy in reach worth casting on: on the road, where a stun or a drag can get it run over, or further across than
+// this bot. -1 when there is none
+enemyToPunish :: method (bot: *Bot, game: *Game, view: TacticsView, reach: f32) -> int {
+    best := -1;
+    bestScore: f32 = 0;
+    for player, i in game.players {
+        if i as int == view.me || !player.isPlaying() || player.hero.isFaded() || player.hero.isAirborne() { continue; }
+        ground := player.hero.ground();
+        if ground.distance(view.ground) > reach { continue; }
+        score: f32 = 0;
+        if isOnRoad(ground) { score += 1; }
+        ahead := progressOf(ground, player.startSide) - view.progress;
+        if ahead > 0.1 { score += ahead * 2; }
+        if score > bestScore {
+            best = i as int;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+// A bash is worth it when it knocks the enemy onto the road, or back towards where it started
+bashScore :: method (bot: *Bot, game: *Game, view: TacticsView, enemy: int, knockback: f32) -> f32 {
+    target := game.players[enemy];
+    away := (target.hero.ground() - view.ground).normalize();
+    landing := target.hero.ground() + away * knockback;
+    score: f32 = 0;
+    if isOnRoad(landing) { score += 0.8; }
+    setBack := progressOf(target.hero.ground(), target.startSide) - progressOf(landing, target.startSide);
+    if setBack > 0.05 { score += setBack * 3; }
+    return math.min(score, 1);
+}
+
+// Standing still on or by the road while the plan waits for a gap
+isWaiting :: method (bot: *Bot, game: *Game) -> bool {
+    if bot.next >= bot.plan.count { return false; }
+    return bot.plan[bot.next].depart - game.time > 0.8;
+}
+
+// A cast to a point in reach that stays free of cars for a while after it gets there (delay seconds from now), the
+// further towards the goal the better. Nothing (score 0) when there is no such point
+escape :: method (bot: *Bot, game: *Game, view: TacticsView, range: f32, delay: f32, score: f32) -> AbilityChoice {
+    spot := bot.safeSpot(game, view, range, delay, 1.2, false);
+    if !spot.hasValue() { return AbilityChoice{0, view.ground}; }
+    return AbilityChoice{score, spot.value()};
+}
+
+// A cast that gets it a good way across the road at once, to a point where it can wait
+shortcut :: method (bot: *Bot, game: *Game, view: TacticsView, range: f32, delay: f32, score: f32) -> AbilityChoice {
+    spot := bot.safeSpot(game, view, range, delay, 2.0, true);
+    if !spot.hasValue() { return AbilityChoice{0, view.ground}; }
+    gained := (spot.value().x - view.ground.x) * view.goalSide.sign();
+    if gained < range * 0.6 { return AbilityChoice{0, view.ground}; }
+    return AbilityChoice{score, spot.value()};
+}
+
+// The point in reach, towards the goal, that is free of cars from delay seconds from now for at least `stay`
+safeSpot :: method (bot: *Bot, game: *Game, view: TacticsView, range: f32, delay: f32, stay: f32, forwardOnly: bool) -> ?Vector2 {
+    time := game.time - bot.forecastAt + delay;
+    best: ?Vector2 = null;
+    bestScore: f32 = -Forever;
+    steps := math.floorf(range / CellSize) as int;
+    for dy in -steps...steps {
+        for dx in -steps...steps {
+            point := view.ground + Vector2{dx as f32 * CellSize, dy as f32 * CellSize};
+            if point.distance(view.ground) > range { continue; }
+            gained := (point.x - view.ground.x) * view.goalSide.sign();
+            if forwardOnly && gained <= 0 { continue; }
+            cell := cellAt(point);
+            if cell < 0 || bot.forecast.blocked[cell] { continue; }
+            interval := bot.forecast.intervalAt(cell, time);
+            if interval < 0 || bot.forecast.safe[interval].end - time < stay { continue; }
+            score := gained - point.distance(view.ground) * 0.1;
+            if score > bestScore {
+                best = point;
+                bestScore = score;
+            }
+        }
+    }
+    return best;
+}
+
+// How far across a point is, for a hero that started on a side: 0 at its start, 1 at its goal
+progressOf :: (point: Vector2, startSide: Side) -> f32 {
+    across := point.x * startSide.opposite().sign();
+    return math.clamp((across + GoalX) / (GoalX * 2), 0, 1);
+}
+
+// With bot_arena.sd --hits: what a bot was doing when a car got it, to find out why
+debugHits := false;
+
+reportHit :: (game: *Game, index: int, car: *Car) {
+    bot := game.players[index].brain as *Bot;
+    hero := game.players[index].hero;
+    rel := game.time - bot.forecastAt;
+    newCar := car.age < game.time - bot.searchedAt;
+    fmt.print("HIT car new since the plan: % (age % s, plan % s old, forecast % s old)", newCar, fmt.fixed(car.age, 2), fmt.fixed(game.time - bot.searchedAt, 2), fmt.fixed(game.time - bot.forecastAt, 2));
+    fmt.print("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % z % speed % frozen % braking %",
+        fmt.fixed(game.time, 2), game.players[index].name, fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.isMoving, hero.canAct(), fmt.fixed(hero.stunLeft, 2),
+        fmt.fixed(rel, 2), fmt.fixed(bot.forecast.safeFor(hero.ground(), rel), 2), car.lane, fmt.fixed(car.z, 1), fmt.fixed(car.speed, 1), fmt.fixed(car.frozenLeft, 1), car.isBraking);
+    if bot.next < bot.plan.count {
+        w := bot.plan[bot.next];
+        fmt.print("     next waypoint (% %) depart % arrive %, % of % left", fmt.fixed(w.point.x, 1), fmt.fixed(w.point.y, 1), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2), bot.next, bot.plan.count);
+    }
+}

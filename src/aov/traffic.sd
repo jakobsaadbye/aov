@@ -22,6 +22,7 @@ Car :: struct {
     speed:      f32;
     frozenLeft: f32;        // Seconds it is frozen by Frosty
     isBraking:  bool;       // Held up in a lane that Hilda stopped, with its brake lights on
+    age:        f32;        // Seconds since it was spawned
     layer:      int;        // 0 to 3, different for cars after each other in a lane. Drawn a bit bigger by it, so two
                             // cars that drive through each other don't have their faces in the same place (z-fighting)
 
@@ -108,8 +109,9 @@ newTraffic :: (level: int, rng: *random.Random) -> Traffic {
     traffic.setLevel(level, rng);
 
     // Fill the road, as if the traffic had been driving for a while
+    noZones: [..]SlowZone;
     for 0..400 {
-        traffic.update(0.1, rng, null);
+        traffic.update(0.1, rng, noZones);
     }
     return traffic;
 }
@@ -136,7 +138,7 @@ SlowZone :: struct {
     slow:   f32;            // 0.4 is 40% slower
 }
 
-update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZone: ?SlowZone) {
+update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZones: []SlowZone) {
     // Where each car of a stopped lane may get to: up to the line, or the car in front of it in the queue
     limits: [MaxCars]f32;
     for *car, i in traffic.cars {
@@ -158,14 +160,14 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZone: ?Sl
     for *car, i in traffic.cars {
         if !car.isActive { continue; }
 
+        car.age += dt;
         if car.frozenLeft > 0 {
             car.frozenLeft -= dt;
             continue;
         }
 
         speed := car.speed;
-        if slowZone.hasValue() {
-            zone := slowZone.value();
+        for zone in slowZones {
             if CheckCollisionCircleRec(zone.center, zone.radius, car.rect()) { speed *= 1 - zone.slow; }
         }
         next := car.z + speed * warp * dt;
@@ -186,9 +188,26 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZone: ?Sl
         traffic.spawn(i as int, rng);
 
         // The time to the next car shrinks as the levels go up
-        gap := rng.uniform(8, 50) as f32 * (1 - 0.03 * traffic.level as f32);
+        gap := rng.uniform(MinSpawnGap, MaxSpawnGap) as f32 * gapShrink(traffic.level);
         lane.spawnTimer = (gap + CarLength) / lane.speed;
     }
+}
+
+// The room between two cars of a lane when the second comes in, before the levels shrink it
+MinSpawnGap :: 8.0;
+MaxSpawnGap :: 50.0;
+
+// How much faster or slower than its lane a new car drives, at the most. A truck drives at 0.8 of that
+MinSpawnSpeed :: 0.8 * 0.8;
+MaxSpawnSpeed :: 1.2;
+
+gapShrink :: (level: int) -> f32 {
+    return 1 - 0.03 * level as f32;
+}
+
+// The shortest time between two cars of a lane, for the forecast of the bots
+minSpawnGap :: (level: int, laneSpeed: f32) -> f32 {
+    return (MinSpawnGap * gapShrink(level) + CarLength) / laneSpeed;
 }
 
 // Puts a new car at the start of a lane, at the far end of the road
@@ -199,7 +218,7 @@ spawn :: method (traffic: *Traffic, lane: int, rng: *random.Random) {
     else if roll < 0.25 { kind = .van; }
 
     // Every car drives a bit faster or slower than its lane. Trucks are slow
-    speed := traffic.lanes[lane].speed * rng.uniform(0.8, 1.2) as f32;
+    speed := traffic.lanes[lane].speed * rng.uniform(MinSpawnSpeed / 0.8, MaxSpawnSpeed) as f32;
     if kind == .truck { speed *= 0.8; }
 
     for *car in traffic.cars {

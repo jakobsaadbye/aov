@@ -6,7 +6,15 @@ import mem;
 import random;
 use raylib;
 
-// What the game is doing right now
+// The game: a few players, each with a hero, racing across the same road. One player is you, the others are bots.
+//
+// Everything a player does is a Command: walk somewhere, stop, or cast an ability at a point. Your keys and mouse make
+// commands (readInput), and so does the brain of a bot (bot.sd), so a bot can do exactly what you can and nothing
+// more. Game.simulate moves the world on and reads no input, so it runs without a window, e.g in simulation_test.sd
+
+MaxPlayers :: 6;
+
+// What a player's hero is doing right now
 Phase :: union {
     playing;
     runOver: struct { timeLeft: f32; };     // The hero was hit, and the next one comes soon
@@ -14,12 +22,51 @@ Phase :: union {
 }
 
 Stats :: struct {
-    level:     int;
     crossings: int;
     deaths:    int;
     bestTime:  ?f32;                        // The fastest crossing, in seconds
     deathsBy:  [HeroKind.count]int;         // How many of each hero the road has taken
 }
+
+// An order to a hero. The target of a cast is a point on the ground: where to blink or hook to, or near which enemy
+// to cast on, like the cursor of a player
+Command :: union {
+    move: Vector2;
+    stop;
+    cast: struct { slot: int; target: Vector2; };
+}
+
+Player :: struct {
+    name:      string;
+    color:     Color;                       // Of the ring under the hero, and the name on the scoreboard
+    hero:      Hero;
+    phase:     Phase;
+    stats:     Stats;
+    startSide: Side;                        // Where the hero starts. It flips with every crossing
+    brain:     Brain;                       // What gives the orders of a bot. Null for a player at the keyboard
+    commands:  [..]Command;                 // The orders of this frame, carried out by Game.simulate
+
+    isBot :: method () -> bool {
+        return self.brain != null;
+    }
+
+    isPlaying :: method () -> bool {
+        return self.phase.kind == .playing;
+    }
+
+    order :: method * (command: Command) {
+        self.commands.add(command);
+    }
+}
+
+PlayerColors :: [
+    Color{90, 255, 110, 255},     // You: green, like the selected unit of Warcraft
+    Color{255, 90, 80, 255},
+    Color{80, 170, 255, 255},
+    Color{255, 200, 60, 255},
+    Color{210, 110, 255, 255},
+    Color{90, 230, 220, 255},
+];
 
 // A line of text in the middle of the screen that fades out
 Banner :: struct {
@@ -30,31 +77,46 @@ Banner :: struct {
 
 BannerTime :: 2.5;
 
+// The lines in the corner of what happened to the other players, like the kill feed of Dota
+FeedLine :: struct {
+    text:     string;
+    color:    Color;
+    timeLeft: f32;
+}
+
+FeedTime  :: 6.0;
+FeedLines :: 5;
+
 DebugToggles :: struct {
     wireframes: bool;
     hitboxes:   bool;
     overlay:    bool;
+    plans:      bool;                       // The paths the bots plan
 }
 
 Game :: struct {
     rng:         random.Random;
     world:       World;
     traffic:     Traffic;
-    hero:        Hero;
+    players:     [..]Player;                // Added before the game starts, so a *Player stays where it is
+    local:       int;                       // The player at the keyboard, which the camera and the HUD follow
+    time:        f32;                       // Seconds since the game started
     camera:      RtsCamera;
     effects:     Effects;
-    phase:       Phase;
-    stats:       Stats;
     banner:      Banner;
+    feed:        [..]FeedLine;
     isPaused:    bool;
     showHelp:    bool = true;
     debug:       DebugToggles;
     mouseGround: ?Vector3;                  // The point on the ground under the mouse
-    startSide:   Side;                      // Where the heroes start. It flips with every crossing
     hoveredAbility: int = -1;               // The slot of the ability whose icon the mouse is on, set by the HUD
     sounds:      SoundPlayer;               // Silent until it is loaded, e.g in simulation_test.sd
-    stopSign:    ?StopSign;                 // Hilda's sign, while her lanes are stopped
+    stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
+    searchesLeft: int;                      // Searches for a way across the bots may still do this frame (bot.sd)
 }
+
+// The bots take turns to search for a way across, so a frame doesn't take long when many of them want to at once
+SearchesPerFrame :: 1;
 
 // The sign Hilda holds up, where she raised it
 StopSign :: struct {
@@ -64,29 +126,64 @@ StopSign :: struct {
     line:     f32;                          // Where the cars stop
 }
 
-newGame :: (seed: u64) -> *Game {
+// A game with you and a number of bots. Without you (humans: 0), the bots play on their own, e.g in bot_arena.sd, and
+// the camera follows the first of them
+newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1) -> *Game {
     game := new(Game);
     game.rng = random.newRandom(seed);
     game.world = newWorld();
+
+    if humans > 0 { game.addPlayer("You", null); }
+    for i in 0..math.min(bots, MaxPlayers - game.players.count as int) {
+        name := BotNames[i % BotNames.count];
+        game.addPlayer(name, newBot(seed + 101 * (i as u64 + 1), BotPersonalities[i % BotPersonalities.count]));
+    }
     game.restart();
     return game;
 }
 
+addPlayer :: method (game: *Game, name: string, brain: Brain) {
+    assert(game.players.count < MaxPlayers);
+    game.players.add(Player{name: name, color: PlayerColors[game.players.count], brain: brain});
+}
+
 restart :: method (game: *Game) {
-    game.stats   = Stats{};
+    game.time    = 0;
     game.traffic = newTraffic(0, &game.rng);
     game.effects.clear();
-    game.stopSign = null;
+    game.stopSigns.clear();
 
-    game.startSide = .left;
-    kind := (game.rng.between(0, HeroKind.count as int - 1)) as HeroKind;
-    game.spawnHero(kind);
-    game.camera = newRtsCamera(game.hero.position);
+    for *player, i in game.players {
+        player.stats = Stats{};
+        player.startSide = .left;
+        player.commands.clear();
+        kind := (game.rng.between(0, HeroKind.count as int - 1)) as HeroKind;
+        game.spawnHero(i as int, kind);
+        if player.isBot() { player.brain.reset(); }
+    }
+    game.camera = newRtsCamera(game.you().hero.position);
 }
 
 free :: method (game: *Game) {
     game.banner.text.free();
+    for line in game.feed { line.text.free(); }
+    game.feed.free();
+    game.stopSigns.free();
+    for *player in game.players { player.commands.free(); }
+    game.players.free();
     mem.delete(game);
+}
+
+// The player at the keyboard
+you :: method (game: *Game) -> *Player {
+    return &game.players[game.local];
+}
+
+// The traffic gets faster with the crossings of the player that is ahead
+level :: method (game: *Game) -> int {
+    best := 0;
+    for player in game.players { best = math.max(best, player.stats.crossings); }
+    return best;
 }
 
 showBanner :: method (game: *Game, color: Color, format: string, args: ...any) {
@@ -94,7 +191,17 @@ showBanner :: method (game: *Game, color: Color, format: string, args: ...any) {
     game.banner = Banner{text: fmt.sprint(format, ...args), color: color, timeLeft: BannerTime};
 }
 
-// Once a frame: the keys and the mouse, then the world moves on by dt seconds
+// Tells what happened: to you in the banner, to the others in the feed
+announce :: method (game: *Game, player: int, color: Color, format: string, args: ...any) {
+    if player == game.local {
+        game.showBanner(color, format, ...args);
+        return;
+    }
+    if game.feed.count >= FeedLines { game.feed.removeAt(0).text.free(); }
+    game.feed.add(FeedLine{text: fmt.sprint(format, ...args), color: color, timeLeft: FeedTime});
+}
+
+// Once a frame: the keys and the mouse, the thoughts of the bots, then the world moves on by dt seconds
 update :: method (game: *Game, dt: f32) {
     // Keys that work at any time
     if IsKeyPressed(.p) || IsKeyPressed(.escape) {
@@ -105,9 +212,10 @@ update :: method (game: *Game, dt: f32) {
     if IsKeyPressed(.f1) { game.debug.wireframes = !game.debug.wireframes; }
     if IsKeyPressed(.f2) { game.debug.hitboxes = !game.debug.hitboxes; }
     if IsKeyPressed(.f3) { game.debug.overlay = !game.debug.overlay; }
-    if IsKeyPressed(.f6) && game.phase.kind == .playing {
+    if IsKeyPressed(.f4) { game.debug.plans = !game.debug.plans; }
+    if IsKeyPressed(.f6) && game.you().isPlaying() {
         // Debug: the next hero, in place of this one
-        game.spawnHero(((game.hero.kind as int + 1) % HeroKind.count) as HeroKind);
+        game.spawnHero(game.local, ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind);
     }
     if IsKeyPressed(.f5) {
         game.restart();
@@ -117,50 +225,135 @@ update :: method (game: *Game, dt: f32) {
     if game.isPaused { return; }
 
     game.mouseGround = game.camera.groundPoint(GetMousePosition());
-
-    // Orders for the hero
-    if game.phase.kind == .playing {
-        if IsMouseButtonPressed(.right) || IsMouseButtonPressed(.left) {
-            if game.mouseGround.hasValue() {
-                point := game.mouseGround.value();
-                game.hero.moveTo(point);
-                game.effects.clickMarker(point.xz());
-            }
-        }
-        if IsKeyPressed(.s) { game.hero.stop(); }
-
-        // The first ability that is cast is on Q, the second on W, ... Passives have no key
-        for key, i in AbilityKeys {
-            if !IsKeyPressed(key) { continue; }
-            slot := game.hero.abilityOnKey(i as int);
-            if slot < 0 { continue; }
-            if game.hero.abilityReady(slot) { game.useAbility(slot); }
-            else                            { game.sounds.play("ui.not_ready"); }
-        }
-    }
-
+    game.readInput();
     game.simulate(dt);
 
     // The camera follows the hero, unless it is unlocked with Y. Space brings it back to the hero while held
     if IsKeyPressed(.y) { game.camera.isLocked = !game.camera.isLocked; }
-    game.camera.update(dt, game.hero.position, IsKeyDown(.space));
+    game.camera.update(dt, game.you().hero.position, IsKeyDown(.space));
 }
 
-// Moves the world on by dt seconds. It reads no input, so it can run without a window, e.g in simulation_test.sd
+// The keys and the mouse, as commands of the player at the keyboard
+readInput :: method (game: *Game) {
+    player := game.you();
+    if !player.isPlaying() || player.isBot() { return; }      // A bot when you spectate
+
+    if (IsMouseButtonPressed(.right) || IsMouseButtonPressed(.left)) && game.mouseGround.hasValue() {
+        point := game.mouseGround.value().xz();
+        player.order(Command{move: point});
+        game.effects.clickMarker(point);
+    }
+    if IsKeyPressed(.s) { player.order(.stop); }
+
+    // The first ability that is cast is on Q, the second on W, ... Passives have no key
+    for key, i in AbilityKeys {
+        if !IsKeyPressed(key) { continue; }
+        slot := player.hero.abilityOnKey(i as int);
+        if slot < 0 { continue; }
+        if !player.hero.abilityReady(slot) {
+            game.sounds.play("ui.not_ready");
+            continue;
+        }
+        target := player.hero.ground();
+        if game.mouseGround.hasValue() { target = game.mouseGround.value().xz(); }
+        player.order(Command{cast: {slot: slot, target: target}});
+    }
+}
+
+// Moves the world on by dt seconds: the bots think, the orders are carried out, the heroes and the cars move
 simulate :: method (game: *Game, dt: f32) {
-    switch v in &game.phase {
+    game.time += dt;
+    game.searchesLeft = SearchesPerFrame;
+
+    for *player, i in game.players {
+        if player.isBot() { player.brain.think(game, i as int, dt); }
+        game.carryOut(i as int);
+        game.updatePlayer(i as int, dt);
+    }
+
+    game.separateHeroes();
+
+    // Frosty's chill aura slows the cars around him
+    slowZones: [..]SlowZone;
+    defer slowZones.free();
+    for player in game.players {
+        aura := player.hero.chillAura();
+        if aura.hasValue() && player.isPlaying() {
+            slowZones.add(SlowZone{player.hero.ground(), aura.value().radius, aura.value().slow});
+        }
+    }
+    game.traffic.update(dt, &game.rng, slowZones);
+
+    for i in 0..game.stopSigns.count {
+        game.stopSigns[i].timeLeft -= dt;
+    }
+    game.stopSigns.removeWhere(sign => sign.timeLeft <= 0);
+
+    for *line in game.feed { line.timeLeft -= dt; }
+    while game.feed.count > 0 && game.feed[0].timeLeft <= 0 { game.feed.removeAt(0).text.free(); }
+
+    game.effects.update(dt);
+    game.banner.timeLeft -= dt;
+}
+
+// Heroes don't stand inside each other on the grass, e.g where they start or at the opening of a wall: two that overlap
+// are pushed apart, half each, like the units of an RTS. Not on the road, where it would push a hero into a car it planned
+// around, and not in the air or through the walls
+separateHeroes :: method (game: *Game) {
+    for i in 0..game.players.count {
+        a := &game.players[i];
+        if !a.isPlaying() || a.hero.isAirborne() || isNearRoad(a.hero.ground()) { continue; }
+        for j in i + 1..game.players.count {
+            b := &game.players[j];
+            if !b.isPlaying() || b.hero.isAirborne() || isNearRoad(b.hero.ground()) { continue; }
+            offset := b.hero.ground() - a.hero.ground();
+            distance := offset.length();
+            room := a.hero.info().hitRadius + b.hero.info().hitRadius;
+            if distance >= room { continue; }
+            direction := Vector2{1, 0};
+            if distance > 0.001 { direction = offset / distance; }
+            push := direction * ((room - distance) * 0.5);
+            a.hero.position = game.world.resolveCollisions(a.hero.ground() - push, a.hero.info().hitRadius, a.hero.walksThroughWalls()).at();
+            b.hero.position = game.world.resolveCollisions(b.hero.ground() + push, b.hero.info().hitRadius, b.hero.walksThroughWalls()).at();
+        }
+    }
+}
+
+isNearRoad :: (point: Vector2) -> bool {
+    return math.fabsf(point.x) < RoadHalfWidth + 3;
+}
+
+// The orders a player gave this frame
+carryOut :: method (game: *Game, index: int) {
+    player := &game.players[index];
+    defer player.commands.clear();
+    if !player.isPlaying() { return; }
+
+    for command in player.commands {
+        switch v in command {
+            case .move { player.hero.moveTo(v.at()); }
+            case .stop { player.hero.stop(); }
+            case .cast { game.cast(index, v.slot, v.target); }
+        }
+    }
+}
+
+updatePlayer :: method (game: *Game, index: int, dt: f32) {
+    player := &game.players[index];
+    switch v in &player.phase {
         case .playing {
-            game.moveHero(dt);
+            game.moveHero(index, dt);
 
             // A car on the hero takes health, fast. Without one for a while, the hero heals
-            hero := &game.hero;
+            hero := &player.hero;
             car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius);
             if car.hasValue() && !hero.isFaded() && !hero.isAirborne() {
                 if hero.hurtFor > 0.3 { game.sounds.playAt("hero.hurt", hero.position, 0.8, 0.06); }
+                if hero.hurtFor > 0.3 && debugHits && player.isBot() { reportHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
                 hero.hurtFor = 0;
                 if hero.health <= 0 {
-                    game.heroRunOver(car.value());
+                    game.heroRunOver(index, car.value());
                 }
             } else {
                 hero.hurtFor += dt;
@@ -169,65 +362,56 @@ simulate :: method (game: *Game, dt: f32) {
                 }
             }
 
-            if game.phase.kind == .playing {
-                if hasCrossed(hero.ground(), game.startSide) { game.heroCrossed(); }
+            if player.isPlaying() && hasCrossed(hero.ground(), player.startSide) {
+                game.heroCrossed(index);
             }
         }
         case .runOver {
             v.timeLeft -= dt;
-            if v.timeLeft <= 0 { game.spawnNextHero(); }
+            if v.timeLeft <= 0 { game.spawnNextHero(index); }
         }
         case .crossed {
             v.timeLeft -= dt;
-            game.hero.walkCycle += dt * 14;     // Jumping for joy
+            player.hero.walkCycle += dt * 14;     // Jumping for joy
             if v.timeLeft <= 0 {
                 // The next hero starts where this one got to, and crosses back
-                game.stats.level += 1;
-                game.traffic.setLevel(game.stats.level, &game.rng);
-                game.startSide = game.startSide.opposite();
-                game.spawnNextHero();
+                player.startSide = player.startSide.opposite();
+                game.traffic.setLevel(game.level(), &game.rng);
+                game.spawnNextHero(index);
             }
         }
     }
-
-    // Frosty's chill aura slows the cars around him
-    slowZone: ?SlowZone = null;
-    aura := game.hero.chillAura();
-    if aura.hasValue() && game.phase.kind == .playing {
-        slowZone = SlowZone{game.hero.ground(), aura.value().radius, aura.value().slow};
-    }
-    game.traffic.update(dt, &game.rng, slowZone);
-
-    if game.stopSign.hasValue() {
-        sign := game.stopSign.value();
-        sign.timeLeft -= dt;
-        game.stopSign = null;
-        if sign.timeLeft > 0 { game.stopSign = sign; }
-    }
-    game.effects.update(dt);
-    game.banner.timeLeft -= dt;
 }
 
-moveHero :: method (game: *Game, dt: f32) {
-    hero := &game.hero;
+moveHero :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
     info := hero.info();
 
     hero.timeAlive += dt;
     for *cooldown in hero.cooldowns { *cooldown = math.max(0, *cooldown - dt); }
     hero.sprintLeft = math.max(0, hero.sprintLeft - dt);
     hero.fadeLeft   = math.max(0, hero.fadeLeft - dt);
-
-    before := hero.position;
+    hero.stunLeft   = math.max(0, hero.stunLeft - dt);
+    hero.lockedLeft = math.max(0, hero.lockedLeft - dt);
 
     if hero.leap.hasValue() {
-        game.flyLeap(dt);
+        game.flyLeap(index, dt);
         return;
     }
     hero.recordTrail(dt);
 
+    if hero.displacement.hasValue() {
+        game.displace(index, dt);
+        return;
+    }
     if hero.hook.hasValue() {
-        game.pullHook(dt);
-    } else if hero.isMoving {
+        game.pullHook(index, dt);
+        return;
+    }
+    if hero.stunLeft > 0 { return; }
+
+    before := hero.position;
+    if hero.isMoving {
         toTarget := hero.target.xz() - hero.position.xz();
         distance := toTarget.length();
         step := hero.speed() * dt;
@@ -252,8 +436,8 @@ moveHero :: method (game: *Game, dt: f32) {
 }
 
 // Through the air, over cars and walls, and down again
-flyLeap :: method (game: *Game, dt: f32) {
-    hero := &game.hero;
+flyLeap :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
     leap := hero.leap.value();
     leap.flight = math.min(1, leap.flight + dt / leap.duration);
     hero.position = leap.from.lerp(leap.to, leap.flight);
@@ -270,12 +454,36 @@ flyLeap :: method (game: *Game, dt: f32) {
     hero.forgetTrail();
     game.effects.addRing(hero.ground(), 0.5, 6, {230, 200, 150, 255}, 0.45);
     game.effects.burst(hero.position, {150, 130, 100, 255}, 18, {0, -4, 0}, &game.rng);
-    game.camera.shake = math.max(game.camera.shake, 0.15);
+    if index == game.local { game.camera.shake = math.max(game.camera.shake, 0.15); }
     game.sounds.playAt("ability.land", hero.position, 1, 0.05);
 }
 
-pullHook :: method (game: *Game, dt: f32) {
-    hero := &game.hero;
+// Knocked away or dragged: moved to a point, stopped by the walls
+displace :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
+    move := hero.displacement.value();
+    toPoint := move.to.xz() - hero.ground();
+    distance := toPoint.length();
+    step := move.speed * dt;
+
+    if distance <= step {
+        hero.position = game.world.resolveCollisions(move.to.xz(), hero.info().hitRadius, false).at();
+        hero.displacement = null;
+        hero.stop();
+        return;
+    }
+
+    before := hero.position;
+    hero.position += (toPoint / distance).at() * step;
+    hero.position = game.world.resolveCollisions(hero.ground(), hero.info().hitRadius, false).at();
+    if Vector3Distance(before, hero.position) < step * 0.25 {
+        hero.displacement = null;       // Into a wall
+        hero.stop();
+    }
+}
+
+pullHook :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
     hook := hero.hook.value();
 
     pullSpeed: f32 = 40;
@@ -286,8 +494,38 @@ pullHook :: method (game: *Game, dt: f32) {
         }
     }
 
+    // An enemy on its hook is dragged back to him. It is over when the enemy is there
+    if hook.victim >= 0 {
+        victim := &game.players[hook.victim];
+        if !victim.isPlaying() || !victim.hero.displacement.hasValue() {
+            hero.hook = null;
+            hero.stop();
+        }
+        return;
+    }
+
     if hook.flight < 1 {
-        hook.flight = math.min(1, hook.flight + dt / HookFlightTime);
+        length := math.max(hook.from.distance(hook.point), 0.1);
+        hook.flight = math.min(1, hook.flight + dt * HookSpeed / length);
+        head := hook.from.lerp(hook.point, hook.flight);
+
+        // The first enemy the hook goes past is caught
+        caught := game.enemyNear(index, head.xz(), HookCatchRadius);
+        if caught >= 0 {
+            hook.victim = caught;
+            hero.hook = hook;
+            victim := &game.players[caught].hero;
+            forward := (hero.ground() - victim.ground()).normalize();
+            victim.displacement = Displacement{to: (hero.ground() - forward * (hero.info().hitRadius + victim.info().hitRadius + 0.6)).at(), speed: pullSpeed};
+            victim.stop();
+            victim.hook = null;
+            victim.leap = null;
+            game.sounds.playAt("ability.hook_hit", victim.position, 1);
+            game.effects.burst(victim.position + Vector3{0, 2, 0}, {170, 20, 25, 255}, 14, {0, 0, 0}, &game.rng);
+            game.announce(caught, {255, 140, 90, 255}, "% was hooked by % (%)!", victim.info().name, hero.info().name, game.players[index].name);
+            return;
+        }
+
         if hook.flight >= 1 { game.sounds.playAt("ability.hook_hit", hook.point, 1); }
         hero.hook = hook;
         return;
@@ -320,10 +558,29 @@ pullHook :: method (game: *Game, dt: f32) {
     hero.hook = hook;
 }
 
-// Casts the ability in a slot (0 is Q), if it is ready
-useAbility :: method (game: *Game, slot: int) {
-    hero := &game.hero;
-    if !hero.abilityReady(slot) || hero.hook.hasValue() || hero.leap.hasValue() { return; }
+HookCatchRadius :: 1.6;     // How far from the head of the hook an enemy is caught, besides its own size
+
+// The player of the enemy hero nearest a point and within reach of it, or -1. Heroes that are faded or in the air
+// can't be targeted
+enemyNear :: method (game: *Game, index: int, point: Vector2, reach: f32) -> int {
+    best := -1;
+    bestDistance := 1000000.0;
+    for player, i in game.players {
+        if i as int == index || !player.isPlaying() || player.hero.isFaded() || player.hero.isAirborne() { continue; }
+        distance := player.hero.ground().distance(point) - player.hero.info().hitRadius;
+        if distance <= reach && distance < bestDistance {
+            best = i as int;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+// Casts the ability in a slot (0 is Q) of a player's hero, aimed at a point, if it is ready
+cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
+    player := &game.players[index];
+    hero := &player.hero;
+    if !hero.abilityReady(slot) { return; }
 
     ability := hero.abilities()[slot];
     ground := hero.ground();
@@ -335,25 +592,25 @@ useAbility :: method (game: *Game, slot: int) {
             game.effects.addRing(ground, 0.5, 4, {255, 220, 90, 255}, 0.4);
         }
         case .hook {
-            target := game.towardsCursor(v.range);
-            if !target.hasValue() { return; }
-            toTarget := target.value() - ground;
-            hero.hook = HookState{point: target.value().at()};
+            point := towards(ground, target, v.range);
+            if !point.hasValue() { return; }
+            toTarget := point.value() - ground;
+            hero.hook = HookState{point: point.value().at(), from: hero.position};
             hero.isMoving = false;
             hero.facing = math.atan2f(toTarget.x, toTarget.y);
         }
         case .freeze {
             frozen := game.traffic.freezeAround(ground, v.radius, v.duration);
             game.effects.addRing(ground, 1, v.radius, {160, 240, 255, 255}, 0.6);
-            if frozen > 0 { game.showBanner({160, 240, 255, 255}, "Froze % cars", frozen); }
+            if frozen > 0 { game.announce(index, {160, 240, 255, 255}, "% froze % cars", hero.info().name, frozen); }
         }
         case .blink {
-            target := game.towardsCursor(v.range);
-            if !target.hasValue() { return; }
+            point := towards(ground, target, v.range);
+            if !point.hasValue() { return; }
             game.effects.addRing(ground, 2, 0.3, {200, 150, 255, 255}, 0.35);
 
             // Over walls and cars alike, but it doesn't land inside a wall
-            landing := game.world.resolveCollisions(target.value(), hero.info().hitRadius, hero.walksThroughWalls());
+            landing := game.world.resolveCollisions(point.value(), hero.info().hitRadius, hero.walksThroughWalls());
             toLanding := landing - ground;
             hero.position = landing.at();
             hero.stop();
@@ -365,10 +622,10 @@ useAbility :: method (game: *Game, slot: int) {
             game.effects.addRing(ground, 0.5, 3, {200, 210, 255, 255}, 0.5);
         }
         case .leap {
-            target := game.towardsCursor(v.range);
-            if !target.hasValue() { return; }
-            toTarget := target.value() - ground;
-            hero.leap = LeapState{from: hero.position, to: target.value().at(), duration: v.duration};
+            point := towards(ground, target, v.range);
+            if !point.hasValue() { return; }
+            toTarget := point.value() - ground;
+            hero.leap = LeapState{from: hero.position, to: point.value().at(), duration: v.duration};
             hero.isMoving = false;
             hero.facing = math.atan2f(toTarget.x, toTarget.y);
             game.effects.addRing(ground, 0.5, 3, {230, 200, 150, 255}, 0.3);
@@ -379,14 +636,14 @@ useAbility :: method (game: *Game, slot: int) {
             last := math.min(lane + v.lanes, LaneCount - 1);
             line := hero.position.z - 5;
             game.traffic.halt(first, last, line, v.duration);
-            game.stopSign = StopSign{position: hero.position, timeLeft: v.duration, lanes: [first, last], line: line};
+            game.stopSigns.add(StopSign{position: hero.position, timeLeft: v.duration, lanes: [first, last], line: line});
             game.effects.addRing(ground, 1, 9, {255, 70, 60, 255}, 0.5);
         }
         case .timeWarp {
             game.traffic.warpTime(v.slow, v.duration);
             game.effects.addRing(ground, 1, 70, {190, 140, 255, 255}, 1.1);
             game.effects.addRing(ground, 0.5, 40, {190, 140, 255, 255}, 0.8);
-            game.showBanner({200, 160, 255, 255}, "Time slows down");
+            game.announce(index, {200, 160, 255, 255}, "% slows down time", hero.info().name);
         }
         case .rewind {
             back := hero.rewindSample(v.seconds);
@@ -397,6 +654,34 @@ useAbility :: method (game: *Game, slot: int) {
             hero.stop();
             hero.forgetTrail();
             game.effects.addRing(hero.ground(), 0.2, 3, {120, 220, 255, 255}, 0.45);
+        }
+        case .bash {
+            victim := game.enemyNear(index, ground, v.range);
+            if victim < 0 { return; }
+            enemy := &game.players[victim].hero;
+            away := enemy.ground() - ground;
+            if away.lengthSqr() < 0.01 { away = Vector2{player.startSide.opposite().sign(), 0}; }
+            away = away.normalize();
+            hero.facing = math.atan2f(away.x, away.y);
+            enemy.stunLeft = math.max(enemy.stunLeft, v.stun);
+            enemy.displacement = Displacement{to: (enemy.ground() + away * v.knockback).at(), speed: KnockbackSpeed};
+            enemy.stop();
+            enemy.hook = null;
+            game.effects.addRing(enemy.ground(), 0.5, 3.5, {255, 230, 150, 255}, 0.35);
+            game.effects.burst(enemy.position + Vector3{0, 2.5, 0}, {255, 240, 180, 255}, 10, away.at(6), &game.rng);
+            game.announce(victim, {255, 200, 120, 255}, "% was bashed by % (%)!", enemy.info().name, hero.info().name, player.name);
+        }
+        case .timeLock {
+            aim := towards(ground, target, v.range) ?? ground;
+            victim := game.enemyNear(index, aim, TargetSnapRadius);
+            if victim < 0 { return; }
+            enemy := &game.players[victim].hero;
+            enemy.stunLeft = math.max(enemy.stunLeft, v.duration);
+            enemy.lockedLeft = v.duration;
+            enemy.stop();
+            enemy.hook = null;
+            game.effects.addRing(enemy.ground(), 4, 1, {190, 140, 255, 255}, 0.5);
+            game.announce(victim, {200, 160, 255, 255}, "% was locked in time by % (%)!", enemy.info().name, hero.info().name, player.name);
         }
         case .phaseWalk
         case .quickFeet
@@ -410,29 +695,37 @@ useAbility :: method (game: *Game, slot: int) {
     if ability.sound.len > 0 { game.sounds.playAt(ability.sound, hero.position); }
 }
 
-// The point towards the cursor, at most range away from the hero, or nothing without a cursor on the ground
-towardsCursor :: method (game: *Game, range: f32) -> ?Vector2 {
-    if !game.mouseGround.hasValue() { return null; }
-    ground := game.hero.ground();
-    toCursor := game.mouseGround.value().xz() - ground;
-    if toCursor.length() < 0.5 { return null; }
-    if toCursor.length() > range { toCursor = toCursor.normalize() * range; }
-    return ground + toCursor;
+KnockbackSpeed   :: 30.0;
+TargetSnapRadius :: 4.0;    // How far from the point of a cast an enemy may be, to be its target
+
+// The point towards a target, at most range away from a point, or nothing when the target is on the point itself
+towards :: (from: Vector2, target: Vector2, range: f32) -> ?Vector2 {
+    offset := target - from;
+    if offset.length() < 0.5 { return null; }
+    if offset.length() > range { offset = offset.normalize() * range; }
+    return from + offset;
 }
 
-heroRunOver :: method (game: *Game, car: *Car) {
-    hero := &game.hero;
+// Casts an ability of the player at the keyboard, aimed at the mouse, at once. For tests and debugging
+useAbility :: method (game: *Game, slot: int) {
+    target := game.you().hero.ground();
+    if game.mouseGround.hasValue() { target = game.mouseGround.value().xz(); }
+    game.cast(game.local, slot, target);
+}
+
+heroRunOver :: method (game: *Game, index: int, car: *Car) {
+    player := &game.players[index];
+    hero := &player.hero;
     info := hero.info();
 
-    game.stats.deaths += 1;
-    game.stats.deathsBy[hero.kind] += 1;
+    player.stats.deaths += 1;
+    player.stats.deathsBy[hero.kind] += 1;
 
     // The car throws the bits along the road
     push := Vector3{0, 0, car.speed * 0.6};
-    color := ColorAlpha(info.color, 1);
-    game.effects.burst(hero.position + Vector3{0, info.height * 0.5, 0}, color, 70, push, &game.rng);
+    game.effects.burst(hero.position + Vector3{0, info.height * 0.5, 0}, ColorAlpha(info.color, 1), 70, push, &game.rng);
     game.effects.addSplat(hero.ground(), info.width * 0.9, Color{150, 20, 25, 255});
-    game.camera.shake = 0.35;
+    if index == game.local { game.camera.shake = 0.35; }
     game.sounds.playAt("hero.death", hero.position);
 
     vehicle := switch car.kind {
@@ -440,43 +733,61 @@ heroRunOver :: method (game: *Game, car: *Car) {
         case .van   => "a van";
         case .truck => "a truck";
     };
-    game.showBanner({255, 90, 80, 255}, "% was run over by %!", info.name, vehicle);
+    if index == game.local {
+        game.showBanner({255, 90, 80, 255}, "% was run over by %!", info.name, vehicle);
+    } else {
+        game.announce(index, {255, 90, 80, 255}, "% (%) was run over by %", info.name, player.name, vehicle);
+    }
 
-    game.phase = Phase{runOver: {timeLeft: RespawnDelay}};
+    player.phase = Phase{runOver: {timeLeft: RespawnDelay}};
 }
 
-heroCrossed :: method (game: *Game) {
-    hero := &game.hero;
+heroCrossed :: method (game: *Game, index: int) {
+    player := &game.players[index];
+    hero := &player.hero;
     time := hero.timeAlive;
 
-    game.stats.crossings += 1;
-    isRecord := !game.stats.bestTime.hasValue() || time < game.stats.bestTime.value();
-    if isRecord { game.stats.bestTime = time; }
+    player.stats.crossings += 1;
+    isRecord := !player.stats.bestTime.hasValue() || time < player.stats.bestTime.value();
+    if isRecord { player.stats.bestTime = time; }
 
-    if isRecord {
-        game.showBanner({120, 255, 140, 255}, "% made it across in % s. A new record!", hero.info().name, fmt.fixed(time, 1));
+    if index == game.local {
+        if isRecord {
+            game.showBanner({120, 255, 140, 255}, "% made it across in % s. A new record!", hero.info().name, fmt.fixed(time, 1));
+        } else {
+            game.showBanner({120, 255, 140, 255}, "% made it across in % s", hero.info().name, fmt.fixed(time, 1));
+        }
+        game.sounds.play("hero.crossed", 0.8);
     } else {
-        game.showBanner({120, 255, 140, 255}, "% made it across in % s", hero.info().name, fmt.fixed(time, 1));
+        game.announce(index, {120, 255, 140, 255}, "% (%) made it across in % s", hero.info().name, player.name, fmt.fixed(time, 1));
+        game.sounds.playAt("hero.crossed", hero.position, 0.5);
     }
 
     hero.stop();
     game.effects.addRing(hero.ground(), 0.5, 8, {120, 255, 140, 255}, 0.8);
-    game.sounds.play("hero.crossed", 0.8);
-    game.phase = Phase{crossed: {timeLeft: 1.6}};
+    player.phase = Phase{crossed: {timeLeft: 1.6}};
 }
 
 // A random hero, never the same as the one before
-spawnNextHero :: method (game: *Game) {
+spawnNextHero :: method (game: *Game, index: int) {
     next := game.rng.between(0, HeroKind.count as int - 2);
-    if next >= game.hero.kind as int { next += 1; }
-    game.spawnHero(next as HeroKind);
+    if next >= game.players[index].hero.kind as int { next += 1; }
+    game.spawnHero(index, next as HeroKind);
 }
 
-spawnHero :: method (game: *Game, kind: HeroKind) {
-    // Looking across the road, towards the other side
+spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
+    player := &game.players[index];
+
+    // Looking across the road, towards the other side. The players stand in a row along the side
     facing := Pi * 0.5;
-    if game.startSide == .right { facing = -Pi * 0.5; }
-    game.hero  = newHero(kind, game.world.spawnPoint(game.startSide), facing);
-    game.phase = .playing;
-    game.sounds.play("hero.spawn", 0.6);
+    if player.startSide == .right { facing = -Pi * 0.5; }
+    spot := game.world.spawnPoint(player.startSide);
+    spot.z += (index as f32 - (game.players.count - 1) as f32 * 0.5) * SpawnSpacing;
+
+    player.hero  = newHero(kind, spot, facing);
+    player.phase = .playing;
+    if index == game.local { game.sounds.play("hero.spawn", 0.6); }
 }
+
+SpawnSpacing :: 7.0;
+
