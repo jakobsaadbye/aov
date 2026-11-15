@@ -1,0 +1,53 @@
+namespace aov;
+
+import random;
+use raylib;
+
+// Tufts of grass, flowers and rocks on the grass, on both sides of the road and around the field. They are only for the
+// eye: nothing walks into them
+
+SceneryKind :: enum {
+    tuft,
+    flowerYellow,
+    flowerWhite,
+    flowerPurple,
+    rock,
+}
+
+SceneryModels :: ["tuft", "flower_yellow", "flower_white", "flower_purple", "rock"];   // In data/models, by kind
+
+Decoration :: struct {
+    kind:     SceneryKind;
+    position: Vector3;
+    angle:    f32;          // Degrees around y
+    scale:    f32;
+}
+
+SceneryReach :: 130.0;      // How far from the middle across, and along the road
+
+newScenery :: (seed: u64) -> [..]Decoration {
+    rng := random.newRandom(seed);
+    scenery: [..]Decoration;
+
+    place :: (scenery: *[..]Decoration, rng: *random.Random, kind: SceneryKind, count: int, scaleFrom: f32, scaleTo: f32) {
+        for 0..count {
+            // On the grass: past the walls on either side, never on the road
+            x := rng.uniform(RoadHalfWidth + WallWidth + 1, SceneryReach) as f32;
+            if rng.chance(0.5) { x = -x; }
+            z := rng.uniform(-SceneryReach, SceneryReach) as f32;
+            scenery.add(Decoration{
+                kind:     kind,
+                position: {x, 0, z},
+                angle:    rng.uniform(0, 360) as f32,
+                scale:    rng.uniform(scaleFrom, scaleTo) as f32,
+            });
+        }
+    };
+
+    place(&scenery, &rng, .tuft, 800, 1.0, 1.8);
+    place(&scenery, &rng, .flowerYellow, 80, 1.3, 2.0);
+    place(&scenery, &rng, .flowerWhite, 80, 1.3, 2.0);
+    place(&scenery, &rng, .flowerPurple, 60, 1.3, 2.0);
+    place(&scenery, &rng, .rock, 50, 0.6, 1.6);
+    return scenery;
+}

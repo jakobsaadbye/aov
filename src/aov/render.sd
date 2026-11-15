@@ -30,6 +30,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     for wall in game.world.walls {
         assets.drawWall(wall);
     }
+    assets.drawScenery(game.camera.focus, game.camera.distance * 1.3 + 20);
 
     for *car in game.traffic.cars {
         if car.isActive { drawCar(assets, car); }
@@ -39,7 +40,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     for *car in game.traffic.cars {
         if car.isActive {
             rect := car.rect();
-            DrawCube(rect.center().at(0.12), rect.width + 0.4, 0.02, rect.height + 0.4, ShadowColor);
+            DrawCube(rect.center().at(0.12 + car.layer as f32 * 0.006), rect.width + 0.4, 0.02, rect.height + 0.4, ShadowColor);
         }
     }
     game.effects.draw();
@@ -86,7 +87,9 @@ drawGoalStrip :: (side: Side) {
 drawCar :: (assets: *Assets, car: *Car) {
     color := car.color;
     if car.frozenLeft > 0 { color = ColorLerp(color, FrozenColor, 0.75); }
-    assets.drawVehicle(car.kind, car.position(), color);
+    // Cars that drive through each other are drawn at slightly different sizes, so their faces don't fight
+    scale := 1 + car.layer as f32 * 0.012;
+    assets.drawVehicle(car.kind, car.position(), color, scale);
 
     if car.frozenLeft > 0 {
         // A shell of ice

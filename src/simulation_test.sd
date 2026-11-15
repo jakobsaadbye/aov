@@ -18,6 +18,7 @@ main :: () {
     testNoGapBetweenLanes();
     testFrozenCars();
     testRunOver();
+    testHealth();
     testCrossing();
     testAbilities();
     fmt.print("All simulation tests passed");
@@ -170,6 +171,45 @@ testRunOver :: () {
     assert(game.startSide == .left && near(game.hero.position.x, aov.SpawnX));
 }
 
+testHealth :: () {
+    game := aov.newGame(4);
+    defer game.free();
+    clearRoad(game);
+
+    // A car on a hero takes health fast: Allan doesn't last long
+    game.spawnHero(.allan);
+    game.hero.position = Vector3{aov.laneCenter(3), 0, 0};
+    game.traffic.cars[0] = aov.Car{isActive: true, lane: 3, z: 0, speed: 0.001};
+    seconds := 0.0;
+    while game.phase.kind == .playing && seconds < 2 {
+        game.simulate(Dt);
+        seconds += Dt;
+    }
+    assert(game.phase.kind == .runOver && seconds < 0.4);
+
+    // The butcher survives a car driving over him, then heals
+    for 0..(2 * 60) { game.simulate(Dt); }
+    clearRoad(game);
+    game.spawnHero(.butcher);
+    maxHealth := game.hero.info().maxHealth;
+    game.hero.position = Vector3{aov.laneCenter(3), 0, 0};
+    game.traffic.cars[0] = aov.Car{isActive: true, lane: 3, z: -10, speed: 20};    // Over him in about half a second
+    for 0..90 { game.simulate(Dt); }
+    assert(game.phase.kind == .playing);
+    assert(game.hero.health < maxHealth * 0.6 && game.hero.health > 0);
+
+    for 0..(6 * 60) { game.simulate(Dt); }
+    assert(game.hero.health == maxHealth);
+
+    // Faded, the cars do nothing
+    game.spawnHero(.ghosty);
+    game.hero.position = Vector3{aov.laneCenter(3), 0, 0};
+    game.traffic.cars[0] = aov.Car{isActive: true, lane: 3, z: 0, speed: 0.001};
+    game.useAbility(0);
+    for 0..60 { game.simulate(Dt); }
+    assert(game.phase.kind == .playing && game.hero.health == game.hero.info().maxHealth);
+}
+
 testCrossing :: () {
     game := aov.newGame(5);
     defer game.free();
@@ -231,6 +271,12 @@ testAbilities :: () {
     game.useAbility(1);
     assert(game.hero.position.distance(Vector3{-70, 0, 12}) < 0.01);
     assert(!game.hero.abilityReady(1));
+
+    // The keys go to the abilities that are cast, in order. Passives have none
+    assert(game.hero.abilityOnKey(0) == 0 && game.hero.abilityOnKey(1) == 1 && game.hero.abilityOnKey(2) == -1);
+    assert(game.hero.keyOf(1) == 1 && game.hero.keyOf(2) == -1);
+    frosty := aov.newHero(.frosty, {0, 0, 0}, 0);
+    assert(frosty.abilityOnKey(1) == 1 && frosty.abilityOnKey(2) == -1 && frosty.keyOf(2) == -1);
 
     // A passive can't be cast, and slots past the last ability do nothing
     game.useAbility(2);

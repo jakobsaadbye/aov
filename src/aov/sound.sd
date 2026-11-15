@@ -1,0 +1,199 @@
+namespace aov.sound;
+
+import fmt;
+import math;
+import random;
+use raylib;
+
+// The sounds and the music of the game, by name:
+//
+//     sound.play("car.horn");                      // data/sounds/car/horn.wav, or one of horn_1.wav, horn_2.wav, ...
+//     sound.playAt("hero.step", position);         // quieter the further it is from the listener, and panned
+//     sound.playMusic("theme");                    // data/music/theme.ogg, streamed and looped
+//
+// Every .wav, .ogg and .mp3 in data/sounds/<group>/ is a sound named "<group>.<name>": a new sound is a file dropped in
+// there, without changing the game. Files that end in _<number> are variants of the same sound, and one is picked at
+// random each time. Before load(), or without an audio device, e.g in simulation_test.sd, nothing is played
+
+VoicesPerSound :: 4;        // How many times one sound can play at the same time
+HearingDistance :: 70.0;    // How far away a sound played at a position can be heard
+
+// One file of a sound, with copies of it that share its samples, so it can play over itself
+@private
+Variant :: struct {
+    voices: [VoicesPerSound]Sound;
+    next:   int;
+}
+
+@private
+Entry :: struct {
+    variants: [..]Variant;
+}
+
+@private
+Track :: struct {
+    music:     Music;
+    isPlaying: bool;
+}
+
+@private isReady:  bool;
+@private bank:     Map<string, Entry>;
+@private tracks:   Map<string, Track>;
+@private missing:  Map<string, bool>;     // Names that were asked for and aren't there, warned about once
+@private listener: Vector3;
+@private rng:      random.Random;
+
+// Opens the audio device, and loads every sound and piece of music of the data folder
+load :: (dataFolder: string) {
+    InitAudioDevice();
+    if !IsAudioDeviceReady() {
+        fmt.print("WARNING: No audio device, so the game is silent");
+        return;
+    }
+    isReady = true;
+    rng = random.newRandom(1234);
+
+    soundsPath := fmt.sprint("%sounds", dataFolder);
+    defer soundsPath.free();
+    eachFile(soundsPath, (path: string, key: string) {
+        cPath := path.toCString();
+        defer cPath.free();
+        source := LoadSound(cPath);
+
+        variant: Variant;
+        variant.voices[0] = source;
+        for i in 1..VoicesPerSound { variant.voices[i] = LoadSoundAlias(source); }
+
+        if !bank.has(key) { bank[key] = Entry{}; }
+        entry := bank[key];
+        entry.variants.add(variant);
+        bank[key] = entry;
+    });
+
+    musicPath := fmt.sprint("%music", dataFolder);
+    defer musicPath.free();
+    eachFile(musicPath, (path: string, key: string) {
+        cPath := path.toCString();
+        defer cPath.free();
+        music := LoadMusicStream(cPath);
+        music.looping = true;
+        // The key of music is its name alone, e.g "theme" for music/theme.ogg
+        name := key.slice(key.indexOf(".") + 1).copy();
+        tracks[name] = Track{music: music};
+        key.free();
+    });
+
+    fmt.print("INFO: SOUND: % sounds and % pieces of music in %", bank.count, tracks.count, dataFolder);
+}
+
+// Calls back with the path of every sound file in a folder and below, and its key: "<folder>.<name>", without the
+// number of a variant
+@private
+eachFile :: (folder: string, callback: (string, string)) {
+    cFolder := folder.toCString();
+    defer cFolder.free();
+    files := LoadDirectoryFilesEx(cFolder, ".wav;.ogg;.mp3", true);
+    defer UnloadDirectoryFiles(files);
+
+    for i in 0..files.count {
+        path := files.paths[i].toString();
+
+        file := GetFileNameWithoutExt(files.paths[i]).toString().copy();     // raylib's own buffer, used again below
+        defer file.free();
+        name := file;
+        underscore := file.lastIndexOf("_");
+        if underscore > 0 && isNumber(file.slice(underscore + 1)) {
+            name = file.slice(0, underscore);
+        }
+
+        directory := GetDirectoryPath(files.paths[i]);
+        group := GetFileName(directory).toString();
+
+        callback(path, fmt.sprint("%.%", group, name));
+    }
+}
+
+@private
+isNumber :: (text: string) -> bool {
+    if text.len == 0 { return false; }
+    for c in text { if !c.isDigit() { return false; } }
+    return true;
+}
+
+// Plays a sound by its name, e.g "car.horn". pitchSpread changes the pitch a bit at random, e.g 0.05 for steps
+play :: (name: string, volume: f32 = 1, pitchSpread: f32 = 0) {
+    playPanned(name, volume, 0.5, pitchSpread);
+}
+
+// Plays a sound at a place in the world: quieter the further it is from the listener, and to the left or right of it
+playAt :: (name: string, position: Vector3, volume: f32 = 1, pitchSpread: f32 = 0) {
+    distance := Vector3Distance(position, listener);
+    if distance > HearingDistance { return; }
+    loudness := 1 - distance / HearingDistance;
+    pan := math.clamp(0.5 - (position.x - listener.x) / (HearingDistance * 2), 0.1, 0.9);   // raylib's pan: 1 is left
+    playPanned(name, volume * loudness * loudness, pan, pitchSpread);
+}
+
+@private
+playPanned :: (name: string, volume: f32, pan: f32, pitchSpread: f32) {
+    if !isReady { return; }
+    if !bank.has(name) {
+        if !missing.has(name) {
+            fmt.print("WARNING: No sound named '%' in data/sounds", name);
+            missing[name.copy()] = true;
+        }
+        return;
+    }
+
+    entry := bank[name];
+    which := rng.between(0, entry.variants.count as int - 1);
+    variant := &entry.variants[which];
+    voice := variant.voices[variant.next];
+    variant.next = (variant.next + 1) % VoicesPerSound;
+
+    SetSoundVolume(voice, volume);
+    SetSoundPan(voice, pan);
+    SetSoundPitch(voice, 1 + rng.uniform(-pitchSpread, pitchSpread) as f32);
+    PlaySound(voice);
+}
+
+// Where the sounds played with playAt are heard from, e.g the point the camera looks at
+setListener :: (position: Vector3) {
+    listener = position;
+}
+
+// Starts a piece of music of data/music, looped, e.g "theme"
+playMusic :: (name: string, volume: f32 = 1) {
+    if !isReady || !tracks.has(name) { return; }
+    track := tracks[name];
+    SetMusicVolume(track.music, volume);
+    if !track.isPlaying { PlayMusicStream(track.music); }
+    track.isPlaying = true;
+    tracks[name] = track;
+}
+
+setMusicVolume :: (name: string, volume: f32) {
+    if !isReady || !tracks.has(name) { return; }
+    SetMusicVolume(tracks[name].music, volume);
+}
+
+// Once a frame: the music is streamed
+update :: () {
+    if !isReady { return; }
+    for _, track in tracks {
+        if track.isPlaying { UpdateMusicStream(track.music); }
+    }
+}
+
+unload :: () {
+    if !isReady { return; }
+    for _, entry in bank {
+        for variant in entry.variants {
+            for i in 1..VoicesPerSound { UnloadSoundAlias(variant.voices[i]); }
+            UnloadSound(variant.voices[0]);
+        }
+    }
+    for _, track in tracks { UnloadMusicStream(track.music); }
+    CloseAudioDevice();
+    isReady = false;
+}

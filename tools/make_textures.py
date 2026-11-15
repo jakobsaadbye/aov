@@ -53,13 +53,35 @@ def save(image, *path):
 
 
 def make_grass():
-    size = 256
-    n = fractal(size, 5)
-    blades = rng.random((size, size))
-    base = np.array([108, 150, 84], dtype=float)
-    light = (n - 0.5) * 26 + (blades - 0.5) * 10
-    rgb = np.clip(base[None, None, :] + light[:, :, None] * np.array([0.8, 1.0, 0.6]), 0, 255).astype(np.uint8)
-    save(Image.fromarray(rgb, "RGB"), "textures", "grass", "grass.png")
+    """Grass with some detail: patches of lighter and darker green, short blades and a speck here and there, but in a
+    narrow range of tones, so a hero on it is still easy to see"""
+    size = 512
+    patches = fractal(size, 5)
+    tint = fractal(size, 3)
+    base = np.array([104, 146, 80], dtype=float)
+    light = (patches - 0.5) * 34
+    rgb = base[None, None, :] + light[:, :, None] * np.array([0.8, 1.0, 0.6])
+    rgb += ((tint - 0.5) * 30)[:, :, None] * np.array([0.9, 0.35, -0.4])      # Yellower and bluer patches
+
+    image = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), "RGB")
+    draw = ImageDraw.Draw(image)
+    for _ in range(9000):                                                      # Blades, leaning a bit
+        x, y = rng.uniform(0, size, 2)
+        length = rng.uniform(3, 8)
+        angle = rng.uniform(-0.5, 0.5) - math.pi / 2
+        shade = rng.uniform(-24, 22)
+        color = tuple(int(np.clip(c + shade * w, 0, 255)) for c, w in zip(base, (0.7, 1.0, 0.5)))
+        for dx in (-size, 0, size):                                            # Drawn again across the edges, so it tiles
+            for dy in (-size, 0, size):
+                x2, y2 = x + dx + math.cos(angle) * length, y + dy + math.sin(angle) * length
+                draw.line([(x + dx, y + dy), (x2, y2)], fill=color, width=1)
+    for _ in range(140):                                                       # Specks: tiny flowers and clover
+        x, y = rng.uniform(0, size, 2)
+        color = [(232, 226, 150), (220, 220, 210), (150, 186, 96)][rng.integers(0, 3)]
+        r = rng.uniform(0.8, 1.6)
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=color)
+    image = image.filter(ImageFilter.GaussianBlur(0.4))
+    save(image, "textures", "grass", "grass.png")
 
 
 def make_asphalt():

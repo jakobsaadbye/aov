@@ -386,7 +386,51 @@ def make_wall():
     m.write()
 
 
+#
+# Scenery on the grass: small, so the heroes stay easy to see
+#
+
+def make_tuft():
+    m = Model("tuft")
+    m.material("blade", (0.36, 0.55, 0.24))
+    for k in range(7):
+        a = 2 * math.pi * k / 7 + 0.3
+        r = 0.12 + 0.05 * (k % 3)
+        height = 0.45 + 0.12 * ((k * 5) % 3)
+        x, z = math.cos(a) * r, math.sin(a) * r
+        lean = 0.12
+        m.frustum("blade", (x, 0, z), (0.09, 0.05), (0.01, 0.01), height, top_offset_z=lean * math.sin(a))
+    m.write()
+
+
+def make_flower(name, petal):
+    m = Model(name)
+    m.material("stem", (0.3, 0.5, 0.2))
+    m.material("petal", petal)
+    m.material("middle", (0.95, 0.8, 0.2) if petal[2] > 0.5 else (0.45, 0.28, 0.1))
+    m.cylinder("stem", (0, 0.2, 0), 0.025, 0.4, axis="y", segments=4)
+    for k in range(5):
+        a = 2 * math.pi * k / 5
+        m.sphere("petal", (math.cos(a) * 0.08, 0.42, math.sin(a) * 0.08), 0.06, scale=(1.3, 0.4, 1.3), rings=3, segments=5)
+    m.sphere("middle", (0, 0.44, 0), 0.045, rings=3, segments=5)
+    m.write()
+
+
+def make_rock():
+    m = Model("rock")
+    m.material("stone", (0.55, 0.54, 0.5))
+    m.material("stone_dark", (0.42, 0.41, 0.38))
+    m.sphere("stone", (0, 0.12, 0), 0.4, scale=(1.2, 0.55, 0.9), rings=4, segments=7)
+    m.sphere("stone_dark", (0.3, 0.07, 0.2), 0.22, scale=(1.1, 0.6, 1.0), rings=3, segments=6)
+    m.write()
+
+
 if __name__ == "__main__":
+    make_tuft()
+    make_flower("flower_yellow", (0.98, 0.85, 0.25))
+    make_flower("flower_white", (0.95, 0.95, 0.92))
+    make_flower("flower_purple", (0.62, 0.4, 0.85))
+    make_rock()
     make_wall()
     make_car()
     make_van()

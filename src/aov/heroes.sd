@@ -3,8 +3,8 @@ namespace aov;
 use raylib;
 
 // Every time a hero is run over, the player gets a new one at random. A hero has any number of abilities, like in
-// Dota 2: the first is on Q, the second on W, and so on (AbilityKeys). An ability is cast with its key, and then cools
-// down. A passive is always on, and its key does nothing
+// Dota 2. The abilities that are cast are on the keys in order: the first on Q, the second on W, and so on
+// (AbilityKeys). Then they cool down. A passive is always on, and has no key
 
 HeroKind :: enum {
     allan,
@@ -13,9 +13,10 @@ HeroKind :: enum {
     frosty,
 }
 
-// The keys of the ability slots, in order. A hero can have as many abilities as there are keys
-AbilityKeys  :: [KeyboardKey.q, .w, .e, .r, .d, .f];
-MaxAbilities :: 6;
+// The keys of the abilities that are cast, in order. A hero can have as many of them as there are keys, and passives
+AbilityKeys     :: [KeyboardKey.q, .w, .e, .r, .d, .f];
+AbilityKeyNames :: ["Q", "W", "E", "R", "D", "F"];
+MaxAbilities    :: 8;
 
 // What an ability does
 AbilityEffect :: union {
@@ -52,6 +53,7 @@ Ability :: struct {
     icon:        string;        // data/icons/<icon>.png
     cooldown:    f32;           // Seconds. 0 for a passive
     effect:      AbilityEffect;
+    sound:       string;        // Played when it is cast, e.g "ability.sprint" (see sound.sd)
 
     isPassive :: method () -> bool {
         return self.effect.isPassive();
@@ -65,6 +67,7 @@ HeroDefinition :: struct {
     height:    f32;
     moveSpeed: f32;
     hitRadius: f32;             // The circle on the ground that the cars hit
+    maxHealth: f32;             // A car takes CarDamagePerSecond, so a tanky hero survives a car for a moment
     abilities: [..]Ability;
 }
 
@@ -79,14 +82,14 @@ definition :: method (kind: HeroKind) -> *HeroDefinition {
 
 @private
 defineHeroes :: () {
-    allan := HeroDefinition{name: "Allan", color: {214, 48, 49, 255}, width: 2.2, height: 4.2, moveSpeed: 9, hitRadius: 0.75};
+    allan := HeroDefinition{name: "Allan", color: {214, 48, 49, 255}, width: 2.2, height: 4.2, moveSpeed: 9, hitRadius: 0.75, maxHealth: 25};
     allan.abilities.add(Ability{
-        name: "Sprint", icon: "sprint", cooldown: 6,
+        name: "Sprint", icon: "sprint", sound: "ability.sprint", cooldown: 6,
         description: "Runs twice as fast for a moment",
         effect: {sprint: {speedMultiplier: 2.1, duration: 1.4}},
     });
     allan.abilities.add(Ability{
-        name: "Blink", icon: "blink", cooldown: 12,
+        name: "Blink", icon: "blink", sound: "ability.blink", cooldown: 12,
         description: "Jumps to the cursor, up to 12 away",
         effect: {blink: {range: 12}},
     });
@@ -96,9 +99,9 @@ defineHeroes :: () {
         effect: {quickFeet: {speedBonus: 0.1}},
     });
 
-    ghosty := HeroDefinition{name: "Ghosty", color: {190, 210, 255, 255}, width: 2.2, height: 3.2, moveSpeed: 7.5, hitRadius: 0.7};
+    ghosty := HeroDefinition{name: "Ghosty", color: {190, 210, 255, 255}, width: 2.2, height: 3.2, moveSpeed: 7.5, hitRadius: 0.7, maxHealth: 15};
     ghosty.abilities.add(Ability{
-        name: "Fade", icon: "fade", cooldown: 14,
+        name: "Fade", icon: "fade", sound: "ability.fade", cooldown: 14,
         description: "Fades away for 1.5 seconds: the cars drive straight through him",
         effect: {fade: {duration: 1.5}},
     });
@@ -108,26 +111,26 @@ defineHeroes :: () {
         effect: .phaseWalk,
     });
 
-    butcher := HeroDefinition{name: "Butcher", color: {150, 90, 70, 255}, width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15};
+    butcher := HeroDefinition{name: "Butcher", color: {150, 90, 70, 255}, width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15, maxHealth: 100};
     butcher.abilities.add(Ability{
-        name: "Meat hook", icon: "hook", cooldown: 7,
+        name: "Meat hook", icon: "hook", sound: "ability.hook_throw", cooldown: 7,
         description: "Hooks the ground at the cursor and pulls himself there",
         effect: {hook: {range: 26, pullSpeed: 48}},
     });
     butcher.abilities.add(Ability{
-        name: "Charge", icon: "charge", cooldown: 10,
+        name: "Charge", icon: "charge", sound: "ability.charge", cooldown: 10,
         description: "Charges ahead, very fast, for a short moment",
         effect: {sprint: {speedMultiplier: 2.8, duration: 0.8}},
     });
 
-    frosty := HeroDefinition{name: "Frosty", color: {110, 220, 235, 255}, width: 2.2, height: 4.3, moveSpeed: 8, hitRadius: 0.7};
+    frosty := HeroDefinition{name: "Frosty", color: {110, 220, 235, 255}, width: 2.2, height: 4.3, moveSpeed: 8, hitRadius: 0.7, maxHealth: 35};
     frosty.abilities.add(Ability{
-        name: "Cold snap", icon: "freeze", cooldown: 10,
+        name: "Cold snap", icon: "freeze", sound: "ability.freeze", cooldown: 10,
         description: "Freezes the cars around him for 2.5 seconds",
         effect: {freeze: {radius: 20, duration: 2.5}},
     });
     frosty.abilities.add(Ability{
-        name: "Slide", icon: "slide", cooldown: 8,
+        name: "Slide", icon: "slide", sound: "ability.blink", cooldown: 8,
         description: "Slides to the cursor, up to 9 away",
         effect: {blink: {range: 9}},
     });
@@ -161,7 +164,9 @@ Hero :: struct {
     walkCycle: f32;         // Drives the bobbing while walking
     timeAlive: f32;
 
-    cooldowns: [MaxAbilities]f32;   // Seconds before the ability of each slot can be cast again
+    cooldowns: [MaxAbilities]f32;   // Seconds before each ability can be cast again, in the order of the abilities
+    health:    f32;
+    hurtFor:   f32;                 // Seconds since a car last hurt the hero. It heals after a while
 
     // What the abilities are doing right now
     sprintLeft:       f32;
@@ -211,7 +216,29 @@ Hero :: struct {
         return self.fadeLeft > 0;
     }
 
-    // If the ability in a slot can be cast now
+    // The ability on the nth key (0 is Q): the nth ability that isn't a passive, or -1 when there is none
+    abilityOnKey :: method (key: int) -> int {
+        keyed := 0;
+        for ability, i in self.abilities() {
+            if ability.isPassive() { continue; }
+            if keyed == key { return i as int; }
+            keyed += 1;
+        }
+        return -1;
+    }
+
+    // The key of an ability (0 is Q), or -1 for a passive
+    keyOf :: method (slot: int) -> int {
+        abilities := self.abilities();
+        if abilities[slot].isPassive() { return -1; }
+        key := 0;
+        for i in 0..slot {
+            if !abilities[i].isPassive() { key += 1; }
+        }
+        return key;
+    }
+
+    // If an ability can be cast now. slot is its place in the abilities of the hero
     abilityReady :: method (slot: int) -> bool {
         abilities := self.abilities();
         if slot < 0 || slot >= abilities.count { return false; }
@@ -237,5 +264,7 @@ newHero :: (kind: HeroKind, position: Vector3, facing: f32) -> Hero {
         position: position,
         target:   position,
         facing:   facing,
+        health:   kind.definition().maxHealth,
+        hurtFor:  1000,
     };
 }
