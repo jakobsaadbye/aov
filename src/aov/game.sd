@@ -191,7 +191,13 @@ free :: method (game: *Game) {
     for line in game.feed { line.text.free(); }
     game.feed.free();
     game.stopSigns.free();
-    for *player in game.players { player.commands.free(); }
+    for *player in game.players {
+        player.commands.free();
+        if player.isBot() { player.brain.free(); }
+    }
+    for *frame in game.recording.frames { frame.commands.free(); }
+    game.recording.frames.free();
+    game.recording.checksums.free();
     game.players.free();
     if game.replay != null { mem.delete(game.replay); }
     mem.delete(game);

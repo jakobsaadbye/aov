@@ -28,6 +28,9 @@ Brain :: interface {
     // Forgets what it was doing, e.g for a new game
     reset :: method * ();
 
+    // Gives back its memory, when the game is over
+    free :: method * ();
+
     // What it means to do, for the debug overlay (F4): the points of its way
     plannedPath :: method () -> []Waypoint;
 
@@ -122,6 +125,12 @@ reset :: method (bot: *Bot) {
     bot.mustSearch = true;
     bot.hasForecast = false;
     bot.arena.clear();
+}
+
+free :: method (bot: *Bot) {
+    bot.arena.free();
+    bot.plan.free();
+    mem.delete(bot);
 }
 
 gene :: method (bot: *Bot, gene: Gene) -> f32 {
