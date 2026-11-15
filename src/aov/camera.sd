@@ -1,0 +1,101 @@
+namespace aov;
+
+import math;
+use raylib;
+
+// A camera like in an RTS: it looks down at a point on the ground from a fixed angle. The point moves with the arrow keys
+// or the mouse at the edge of the window, the wheel zooms, and space keeps it on the hero
+
+RtsCamera :: struct {
+    focus:          Vector3;
+    distance:       f32 = 90;
+    targetDistance: f32 = 90;
+    shake:          f32;            // Seconds of shaking left
+    glideTo:        ?Vector3;       // A point the camera moves to by itself, e.g a new hero. Moving it by hand stops it
+    view:           Camera3D;
+}
+
+CameraPitch       :: 1.05;          // Radians above the ground: about 60 degrees
+CameraMinDistance :: 35.0;
+CameraMaxDistance :: 170.0;
+CameraPanSpeed    :: 70.0;
+CameraEdgeMargin  :: 6;             // Pixels from the edge of the window that pan the camera
+
+newRtsCamera :: (focus: Vector3) -> RtsCamera {
+    camera := RtsCamera{focus: focus};
+    camera.view = Camera3D{up: {0, 1, 0}, fovy: 45, projection: .perspective};
+    camera.place(0);
+    return camera;
+}
+
+update :: method (camera: *RtsCamera, dt: f32, follow: ?Vector3) {
+    // Zoom
+    wheel := GetMouseWheelMove();
+    if wheel != 0 {
+        camera.targetDistance = math.clamp(camera.targetDistance - wheel * 10, CameraMinDistance, CameraMaxDistance);
+    }
+    camera.distance = math.lerp(camera.distance, camera.targetDistance, math.min(1, dt * 10));
+
+    if follow.hasValue() {
+        target := follow.value();
+        camera.focus = camera.focus.lerp(Vector3{target.x, 0, target.z}, math.min(1, dt * 8));
+    } else {
+        pan := Vector2{0, 0};
+        if IsKeyDown(.left)  { pan.x -= 1; }
+        if IsKeyDown(.right) { pan.x += 1; }
+        if IsKeyDown(.up)    { pan.y -= 1; }
+        if IsKeyDown(.down)  { pan.y += 1; }
+
+        // The mouse at the edge of the window, when the window has it
+        if IsWindowFocused() && IsCursorOnScreen() {
+            mouse := GetMousePosition();
+            if mouse.x < CameraEdgeMargin                   { pan.x -= 1; }
+            if mouse.x > GetScreenWidth() - CameraEdgeMargin  { pan.x += 1; }
+            if mouse.y < CameraEdgeMargin                   { pan.y -= 1; }
+            if mouse.y > GetScreenHeight() - CameraEdgeMargin { pan.y += 1; }
+        }
+
+        if pan.lengthSqr() > 0 {
+            camera.glideTo = null;
+            // Faster when zoomed out
+            speed := CameraPanSpeed * (camera.distance / 100);
+            move := pan.normalize() * (speed * dt);
+            camera.focus.x = math.clamp(camera.focus.x + move.x, -MapHalfWidth, MapHalfWidth);
+            camera.focus.z = math.clamp(camera.focus.z + move.y, -MapHalfLength, MapHalfLength);
+        }
+
+        if camera.glideTo.hasValue() {
+            target := camera.glideTo.value();
+            camera.focus = camera.focus.lerp(Vector3{target.x, 0, target.z}, math.min(1, dt * 4));
+            if camera.focus.distance(target) < 0.5 { camera.glideTo = null; }
+        }
+    }
+
+    camera.place(dt);
+}
+
+// Puts the camera where it looks at its focus from
+place :: method (camera: *RtsCamera, dt: f32) {
+    offset := Vector3{0, math.sinf(CameraPitch), math.cosf(CameraPitch)} * camera.distance;
+
+    shake := Vector3{0, 0, 0};
+    if camera.shake > 0 {
+        camera.shake -= dt;
+        strength := camera.shake * 2;
+        time := GetTime() as f32;
+        shake = Vector3{math.sinf(time * 61) * strength, 0, math.cosf(time * 47) * strength};
+    }
+
+    camera.view.target   = camera.focus + shake;
+    camera.view.position = camera.focus + offset + shake;
+}
+
+// The point on the ground under a point of the window, e.g the mouse
+groundPoint :: method (camera: *RtsCamera, screen: Vector2) -> ?Vector3 {
+    ray := GetScreenToWorldRay(screen, camera.view);
+    if math.fabsf(ray.direction.y) < 0.0001 { return null; }
+
+    t := -ray.position.y / ray.direction.y;
+    if t < 0 { return null; }
+    return ray.position + ray.direction * t;
+}

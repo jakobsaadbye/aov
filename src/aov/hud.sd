@@ -1,0 +1,174 @@
+namespace aov;
+
+import fmt;
+import math;
+import mem;
+import allocators;
+use raylib;
+
+// The 2D overlay: the score, the card of the hero with its ability, the banner, the help and the debug numbers.
+// The texts of a frame are made in an arena, which is cleared at the end of the frame
+
+PanelColor  :: Color{20, 24, 28, 200};
+BorderColor :: Color{255, 255, 255, 40};
+TextColor   :: Color{235, 235, 235, 255};
+DimColor    :: Color{160, 165, 170, 255};
+
+@threadLocal
+frameArena: allocators.Arena;
+
+drawHud :: method (game: *Game, assets: *Assets) {
+    previous := mem.setAllocator(&frameArena);
+    defer frameArena.clear();
+    defer mem.setAllocator(previous);
+
+    drawScore(game);
+    drawHeroCard(game);
+    drawBanner(game);
+    if game.showHelp       { drawHelp(); }
+    if game.debug.overlay  { drawDebug(game); }
+    if game.isPaused       { drawPaused(); }
+
+    if assets.cursor.hasValue() {
+        mouse := GetMousePosition();
+        DrawTexture(assets.cursor.value(), mouse.x as int - 2, mouse.y as int, White);
+    }
+}
+
+drawScore :: (game: *Game) {
+    panel := Rectangle{16, 16, 270, 132};
+    drawPanel(panel);
+
+    x := panel.x as int + 14;
+    y := panel.y as int + 12;
+    drawText("ALLAN OVER VEJEN", x, y, 20, {255, 210, 90, 255});
+    drawText(fmt.sprint("Level %", game.stats.level + 1), x, y + 30, 18, TextColor);
+    drawText(fmt.sprint("Crossings  %", game.stats.crossings), x, y + 54, 18, TextColor);
+    drawText(fmt.sprint("Run over   %", game.stats.deaths), x, y + 76, 18, TextColor);
+
+    best := "-";
+    if game.stats.bestTime.hasValue() { best = fmt.sprint("% s", fmt.fixed(game.stats.bestTime.value(), 1)); }
+    drawText(fmt.sprint("Best time  %", best), x, y + 98, 18, TextColor);
+}
+
+drawHeroCard :: (game: *Game) {
+    hero := &game.hero;
+    info := hero.info();
+
+    width  := 560;
+    height := 104;
+    panel := Rectangle{(GetScreenWidth() - width) as f32 * 0.5, (GetScreenHeight() - height - 16) as f32, width as f32, height as f32};
+    drawPanel(panel);
+
+    x := panel.x as int;
+    y := panel.y as int;
+
+    // A portrait: the color of the hero
+    portrait := Rectangle{panel.x + 12, panel.y + 12, 80, 80};
+    DrawRectangleRec(portrait, ColorAlpha(info.color, 1));
+    DrawRectangleLinesEx(portrait, 2, {255, 255, 255, 90});
+    DrawRectangle(portrait.x as int + 22, portrait.y as int + 30, 10, 12, {20, 20, 20, 255});
+    DrawRectangle(portrait.x as int + 48, portrait.y as int + 30, 10, 12, {20, 20, 20, 255});
+
+    drawText(info.name, x + 108, y + 12, 26, TextColor);
+    drawText(fmt.sprint("% s", fmt.fixed(hero.timeAlive, 1)), x + width - 70, y + 16, 18, DimColor);
+
+    // The ability, with its key and how long until it is ready again
+    abilityLine := info.abilityName;
+    if !info.ability.isPassive() { abilityLine = fmt.sprint("[Q] %", info.abilityName); }
+    else                         { abilityLine = fmt.sprint("Passive: %", info.abilityName); }
+    drawText(abilityLine, x + 108, y + 46, 18, {255, 210, 90, 255});
+    drawText(info.abilityText, x + 108, y + 68, 16, DimColor);
+
+    if !info.ability.isPassive() {
+        bar := Rectangle{panel.x + 108, panel.y + height as f32 - 12, width as f32 - 124, 5};
+        DrawRectangleRec(bar, {255, 255, 255, 30});
+        ready := 1 - hero.cooldownLeft / info.ability.cooldown();
+        fill := bar;
+        fill.width *= math.clamp(ready, 0, 1);
+        barColor := Color{90, 200, 255, 255};
+        if ready >= 1 { barColor = {120, 255, 140, 255}; }
+        DrawRectangleRec(fill, barColor);
+    }
+}
+
+drawBanner :: (game: *Game) {
+    banner := game.banner;
+    if banner.timeLeft <= 0 || banner.text.len == 0 { return; }
+
+    alpha := math.clamp(banner.timeLeft / 0.5, 0, 1);
+    size := 30;
+    width := textWidth(banner.text, size);
+    x := (GetScreenWidth() - width) / 2;
+    y := 90;
+
+    DrawRectangle(x - 20, y - 12, width + 40, size + 24, ColorAlpha(PanelColor, 0.8 * alpha));
+    drawText(banner.text, x + 2, y + 2, size, ColorAlpha(Black, 0.6 * alpha));
+    drawText(banner.text, x, y, size, ColorAlpha(banner.color, alpha));
+}
+
+drawHelp :: () {
+    lines := [
+        "Right click   walk there",
+        "Q             use the ability",
+        "S             stop",
+        "Space         camera on the hero",
+        "Arrows/edges  move the camera",
+        "Wheel         zoom",
+        "P pause   F5 new game   H hide this",
+    ];
+
+    lineHeight := 20;
+    panel := Rectangle{16, (GetScreenHeight() - lines.count * lineHeight - 40) as f32, 330, (lines.count * lineHeight + 24) as f32};
+    drawPanel(panel);
+    for line, i in lines {
+        drawText(line, panel.x as int + 12, panel.y as int + 12 + i as int * lineHeight, 16, DimColor);
+    }
+}
+
+drawDebug :: (game: *Game) {
+    camera := game.camera.view;
+    hero := game.hero;
+    lines := [
+        fmt.sprint("FPS %", GetFPS()),
+        fmt.sprint("Camera % % %", fmt.fixed(camera.position.x, 1), fmt.fixed(camera.position.y, 1), fmt.fixed(camera.position.z, 1)),
+        fmt.sprint("Hero % %", fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1)),
+        fmt.sprint("Cars %", game.traffic.activeCount()),
+        fmt.sprint("Phase %", game.phase.kind),
+        "F1 wireframes   F2 hitboxes",
+    ];
+
+    width := 300;
+    x := GetScreenWidth() - width - 16;
+    DrawRectangle(x, 16, width, lines.count as int * 20 + 20, PanelColor);
+    for line, i in lines {
+        drawText(line, x + 12, 26 + i as int * 20, 16, Lime);
+    }
+}
+
+drawPaused :: () {
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {0, 0, 0, 120});
+    text := "PAUSED";
+    width := textWidth(text, 60);
+    drawText(text, (GetScreenWidth() - width) / 2, GetScreenHeight() / 2 - 60, 60, White);
+    hint := "Press P or Esc to go on";
+    drawText(hint, (GetScreenWidth() - textWidth(hint, 20)) / 2, GetScreenHeight() / 2 + 10, 20, DimColor);
+}
+
+drawPanel :: (rect: Rectangle) {
+    DrawRectangleRounded(rect, 0.08, 6, PanelColor);
+    DrawRectangleRoundedLinesEx(rect, 0.08, 6, 1, BorderColor);
+}
+
+// raylib draws a c.string, so the text is copied with a 0 after it
+drawText :: (text: string, x: int, y: int, size: int, color: Color) {
+    cText := text.toCString();
+    defer cText.free();
+    DrawText(cText, x, y, size, color);
+}
+
+textWidth :: (text: string, size: int) -> int {
+    cText := text.toCString();
+    defer cText.free();
+    return MeasureText(cText, size);
+}

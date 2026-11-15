@@ -1,0 +1,108 @@
+namespace aov;
+
+import math;
+use raylib;
+
+// The vectors of the game are on the ground plane, so a Vector3 (x, y, z) is often only its x and z
+
+xz :: method (v: Vector3) -> Vector2 {
+    return {v.x, v.z};
+}
+
+// A point on the ground as a Vector3, at the height y
+at :: method (v: Vector2, y: f32 = 0) -> Vector3 {
+    return {v.x, y, v.y};
+}
+
+center :: method (rect: Rectangle) -> Vector2 {
+    return {rect.x + rect.width * 0.5, rect.y + rect.height * 0.5};
+}
+
+// The walls on both sides of the road. Each side has one opening: the near one at the far end of the road, the one on
+// the other side at the near end, so a hero has to cross the road at an angle
+World :: struct {
+    walls: [4]Rectangle;        // The footprints of the walls on the ground: x and z
+    entrance: Vector2;          // The middle of the opening on the start side
+    exit:     Vector2;          // and on the goal side
+}
+
+newWorld :: () -> World {
+    world: World;
+
+    leftX  := -RoadHalfWidth - WallWidth;
+    rightX := RoadHalfWidth;
+    top    := -MapHalfLength;
+    length := MapHalfLength * 2;
+
+    // The start side: a short wall, the opening, and a long wall
+    leftOpening := top + OpeningInset;
+    world.walls[0] = Rectangle{leftX, top, WallWidth, OpeningInset};
+    world.walls[1] = Rectangle{leftX, leftOpening + OpeningLength, WallWidth, length - OpeningInset - OpeningLength};
+
+    // The goal side: a long wall, the opening, and a short wall
+    rightOpening := MapHalfLength - OpeningInset - OpeningLength;
+    world.walls[2] = Rectangle{rightX, top, WallWidth, rightOpening - top};
+    world.walls[3] = Rectangle{rightX, rightOpening + OpeningLength, WallWidth, OpeningInset};
+
+    world.entrance = Vector2{leftX + WallWidth * 0.5, leftOpening + OpeningLength * 0.5};
+    world.exit     = Vector2{rightX + WallWidth * 0.5, rightOpening + OpeningLength * 0.5};
+    return world;
+}
+
+spawnPoint :: method (world: World) -> Vector3 {
+    return Vector3{SpawnX, 0, 0};
+}
+
+isOnRoad :: (point: Vector2) -> bool {
+    return point.x > -RoadHalfWidth && point.x < RoadHalfWidth;
+}
+
+hasCrossed :: (point: Vector2) -> bool {
+    return point.x >= GoalX;
+}
+
+// Keeps a circle on the ground out of the walls (unless it walks through them) and inside the field
+resolveCollisions :: method (world: World, center: Vector2, radius: f32, throughWalls: bool) -> Vector2 {
+    result := center;
+
+    if !throughWalls {
+        for wall in world.walls {
+            pushed := pushOutOfRect(result, radius, wall);
+            if pushed.hasValue() { result = pushed.value(); }
+        }
+    }
+
+    result.x = math.clamp(result.x, -MapHalfWidth + radius, MapHalfWidth - radius);
+    result.y = math.clamp(result.y, -MapHalfLength + radius, MapHalfLength - radius);
+    return result;
+}
+
+// Where a circle that overlaps a rectangle has to be moved to so it only touches it, or nothing when they don't overlap
+pushOutOfRect :: (center: Vector2, radius: f32, rect: Rectangle) -> ?Vector2 {
+    closest := Vector2{
+        math.clamp(center.x, rect.x, rect.x + rect.width),
+        math.clamp(center.y, rect.y, rect.y + rect.height),
+    };
+
+    delta := center - closest;
+    distanceSqr := delta.lengthSqr();
+    if distanceSqr >= radius * radius { return null; }
+
+    if distanceSqr > 0.000001 {
+        // Outside the rectangle: out along the line from the closest point
+        distance := math.sqrtf(distanceSqr);
+        return closest + delta * (radius / distance);
+    }
+
+    // The center is inside: out through the nearest side
+    left   := center.x - rect.x;
+    right  := rect.x + rect.width - center.x;
+    top    := center.y - rect.y;
+    bottom := rect.y + rect.height - center.y;
+    nearest := math.min(math.min(left, right), math.min(top, bottom));
+
+    if nearest == left  { return Vector2{rect.x - radius, center.y}; }
+    if nearest == right { return Vector2{rect.x + rect.width + radius, center.y}; }
+    if nearest == top   { return Vector2{center.x, rect.y - radius}; }
+    return Vector2{center.x, rect.y + rect.height + radius};
+}

@@ -1,0 +1,136 @@
+namespace aov;
+
+import math;
+import random;
+use raylib;
+
+// Short-lived things that only show something: the marker where the player clicked, the bits flying off a hero that was
+// run over, the stains they leave on the road, and the rings of the abilities
+
+Particle :: struct {
+    position: Vector3;
+    velocity: Vector3;
+    color:    Color;
+    size:     f32;
+    lifeLeft: f32;
+    lifetime: f32;
+}
+
+Splat :: struct {
+    position: Vector2;
+    radius:   f32;
+    color:    Color;
+    age:      f32;
+}
+
+// A ring on the ground that grows or shrinks while it fades
+Ring :: struct {
+    center:      Vector2;
+    startRadius: f32;
+    endRadius:   f32;
+    color:       Color;
+    age:         f32;
+    lifetime:    f32;
+}
+
+Effects :: struct {
+    particles: [MaxParticles]Particle;
+    splats:    [MaxSplats]Splat;
+    nextSplat: int;
+    rings:     [16]Ring;
+}
+
+update :: method (effects: *Effects, dt: f32) {
+    Gravity :: 30.0;
+
+    for *p in effects.particles {
+        if p.lifeLeft <= 0 { continue; }
+        p.lifeLeft -= dt;
+        p.velocity.y -= Gravity * dt;
+        p.position += p.velocity * dt;
+
+        // Bounce off the ground, losing most of the speed
+        if p.position.y < p.size * 0.5 {
+            p.position.y = p.size * 0.5;
+            p.velocity = Vector3{p.velocity.x * 0.5, -p.velocity.y * 0.3, p.velocity.z * 0.5};
+        }
+    }
+
+    for *splat in effects.splats {
+        if splat.radius > 0 { splat.age += dt; }
+    }
+
+    for *ring in effects.rings {
+        if ring.age < ring.lifetime { ring.age += dt; }
+    }
+}
+
+// A burst of particles from a point, e.g when a hero is run over
+burst :: method (effects: *Effects, at: Vector3, color: Color, count: int, push: Vector3, rng: *random.Random) {
+    emitted := 0;
+    for *p in effects.particles {
+        if emitted == count { break; }
+        if p.lifeLeft > 0 { continue; }
+
+        speed := rng.uniform(4, 16) as f32;
+        angle := rng.uniform(0, math.Tau) as f32;
+        lifetime := rng.uniform(0.6, 1.6) as f32;
+
+        *p = Particle{
+            position: at,
+            velocity: Vector3{math.cosf(angle) * speed, rng.uniform(6, 18) as f32, math.sinf(angle) * speed} + push,
+            color:    ColorBrightness(color, rng.uniform(-0.35, 0.2) as f32),
+            size:     rng.uniform(0.25, 0.6) as f32,
+            lifeLeft: lifetime,
+            lifetime: lifetime,
+        };
+        emitted += 1;
+    }
+}
+
+addSplat :: method (effects: *Effects, at: Vector2, radius: f32, color: Color) {
+    effects.splats[effects.nextSplat] = Splat{position: at, radius: radius, color: color};
+    effects.nextSplat = (effects.nextSplat + 1) % MaxSplats;
+}
+
+addRing :: method (effects: *Effects, center: Vector2, startRadius: f32, endRadius: f32, color: Color, lifetime: f32) {
+    // The oldest ring makes room for the new one
+    oldest := 0;
+    for ring, i in effects.rings {
+        if ring.age >= ring.lifetime { oldest = i as int; break; }
+        if ring.age / ring.lifetime > effects.rings[oldest].age / effects.rings[oldest].lifetime { oldest = i as int; }
+    }
+    effects.rings[oldest] = Ring{center, startRadius, endRadius, color, 0, lifetime};
+}
+
+// The marker where the player told the hero to go
+clickMarker :: method (effects: *Effects, at: Vector2) {
+    effects.addRing(at, 1.4, 0.2, {80, 255, 120, 255}, 0.45);
+}
+
+clear :: method (effects: *Effects) {
+    *effects = Effects{};
+}
+
+draw :: method (effects: *Effects) {
+    for splat in effects.splats {
+        if splat.radius <= 0 || splat.age >= SplatLifetime { continue; }
+        fade := 1 - math.max(0, splat.age - SplatLifetime * 0.6) / (SplatLifetime * 0.4);
+        DrawCylinder(splat.position.at(0.14), splat.radius, splat.radius * 1.1, 0.02, 20, ColorAlpha(splat.color, 0.85 * fade));
+    }
+
+    for ring in effects.rings {
+        if ring.age >= ring.lifetime { continue; }
+        t := ring.age / ring.lifetime;
+        radius := math.lerp(ring.startRadius, ring.endRadius, t);
+        color := ColorAlpha(ring.color, 1 - t);
+        DrawCircle3D(ring.center.at(0.3), radius, {1, 0, 0}, 90, color);
+        DrawCircle3D(ring.center.at(0.3), radius * 0.92, {1, 0, 0}, 90, color);
+    }
+
+    for p in effects.particles {
+        if p.lifeLeft <= 0 { continue; }
+        alpha := math.min(1, p.lifeLeft / (p.lifetime * 0.3));
+        DrawCube(p.position, p.size, p.size, p.size, ColorAlpha(p.color, alpha));
+    }
+}
