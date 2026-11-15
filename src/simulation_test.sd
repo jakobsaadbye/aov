@@ -1,0 +1,246 @@
+// Runs the game without a window and checks the rules: the walls, the traffic, being run over, crossing and the
+// abilities. Game.simulate reads no input, so the heroes are given their orders here.
+//
+//     saad run simulation_test.sd        from src
+
+import aov;
+import fmt;
+import math;
+import random;
+use raylib;
+
+Dt :: 1.0 / 60.0;
+
+main :: () {
+    testPushOutOfRect();
+    testWalls();
+    testTraffic();
+    testFrozenCarsQueue();
+    testRunOver();
+    testCrossing();
+    testAbilities();
+    fmt.print("All simulation tests passed");
+}
+
+near :: (a: f32, b: f32, tolerance: f32 = 0.001) -> bool {
+    return math.fabsf(a - b) <= tolerance;
+}
+
+testPushOutOfRect :: () {
+    wall := Rectangle{0, 0, 2, 10};
+
+    // Not touching
+    assert(!aov.pushOutOfRect({5, 5}, 1, wall).hasValue());
+
+    // Overlapping from the left: pushed out to the left side
+    pushed := aov.pushOutOfRect({-0.5, 5}, 1, wall);
+    assert(pushed.hasValue() && near(pushed.value().x, -1) && near(pushed.value().y, 5));
+
+    // The center inside, nearest to the right side
+    inside := aov.pushOutOfRect({1.8, 5}, 1, wall);
+    assert(inside.hasValue() && near(inside.value().x, 3));
+
+    // At a corner: out along the diagonal
+    corner := aov.pushOutOfRect({2.5, -0.5}, 1, wall);
+    assert(corner.hasValue() && near(corner.value().distance({2, 0}), 1));
+}
+
+testWalls :: () {
+    game := aov.newGame(1);
+    defer game.free();
+    clearRoad(game);
+
+    // Allan walks straight into the long wall on the start side, and stops there
+    game.spawnHero(.allan);
+    game.hero.position = Vector3{-60, 0, 30};
+    game.hero.moveTo(Vector3{0, 0, 30});
+    for 0..600 { game.simulate(Dt); }
+    wallSide := -aov.RoadHalfWidth - aov.WallWidth;
+    assert(game.hero.position.x <= wallSide - game.hero.info().hitRadius + 0.01);
+    assert(!game.hero.isMoving);
+
+    // Ghosty floats through it
+    game.spawnHero(.ghosty);
+    game.hero.position = Vector3{-60, 0, 30};
+    game.hero.moveTo(Vector3{-30, 0, 30});
+    for 0..600 { game.simulate(Dt); }
+    assert(near(game.hero.position.x, -30, 0.01));
+
+    // Nobody leaves the field
+    game.hero.position = Vector3{-70, 0, 0};
+    game.hero.moveTo(Vector3{-200, 0, 0});
+    for 0..600 { game.simulate(Dt); }
+    assert(game.hero.position.x >= -aov.MapHalfWidth);
+}
+
+testTraffic :: () {
+    rng := random.newRandom(42);
+    traffic := aov.newTraffic(0, &rng);
+    assert(traffic.activeCount() > 20);
+
+    for 0..3000 {
+        traffic.update(Dt, &rng);
+        checkNoOverlaps(&traffic);
+    }
+
+    // The cars drive their way: the left carriageway towards +z, the right one towards -z
+    for car in traffic.cars {
+        if !car.isActive { continue; }
+        expected: f32 = 1;
+        if car.lane >= aov.LanesPerDirection { expected = -1; }
+        assert(aov.laneDirection(car.lane) == expected);
+        assert(math.fabsf(car.z) <= aov.RoadEnd + car.length);
+    }
+
+    // A higher level is faster
+    slow := traffic.lanes[3].speed;
+    traffic.setLevel(10, &rng);
+    assert(traffic.lanes[3].speed > slow);
+}
+
+testFrozenCarsQueue :: () {
+    rng := random.newRandom(7);
+    traffic := aov.newTraffic(3, &rng);
+
+    // Freeze everything in the middle of the road for a long time: the cars behind queue up without overlapping
+    frozen := traffic.freezeAround({0, 0}, 30, 8);
+    assert(frozen > 0);
+    for 0..(4 * 60) {
+        traffic.update(Dt, &rng);
+        checkNoOverlaps(&traffic);
+    }
+    frozenCount := traffic.cars.countWhere(car => car.isActive && car.frozenLeft > 0);
+    assert(frozenCount == frozen);
+
+    // And drive on when it thaws
+    for 0..(10 * 60) { traffic.update(Dt, &rng); }
+    assert(traffic.cars.countWhere(car => car.isActive && car.frozenLeft > 0) == 0);
+}
+
+testRunOver :: () {
+    game := aov.newGame(3);
+    defer game.free();
+
+    // Standing still in the middle of a busy lane does not end well
+    kind := game.hero.kind;
+    game.hero.position = Vector3{aov.laneCenter(2), 0, 0};
+    for 0..(30 * 60) {
+        game.simulate(Dt);
+        if game.phase.kind == .runOver { break; }
+        game.hero.position = Vector3{aov.laneCenter(2), 0, 0};
+    }
+    assert(game.phase.kind == .runOver);
+    assert(game.stats.deaths == 1 && game.stats.deathsBy[kind] == 1);
+
+    // After a moment the next hero comes, never the same one
+    for 0..((aov.RespawnDelay + 0.1) * 60) as int { game.simulate(Dt); }
+    assert(game.phase.kind == .playing);
+    assert(game.hero.kind != kind);
+    assert(near(game.hero.position.x, aov.SpawnX));
+}
+
+testCrossing :: () {
+    game := aov.newGame(5);
+    defer game.free();
+    clearRoad(game);
+
+    // Walk in at the opening on the start side, across the empty road, and out at the opening on the far side
+    game.spawnHero(.allan);
+    walkTo(game, game.world.entrance.at() - Vector3{4, 0, 0});
+    walkTo(game, game.world.entrance.at() + Vector3{4, 0, 0});
+    walkTo(game, game.world.exit.at() - Vector3{4, 0, 0});
+    walkTo(game, game.world.exit.at() + Vector3{6, 0, 0});
+
+    assert(game.phase.kind == .crossed);
+    assert(game.stats.crossings == 1 && game.stats.bestTime.hasValue());
+
+    for 0..(2 * 60) { game.simulate(Dt); }
+    assert(game.phase.kind == .playing && game.stats.level == 1);
+    assert(game.hero.kind != .allan);
+}
+
+testAbilities :: () {
+    game := aov.newGame(9);
+    defer game.free();
+    clearRoad(game);
+
+    // Allan's sprint makes him faster, then it runs out and has to cool down
+    game.spawnHero(.allan);
+    normal := game.hero.speed();
+    game.useAbility();
+    assert(game.hero.speed() > normal * 2);
+    assert(!game.hero.abilityReady());
+    for 0..(7 * 60) { game.simulate(Dt); }
+    assert(near(game.hero.speed(), normal) && game.hero.abilityReady());
+
+    // The butcher hooks a point and is pulled to it, no further than the hook reaches
+    game.spawnHero(.butcher);
+    start := Vector3{-70, 0, 0};
+    game.hero.position = start;
+    game.mouseGround = Vector3{-55, 0, 10};
+    game.useAbility();
+    assert(game.hero.hook.hasValue());
+    for 0..60 { game.simulate(Dt); }
+    assert(!game.hero.hook.hasValue());
+    assert(game.hero.position.distance(Vector3{-55, 0, 10}) < 0.5);
+
+    // Aimed past its reach, it goes as far as it reaches
+    game.hero.cooldownLeft = 0;
+    game.mouseGround = Vector3{-55, 0, -190};
+    game.useAbility();
+    for 0..120 { game.simulate(Dt); }
+    assert(game.hero.position.distance(Vector3{-55, 0, 10 - 26}) < 0.5);
+
+    // A wall in the way stops the pull at the wall
+    game.hero.cooldownLeft = 0;
+    game.mouseGround = Vector3{0, 0, -16};
+    game.useAbility();
+    for 0..120 { game.simulate(Dt); }
+    assert(!game.hero.hook.hasValue());
+    assert(near(game.hero.position.x, -aov.RoadHalfWidth - aov.WallWidth - game.hero.info().hitRadius, 0.05));
+
+    // Frosty freezes the cars around him
+    game.spawnHero(.frosty);
+    game.traffic = aov.newTraffic(0, &game.rng);
+    game.hero.position = Vector3{-aov.RoadHalfWidth + 2, 0, 0};
+    game.useAbility();
+    assert(game.traffic.cars.some(car => car.isActive && car.frozenLeft > 0));
+
+    // Ghosty's phase walk is passive: Q does nothing
+    game.spawnHero(.ghosty);
+    game.useAbility();
+    assert(game.hero.cooldownLeft == 0);
+}
+
+//
+// Helpers
+//
+
+// Takes every car off the road, and keeps new ones away for a long time
+clearRoad :: (game: *aov.Game) {
+    for *car in game.traffic.cars { car.isActive = false; }
+    for *lane in game.traffic.lanes { lane.spawnTimer = 100000; }
+}
+
+walkTo :: (game: *aov.Game, point: Vector3) {
+    game.hero.moveTo(point);
+    for 0..(20 * 60) {
+        game.simulate(Dt);
+        if !game.hero.isMoving || game.phase.kind != .playing { return; }
+    }
+    assert(false);
+}
+
+checkNoOverlaps :: (traffic: *aov.Traffic) {
+    for a, i in traffic.cars {
+        if !a.isActive { continue; }
+        for b, j in traffic.cars {
+            if j <= i || !b.isActive || a.lane != b.lane { continue; }
+            gap := math.fabsf(a.z - b.z) - (a.length + b.length) * 0.5;
+            if gap < 0 {
+                fmt.print("Cars % and % overlap in lane % by %", i, j, a.lane, -gap);
+                assert(false);
+            }
+        }
+    }
+}

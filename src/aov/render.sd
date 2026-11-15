@@ -1,0 +1,208 @@
+namespace aov;
+
+import math;
+use raylib;
+
+// The 3D scene: the ground, the road, the walls, the cars, the hero and the effects
+
+SkyColor  :: Color{106, 138, 112, 255};
+WallColor :: Color{168, 150, 122, 255};
+ShadowColor :: Color{0, 0, 0, 70};
+FrozenColor :: Color{170, 230, 255, 255};
+
+drawScene :: method (game: *Game, assets: *Assets) {
+    assets.lighting.setCamera(game.camera.view);
+
+    BeginMode3D(game.camera.view);
+    defer EndMode3D();
+
+    // The ground, below everything
+    DrawMesh(assets.outside, assets.outsideMaterial, MatrixTranslate(0, -0.05, 0));
+    DrawMesh(assets.ground, assets.groundMaterial, MatrixIdentity());
+    DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.04, 0));
+    drawGoalStrip();
+
+    if game.debug.wireframes { rlEnableWireMode(); }
+
+    for wall in game.world.walls {
+        drawWall(assets, wall);
+    }
+
+    for *car in game.traffic.cars {
+        if car.isActive { drawCar(assets, car); }
+    }
+
+    // Shadows, stains and rings lie on the ground, above the road
+    for *car in game.traffic.cars {
+        if car.isActive {
+            rect := car.rect();
+            DrawCube(rect.center().at(0.08), rect.width + 0.6, 0.02, rect.height + 0.6, ShadowColor);
+        }
+    }
+    game.effects.draw();
+
+    heroVisible := game.phase.kind != .runOver;
+    if heroVisible {
+        drawAbilityHints(game);
+        drawHero(assets, &game.hero, game.phase);
+    }
+
+    if game.debug.wireframes { rlDisableWireMode(); }
+    if game.debug.hitboxes { drawHitboxes(game); }
+}
+
+// A light strip on the far side of the road, where the heroes are going
+drawGoalStrip :: () {
+    width := MapHalfWidth - GoalX;
+    center := Vector3{GoalX + width * 0.5, 0.03, 0};
+    DrawCube(center, width, 0.02, MapHalfLength * 2, {255, 240, 150, 40});
+    DrawCube(Vector3{GoalX, 0.04, 0}, 0.25, 0.02, MapHalfLength * 2, {255, 240, 150, 160});
+}
+
+drawWall :: (assets: *Assets, wall: Rectangle) {
+    center := wall.center();
+    assets.drawBox(center.at(WallHeight * 0.5), {wall.width, WallHeight, wall.height}, 0, WallColor);
+    // A darker cap on top
+    assets.drawBox(center.at(WallHeight + 0.15), {wall.width + 0.3, 0.3, wall.height + 0.3}, 0, ColorBrightness(WallColor, -0.25));
+}
+
+drawCar :: (assets: *Assets, car: *Car) {
+    position  := car.position();
+    direction := laneDirection(car.lane);
+    angle: f32 = 0;
+    if direction < 0 { angle = Pi; }
+
+    body := car.color;
+    if car.frozenLeft > 0 { body = ColorLerp(body, FrozenColor, 0.75); }
+    glass := Color{40, 55, 70, 255};
+
+    // Points along the car: positive is towards its front
+    along :: (car: *Car, offset: f32, y: f32) -> Vector3 {
+        return Vector3{laneCenter(car.lane), y, car.z + offset * laneDirection(car.lane)};
+    };
+
+    wheelY :: 0.45;
+    switch car.kind {
+        case .car {
+            assets.drawBox(along(car, 0, 0.95), {CarWidth, 1.0, car.length}, angle, body);
+            assets.drawBox(along(car, -0.4, 1.85), {CarWidth * 0.86, 0.85, car.length * 0.5}, angle, glass);
+            assets.drawBox(along(car, -0.4, 2.33), {CarWidth * 0.84, 0.12, car.length * 0.46}, angle, body);
+        }
+        case .van {
+            assets.drawBox(along(car, -0.4, 1.55), {CarWidth, 2.2, car.length - 0.8}, angle, body);
+            assets.drawBox(along(car, car.length * 0.5 - 0.6, 1.0), {CarWidth, 1.1, 1.2}, angle, body);
+            assets.drawBox(along(car, car.length * 0.5 - 1.15, 2.0), {CarWidth * 0.9, 0.8, 0.2}, angle, glass);
+        }
+        case .truck {
+            cabLength :: 3.2;
+            trailerLength := car.length - cabLength - 0.4;
+            assets.drawBox(along(car, car.length * 0.5 - cabLength * 0.5, 1.7), {CarWidth, 2.6, cabLength}, angle, body);
+            assets.drawBox(along(car, car.length * 0.5 - 0.3, 2.35), {CarWidth * 0.9, 0.9, 0.2}, angle, glass);
+            assets.drawBox(along(car, -car.length * 0.5 + trailerLength * 0.5, 2.35), {CarWidth + 0.2, TruckHeight - 0.5, trailerLength}, angle, {225, 225, 220, 255});
+        }
+    }
+
+    // Wheels, and lights in front and at the back
+    axle := car.length * 0.5 - 1.3;
+    for side in [-1.0, 1.0] {
+        x := laneCenter(car.lane) + side * (CarWidth * 0.5 - 0.15);
+        assets.drawBox({x, wheelY, car.z + axle}, {0.5, 0.9, 1.1}, 0, {25, 25, 25, 255});
+        assets.drawBox({x, wheelY, car.z - axle}, {0.5, 0.9, 1.1}, 0, {25, 25, 25, 255});
+
+        front := along(car, car.length * 0.5, 0.95);
+        back  := along(car, -car.length * 0.5, 0.95);
+        front.x = x - side * 0.5;
+        back.x  = x - side * 0.5;
+        assets.drawBox(front, {0.8, 0.35, 0.1}, 0, {255, 245, 200, 255});
+        assets.drawBox(back, {0.8, 0.35, 0.1}, 0, {200, 30, 30, 255});
+    }
+
+    if car.frozenLeft > 0 {
+        // A shell of ice
+        DrawCube(position + Vector3{0, car.height() * 0.5 + 0.2, 0}, CarWidth + 0.5, car.height() + 0.6, car.length + 0.5, {200, 240, 255, 70});
+    }
+}
+
+drawHero :: (assets: *Assets, hero: *Hero, phase: Phase) {
+    info := hero.info();
+
+    // Bobbing while walking, jumping when across
+    bob: f32 = 0;
+    if hero.isMoving || hero.hook.hasValue() { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
+    if phase.kind == .crossed                { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
+    if info.ability.kind == .phaseWalk      { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
+
+    base := hero.position + Vector3{0, bob, 0};
+    bodyHeight := info.height * 0.62;
+    headSize   := info.width * 0.62;
+
+    color := info.color;
+    if hero.sprintTimeLeft > 0 { color = ColorBrightness(color, 0.3); }
+
+    // A shadow that stays on the ground
+    DrawCylinder(hero.position + Vector3{0, 0.08, 0}, info.width * 0.55, info.width * 0.55, 0.02, 16, ShadowColor);
+
+    assets.drawBox(base + Vector3{0, bodyHeight * 0.5, 0}, {info.width, bodyHeight, info.width * 0.7}, hero.facing, color);
+    assets.drawBox(base + Vector3{0, bodyHeight + headSize * 0.5, 0}, {headSize, headSize, headSize}, hero.facing, ColorBrightness(color, 0.15));
+
+    // Eyes, so you can see which way he looks
+    forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
+    right   := Vector3{forward.z, 0, -forward.x};
+    eyes    := base + Vector3{0, bodyHeight + headSize * 0.62, 0} + forward * (headSize * 0.5);
+    eyeColor := Color{20, 20, 20, color.a};
+    assets.drawBox(eyes + right * (headSize * 0.22), {0.18, 0.22, 0.08}, hero.facing, eyeColor);
+    assets.drawBox(eyes - right * (headSize * 0.22), {0.18, 0.22, 0.08}, hero.facing, eyeColor);
+
+    // The hook and its chain
+    if hero.hook.hasValue() {
+        hook := hero.hook.value();
+        hand := hero.position + Vector3{0, bodyHeight * 0.7, 0} + forward * (info.width * 0.5);
+        head := hand.lerp(hook.point + Vector3{0, 0.4, 0}, hook.flight);
+        DrawCylinderEx(hand, head, 0.08, 0.08, 6, {90, 90, 95, 255});
+        assets.drawBox(head, {0.6, 0.6, 0.6}, hero.facing, {60, 60, 65, 255});
+    }
+}
+
+// The reach of the hook and of the cold snap, when they are ready
+drawAbilityHints :: (game: *Game) {
+    hero := &game.hero;
+    if game.phase.kind != .playing || !hero.abilityReady() { return; }
+
+    ground := hero.ground();
+    switch v in hero.info().ability {
+        case .hook {
+            DrawCircle3D(ground.at(0.15), v.range, {1, 0, 0}, 90, {255, 255, 255, 40});
+            if game.mouseGround.hasValue() {
+                toCursor := game.mouseGround.value().xz() - ground;
+                if toCursor.length() > v.range { toCursor = toCursor.normalize() * v.range; }
+                DrawLine3D(ground.at(0.15), (ground + toCursor).at(0.15), {255, 255, 255, 70});
+            }
+        }
+        case .freeze {
+            DrawCircle3D(ground.at(0.15), v.radius, {1, 0, 0}, 90, {170, 230, 255, 50});
+        }
+        else { }
+    }
+}
+
+drawHitboxes :: (game: *Game) {
+    for *car in game.traffic.cars {
+        if !car.isActive { continue; }
+        rect := car.rect();
+        DrawCubeWires(rect.center().at(0.2), rect.width, 0.1, rect.height, Red);
+    }
+    for wall in game.world.walls {
+        DrawCubeWires(wall.center().at(0.2), wall.width, 0.1, wall.height, Orange);
+    }
+    hero := &game.hero;
+    DrawCircle3D(hero.position + Vector3{0, 0.2, 0}, hero.info().hitRadius, {1, 0, 0}, 90, Lime);
+    if hero.isMoving {
+        DrawSphere(hero.target, 0.3, Lime);
+    }
+}
+
+// Two functions of rlgl, the layer under raylib, for the wireframes of F1. raylib.dll has them
+extern "raylib.dll" {
+    rlEnableWireMode  :: () -> void;
+    rlDisableWireMode :: () -> void;
+}

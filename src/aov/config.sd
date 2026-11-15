@@ -1,0 +1,48 @@
+namespace aov;
+
+// The numbers that tune the game. The world is laid out on the ground plane: x runs from left to right across the road,
+// z from the far end of the road (negative) towards the camera (positive), and y is up.
+
+WindowWidth  :: 1600;
+WindowHeight :: 900;
+TargetFps    :: 144;
+
+// The playing field
+MapHalfWidth  :: 80.0;      // x from -80 to 80
+MapHalfLength :: 64.0;      // z from -64 to 64
+
+// The motorway runs along z. It has two carriageways of lanes, split by the median
+LaneWidth          :: 8.0;
+LanesPerDirection  :: 6;
+LaneCount          :: LanesPerDirection * 2;
+RoadHalfWidth      :: LaneWidth * LanesPerDirection;   // 48: the road covers x from -48 to 48
+RoadOverhang       :: 40.0;                            // How far the road goes on past the field, where the cars come from
+
+// The walls along both sides of the road, each with one opening to get on and off it
+WallWidth       :: 3.0;
+WallHeight      :: 4.0;
+OpeningLength   :: 18.0;
+OpeningInset    :: 10.0;    // From the end of the field to the opening
+
+// Where heroes start, and where they have to get to
+SpawnX    :: -MapHalfWidth + 8;
+GoalX     :: RoadHalfWidth + WallWidth + 4;   // Past the wall on the far side
+
+// Traffic
+MaxCars           :: 128;
+CarWidth          :: 4.4;
+CarHeight         :: 2.6;
+TruckHeight       :: 4.2;
+MinCarSpeed       :: 9.0;
+MaxCarSpeed       :: 26.0;
+SpeedUpPerLevel   :: 0.08;    // Every crossing makes the traffic this much faster
+MaxLevel          :: 15;
+
+// Heroes
+ClickReachedDistance :: 0.3;
+RespawnDelay         :: 1.25;   // Seconds from being run over to the next hero
+
+// Effects
+MaxParticles :: 256;
+MaxSplats    :: 24;
+SplatLifetime :: 10.0;

@@ -1,0 +1,233 @@
+namespace aov;
+
+import math;
+import random;
+use raylib;
+
+// The cars on the motorway. The left carriageway drives towards the camera (+z), the right one away from it (-z). The
+// cars of a lane keep their distance to the car in front, so a frozen car makes a queue behind it
+
+CarKind :: enum {
+    car,
+    van,
+    truck,
+}
+
+Car :: struct {
+    isActive:   bool;
+    kind:       CarKind;
+    lane:       int;
+    z:          f32;        // The middle of the car along the road
+    length:     f32;
+    color:      Color;
+    speed:      f32;        // What it drives when nothing is in the way
+    frozenLeft: f32;        // Seconds it is frozen by Frosty
+
+    height :: method () -> f32 {
+        if self.kind == .truck { return TruckHeight; }
+        return CarHeight;
+    }
+
+    // The footprint on the ground: x and z
+    rect :: method () -> Rectangle {
+        x := laneCenter(self.lane);
+        return {x - CarWidth * 0.5, self.z - self.length * 0.5, CarWidth, self.length};
+    }
+
+    position :: method () -> Vector3 {
+        return {laneCenter(self.lane), 0, self.z};
+    }
+}
+
+Lane :: struct {
+    direction:  f32;        // 1 drives towards +z, -1 towards -z
+    speed:      f32;
+    spawnTimer: f32;        // Seconds to the next car
+}
+
+Traffic :: struct {
+    cars:  [MaxCars]Car;
+    lanes: [LaneCount]Lane;
+    level: int;
+}
+
+CarColors :: [
+    Color{236, 240, 241, 255}, Color{ 44,  62,  80, 255}, Color{192,  57,  43, 255}, Color{ 41, 128, 185, 255},
+    Color{243, 156,  18, 255}, Color{ 39, 174,  96, 255}, Color{142,  68, 173, 255}, Color{149, 165, 166, 255},
+    Color{211,  84,   0, 255}, Color{ 22, 160, 133, 255},
+];
+
+laneCenter :: (lane: int) -> f32 {
+    return -RoadHalfWidth + LaneWidth * (lane as f32 + 0.5);
+}
+
+laneDirection :: (lane: int) -> f32 {
+    if lane < LanesPerDirection { return 1; }
+    return -1;
+}
+
+// Where the road starts and ends, past the edges of the field
+RoadEnd :: MapHalfLength + RoadOverhang;
+
+newTraffic :: (level: int, rng: *random.Random) -> Traffic {
+    traffic: Traffic;
+    traffic.setLevel(level, rng);
+
+    // Fill the road, as if the traffic had been driving for a while
+    for 0..400 {
+        traffic.update(0.1, rng);
+    }
+    return traffic;
+}
+
+setLevel :: method (traffic: *Traffic, level: int, rng: *random.Random) {
+    traffic.level = math.min(level, MaxLevel);
+    speedUp := 1 + SpeedUpPerLevel * traffic.level as f32;
+
+    for *lane, i in traffic.lanes {
+        lane.direction = laneDirection(i as int);
+
+        // The lanes next to the median are the fast ones
+        fromMedian := i as int;
+        if i >= LanesPerDirection { fromMedian = LaneCount - 1 - i as int; }
+        fromMedian = LanesPerDirection - 1 - fromMedian;
+        t := fromMedian as f32 / (LanesPerDirection - 1) as f32;
+
+        base := math.lerp(MaxCarSpeed, MinCarSpeed, t);
+        lane.speed = base * rng.uniform(0.85, 1.1) as f32 * speedUp;
+    }
+
+    for *car in traffic.cars {
+        if car.isActive { car.speed = traffic.lanes[car.lane].speed; }
+    }
+}
+
+update :: method (traffic: *Traffic, dt: f32, rng: *random.Random) {
+    for *car in traffic.cars {
+        if !car.isActive { continue; }
+
+        if car.frozenLeft > 0 {
+            car.frozenLeft -= dt;
+            continue;
+        }
+
+        lane := traffic.lanes[car.lane];
+        step := car.speed * dt;
+
+        // Don't drive into the car in front
+        ahead := traffic.distanceToCarAhead(car);
+        if ahead.hasValue() {
+            step = math.clamp(ahead.value() - minimumGap(car.speed), 0, step);
+        }
+
+        car.z += step * lane.direction;
+        if math.fabsf(car.z) > RoadEnd + car.length {
+            car.isActive = false;
+        }
+    }
+
+    for *lane, i in traffic.lanes {
+        lane.spawnTimer -= dt;
+        if lane.spawnTimer > 0 { continue; }
+
+        if traffic.spawn(i as int, rng) {
+            // The gap to the next car shrinks as the levels go up
+            gap := rng.uniform(5, 42) as f32 * (1 - 0.035 * traffic.level as f32);
+            lane.spawnTimer = (gap + 10) / lane.speed;
+        } else {
+            lane.spawnTimer = 0.25;     // The start of the lane is blocked, try again soon
+        }
+    }
+}
+
+// The space between a car and the one in front of it in its lane, bumper to bumper
+distanceToCarAhead :: method (traffic: *Traffic, car: *Car) -> ?f32 {
+    direction := laneDirection(car.lane);
+    nearest: ?f32 = null;
+
+    for *other in traffic.cars {
+        if !other.isActive || other.lane != car.lane || other == car { continue; }
+
+        along := (other.z - car.z) * direction;
+        if along <= 0 { continue; }
+
+        gap := along - (other.length + car.length) * 0.5;
+        if !nearest.hasValue() || gap < nearest.value() {
+            nearest = gap;
+        }
+    }
+    return nearest;
+}
+
+minimumGap :: (speed: f32) -> f32 {
+    return 1.5 + speed * 0.12;
+}
+
+// Puts a new car at the start of a lane. False when the lane is full there
+spawn :: method (traffic: *Traffic, lane: int, rng: *random.Random) -> bool {
+    kind := CarKind.car;
+    roll := rng.random();
+    outerLane := lane == 0 || lane == LaneCount - 1 || lane == 1 || lane == LaneCount - 2;
+    if outerLane && roll < 0.25 { kind = .truck; }
+    else if roll < 0.15        { kind = .van; }
+
+    length := switch kind {
+        case .car   => rng.uniform(6.5, 7.5) as f32;
+        case .van   => 8.5;
+        case .truck => rng.uniform(13, 17) as f32;
+    };
+
+    direction := laneDirection(lane);
+    startZ := -direction * (RoadEnd + length * 0.5);
+
+    // Room for it?
+    for car in traffic.cars {
+        if car.isActive && car.lane == lane && math.fabsf(car.z - startZ) < (car.length + length) * 0.5 + 2 {
+            return false;
+        }
+    }
+
+    for *car in traffic.cars {
+        if car.isActive { continue; }
+
+        *car = Car{
+            isActive: true,
+            kind:     kind,
+            lane:     lane,
+            z:        startZ,
+            length:   length,
+            color:    rng.choice(CarColors),
+            speed:    traffic.lanes[lane].speed,
+        };
+        if kind == .truck { car.speed *= 0.85; }
+        return true;
+    }
+    return false;   // Every car is on the road already
+}
+
+// Freezes the cars within the radius of a point
+freezeAround :: method (traffic: *Traffic, point: Vector2, radius: f32, duration: f32) -> int {
+    frozen := 0;
+    for *car in traffic.cars {
+        if !car.isActive { continue; }
+        if CheckCollisionCircleRec(point, radius, car.rect()) {
+            car.frozenLeft = duration;
+            frozen += 1;
+        }
+    }
+    return frozen;
+}
+
+// The first car that hits a circle on the ground
+carHitting :: method (traffic: *Traffic, center: Vector2, radius: f32) -> ?*Car {
+    for *car in traffic.cars {
+        if car.isActive && CheckCollisionCircleRec(center, radius, car.rect()) {
+            return car;
+        }
+    }
+    return null;
+}
+
+activeCount :: method (traffic: *Traffic) -> int {
+    return traffic.cars.countWhere(car => car.isActive);
+}

@@ -1,0 +1,147 @@
+namespace aov;
+
+use raylib;
+
+// Every time a hero is run over, the player gets a new one at random
+
+HeroKind :: enum {
+    allan,
+    ghosty,
+    butcher,
+    frosty,
+}
+
+// What a hero can do on Q, or a passive that is always on
+Ability :: union {
+    sprint: struct { speedMultiplier: f32; duration: f32; cooldown: f32; };
+    hook:   struct { range: f32; pullSpeed: f32; cooldown: f32; };
+    freeze: struct { radius: f32; duration: f32; cooldown: f32; };
+    phaseWalk;                                                          // Passive: walks through walls
+}
+
+// The seconds before the ability can be used again. 0 for a passive
+cooldown :: method (ability: Ability) -> f32 {
+    return switch v in ability {
+        case .sprint    => v.cooldown;
+        case .hook      => v.cooldown;
+        case .freeze    => v.cooldown;
+        case .phaseWalk => 0;
+    };
+}
+
+isPassive :: method (ability: Ability) -> bool {
+    return ability.kind == .phaseWalk;
+}
+
+HeroDefinition :: struct {
+    name:        string;
+    color:       Color;
+    width:       f32;
+    height:      f32;
+    moveSpeed:   f32;
+    hitRadius:   f32;       // The circle on the ground that the cars hit
+    ability:     Ability;
+    abilityName: string;
+    abilityText: string;
+}
+
+definition :: method (kind: HeroKind) -> HeroDefinition {
+    return switch kind {
+        case .allan => HeroDefinition{
+            name: "Allan", color: {214, 48, 49, 255},
+            width: 1.8, height: 3.6, moveSpeed: 9, hitRadius: 0.75,
+            ability: {sprint: {speedMultiplier: 2.1, duration: 1.4, cooldown: 6}},
+            abilityName: "Sprint", abilityText: "Runs twice as fast for a moment",
+        };
+        case .ghosty => HeroDefinition{
+            name: "Ghosty", color: {190, 210, 255, 150},
+            width: 1.8, height: 3.0, moveSpeed: 7.5, hitRadius: 0.7,
+            ability: .phaseWalk,
+            abilityName: "Phase walk", abilityText: "Floats straight through the walls",
+        };
+        case .butcher => HeroDefinition{
+            name: "Butcher", color: {120, 72, 52, 255},
+            width: 2.8, height: 3.8, moveSpeed: 6.5, hitRadius: 1.15,
+            ability: {hook: {range: 26, pullSpeed: 48, cooldown: 7}},
+            abilityName: "Meat hook", abilityText: "Hooks the ground at the cursor and pulls himself there",
+        };
+        case .frosty => HeroDefinition{
+            name: "Frosty", color: {110, 220, 235, 255},
+            width: 1.6, height: 3.2, moveSpeed: 8, hitRadius: 0.7,
+            ability: {freeze: {radius: 20, duration: 2.5, cooldown: 10}},
+            abilityName: "Cold snap", abilityText: "Freezes the cars around him",
+        };
+    };
+}
+
+// The hook of the butcher: it flies out to the point, then pulls him after it
+HookState :: struct {
+    point:    Vector3;
+    flight:   f32;          // 0 to 1, while the hook flies out
+    stuckFor: f32;          // Seconds the pull hasn't moved him, e.g into a wall
+}
+
+HookFlightTime :: 0.12;
+
+Hero :: struct {
+    kind:      HeroKind;
+    position:  Vector3;
+    target:    Vector3;
+    isMoving:  bool;
+    facing:    f32;         // Radians around y. 0 looks down +z
+    walkCycle: f32;         // Drives the bobbing while walking
+
+    cooldownLeft:   f32;    // Seconds before the ability can be used again
+    sprintTimeLeft: f32;
+    hook:           ?HookState;
+    timeAlive:      f32;
+
+    info :: method () -> HeroDefinition {
+        return self.kind.definition();
+    }
+
+    ground :: method () -> Vector2 {
+        return self.position.xz();
+    }
+
+    speed :: method () -> f32 {
+        info := self.info();
+        speed := info.moveSpeed;
+        if self.sprintTimeLeft > 0 {
+            switch v in info.ability {
+                case .sprint { speed *= v.speedMultiplier; }
+                else         { }
+            }
+        }
+        return speed;
+    }
+
+    walksThroughWalls :: method () -> bool {
+        return self.info().ability.kind == .phaseWalk;
+    }
+
+    abilityReady :: method () -> bool {
+        return self.cooldownLeft <= 0 && !self.info().ability.isPassive();
+    }
+
+    // Starts walking to a point on the ground
+    moveTo :: method * (point: Vector3) {
+        if self.hook.hasValue() { return; }     // The hook is in charge until it is done
+        self.target   = Vector3{point.x, 0, point.z};
+        self.isMoving = true;
+    }
+
+    stop :: method * () {
+        self.isMoving = false;
+        self.target   = self.position;
+    }
+}
+
+newHero :: (kind: HeroKind, position: Vector3) -> Hero {
+    return Hero{
+        kind:     kind,
+        position: position,
+        target:   position,
+        facing:   Pi * 0.5,     // Looking across the road
+    };
+}
