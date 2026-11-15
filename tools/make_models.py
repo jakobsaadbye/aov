@@ -7,6 +7,8 @@ butcher, frosty), as OBJ files with a MTL file of their colors.
 
 The models are plain OBJ, so they can just as well be edited in Blender and saved over these. The game expects:
 
+  * The wall is one segment of a concrete barrier, WALL_SEGMENT long along z, which the game repeats along each wall
+
   * Units are the units of the game. y is up, the model looks towards +z, and it stands on y = 0 with its middle at
     x = z = 0
   * A vehicle's body (the part that gets the color of the car) has the material 'body', whose color is pure white
@@ -17,11 +19,14 @@ The models are plain OBJ, so they can just as well be edited in Blender and save
 import math
 import os
 
-# Keep these in step with src/aov/config.sd
+# Keep these in step with src/aov/config.sd (WALL_SEGMENT is WallSegmentLength)
 CAR_WIDTH = 5.2
 CAR_LENGTH = 8.0
 VAN_LENGTH = 9.0
 TRUCK_LENGTH = 16.0
+WALL_WIDTH = 3.0
+WALL_HEIGHT = 4.0
+WALL_SEGMENT = 5.0
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "models")
 
@@ -360,7 +365,29 @@ def make_frosty():
     m.write()
 
 
+#
+# The wall: a segment of a concrete barrier, standing on y = 0, WALL_SEGMENT long
+#
+
+def make_wall():
+    m = Model("wall")
+    m.material("concrete", (0.72, 0.7, 0.66))
+    m.material("concrete_dark", (0.5, 0.48, 0.45))
+    m.material("stripe", (0.95, 0.75, 0.15))
+    m.material("joint", (0.3, 0.29, 0.27))
+    length = WALL_SEGMENT - 0.1                                                       # A gap for the joint
+    m.frustum("concrete_dark", (0, 0, 0), (WALL_WIDTH, length), (WALL_WIDTH * 0.8, length), 0.5)   # The foot
+    m.frustum("concrete", (0, 0.5, 0), (WALL_WIDTH * 0.8, length), (WALL_WIDTH * 0.45, length), 1.2)
+    m.frustum("concrete", (0, 1.7, 0), (WALL_WIDTH * 0.45, length), (WALL_WIDTH * 0.38, length), WALL_HEIGHT - 2.0)
+    m.box("concrete_dark", (0, WALL_HEIGHT - 0.15, 0), (WALL_WIDTH * 0.42, 0.3, length))   # The cap
+    for side in (-1, 1):                                                              # A yellow band on both faces
+        m.box("stripe", (side * WALL_WIDTH * 0.2, 2.6, 0), (0.06, 0.35, length * 0.98))
+    m.box("joint", (0, 0.25, WALL_SEGMENT / 2 - 0.05), (WALL_WIDTH * 0.7, 0.5, 0.1))
+    m.write()
+
+
 if __name__ == "__main__":
+    make_wall()
     make_car()
     make_van()
     make_truck()

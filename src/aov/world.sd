@@ -49,16 +49,34 @@ newWorld :: () -> World {
     return world;
 }
 
-spawnPoint :: method (world: World) -> Vector3 {
-    return Vector3{SpawnX, 0, 0};
+// The side of the road the heroes start on. After a crossing they start on the other side, and cross back
+Side :: enum {
+    left,
+    right,
+}
+
+opposite :: method (side: Side) -> Side {
+    if side == .left { return .right; }
+    return .left;
+}
+
+// -1 for the left side and 1 for the right, e.g to mirror a point on the left
+sign :: method (side: Side) -> f32 {
+    if side == .left { return -1; }
+    return 1;
+}
+
+spawnPoint :: method (world: World, side: Side) -> Vector3 {
+    return Vector3{-side.sign() * SpawnX, 0, 0};
 }
 
 isOnRoad :: (point: Vector2) -> bool {
     return point.x > -RoadHalfWidth && point.x < RoadHalfWidth;
 }
 
-hasCrossed :: (point: Vector2) -> bool {
-    return point.x >= GoalX;
+// If a hero who started on a side is past the wall on the other side
+hasCrossed :: (point: Vector2, from: Side) -> bool {
+    return point.x * from.opposite().sign() >= GoalX;
 }
 
 // Keeps a circle on the ground out of the walls (unless it walks through them) and inside the field

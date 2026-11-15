@@ -6,7 +6,6 @@ use raylib;
 // The 3D scene: the ground, the road, the walls, the cars, the hero and the effects
 
 SkyColor  :: Color{106, 138, 112, 255};
-WallColor :: Color{168, 150, 122, 255};
 ShadowColor :: Color{0, 0, 0, 70};
 FrozenColor :: Color{170, 230, 255, 255};
 
@@ -24,12 +23,12 @@ drawScene :: method (game: *Game, assets: *Assets) {
     DrawMesh(assets.ground, assets.groundMaterial, MatrixIdentity());
     DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.06, 0));
     drawLaneMarkings();
-    drawGoalStrip();
+    drawGoalStrip(game.startSide.opposite());
 
     if game.debug.wireframes { rlEnableWireMode(); }
 
     for wall in game.world.walls {
-        drawWall(assets, wall);
+        assets.drawWall(wall);
     }
 
     for *car in game.traffic.cars {
@@ -76,19 +75,12 @@ drawLaneMarkings :: () {
     }
 }
 
-// A light strip on the far side of the road, where the heroes are going
-drawGoalStrip :: () {
+// A light strip on the side of the road where the heroes are going
+drawGoalStrip :: (side: Side) {
     width := MapHalfWidth - GoalX;
-    center := Vector3{GoalX + width * 0.5, 0.08, 0};
+    center := Vector3{side.sign() * (GoalX + width * 0.5), 0.08, 0};
     DrawCube(center, width, 0.02, MapHalfLength * 2, {255, 240, 150, 40});
-    DrawCube(Vector3{GoalX, 0.1, 0}, 0.25, 0.02, MapHalfLength * 2, {255, 240, 150, 160});
-}
-
-drawWall :: (assets: *Assets, wall: Rectangle) {
-    center := wall.center();
-    assets.drawBox(center.at(WallHeight * 0.5), {wall.width, WallHeight, wall.height}, WallColor);
-    // A darker cap on top
-    assets.drawBox(center.at(WallHeight + 0.15), {wall.width + 0.3, 0.3, wall.height + 0.3}, ColorBrightness(WallColor, -0.25));
+    DrawCube(Vector3{side.sign() * GoalX, 0.1, 0}, 0.25, 0.02, MapHalfLength * 2, {255, 240, 150, 160});
 }
 
 drawCar :: (assets: *Assets, car: *Car) {
@@ -109,7 +101,7 @@ drawHero :: (assets: *Assets, hero: *Hero, phase: Phase) {
     bob: f32 = 0;
     if hero.isMoving || hero.hook.hasValue() { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
     if phase.kind == .crossed                { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
-    if info.ability.kind == .phaseWalk      { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
+    if hero.walksThroughWalls()             { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
 
     // A shadow that stays on the ground, and the green circle of the selected unit, as in Warcraft
     DrawCylinder(hero.position + Vector3{0, 0.12, 0}, info.width * 0.55, info.width * 0.55, 0.02, 16, ShadowColor);
@@ -118,7 +110,8 @@ drawHero :: (assets: *Assets, hero: *Hero, phase: Phase) {
     DrawCircle3D(hero.position + Vector3{0, 0.18, 0}, ring * 0.94, {1, 0, 0}, 90, {90, 255, 110, 220});
 
     tint := White;
-    if info.ability.kind == .phaseWalk { tint.a = 150; }     // Ghosty is see-through
+    if hero.walksThroughWalls() { tint.a = 150; }      // Ghosty is see-through
+    if hero.isFaded()           { tint.a = 70; }       // and more so when he fades
     assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
 
     // The hook flies from the butcher's hand, with its chain
@@ -133,25 +126,30 @@ drawHero :: (assets: *Assets, hero: *Hero, phase: Phase) {
     }
 }
 
-// The reach of the hook and of the cold snap, when they are ready
+// The reach of an ability while the mouse is on its icon, and the chill aura all the time
 drawAbilityHints :: (game: *Game) {
     hero := &game.hero;
-    if game.phase.kind != .playing || !hero.abilityReady() { return; }
-
+    if game.phase.kind != .playing { return; }
     ground := hero.ground();
-    switch v in hero.info().ability {
-        case .hook {
-            DrawCircle3D(ground.at(0.15), v.range, {1, 0, 0}, 90, {255, 255, 255, 40});
-            if game.mouseGround.hasValue() {
-                toCursor := game.mouseGround.value().xz() - ground;
-                if toCursor.length() > v.range { toCursor = toCursor.normalize() * v.range; }
-                DrawLine3D(ground.at(0.15), (ground + toCursor).at(0.15), {255, 255, 255, 70});
-            }
-        }
-        case .freeze {
-            DrawCircle3D(ground.at(0.15), v.radius, {1, 0, 0}, 90, {170, 230, 255, 50});
-        }
-        else { }
+
+    aura := hero.chillAura();
+    if aura.hasValue() {
+        DrawCircle3D(ground.at(0.15), aura.value().radius, {1, 0, 0}, 90, {170, 230, 255, 60});
+    }
+
+    abilities := hero.abilities();
+    if game.hoveredAbility < 0 || game.hoveredAbility >= abilities.count { return; }
+
+    reach: f32 = 0;
+    switch v in abilities[game.hoveredAbility].effect {
+        case .hook   { reach = v.range; }
+        case .blink  { reach = v.range; }
+        case .freeze { reach = v.radius; }
+        else         { }
+    }
+    if reach > 0 {
+        DrawCircle3D(ground.at(0.15), reach, {1, 0, 0}, 90, {255, 255, 255, 90});
+        DrawCircle3D(ground.at(0.15), reach - 0.15, {1, 0, 0}, 90, {255, 255, 255, 90});
     }
 }
 

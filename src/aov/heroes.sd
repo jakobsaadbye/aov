@@ -2,7 +2,9 @@ namespace aov;
 
 use raylib;
 
-// Every time a hero is run over, the player gets a new one at random
+// Every time a hero is run over, the player gets a new one at random. A hero has any number of abilities, like in
+// Dota 2: the first is on Q, the second on W, and so on (AbilityKeys). An ability is cast with its key, and then cools
+// down. A passive is always on, and its key does nothing
 
 HeroKind :: enum {
     allan,
@@ -11,67 +13,134 @@ HeroKind :: enum {
     frosty,
 }
 
-// What a hero can do on Q, or a passive that is always on
-Ability :: union {
-    sprint: struct { speedMultiplier: f32; duration: f32; cooldown: f32; };
-    hook:   struct { range: f32; pullSpeed: f32; cooldown: f32; };
-    freeze: struct { radius: f32; duration: f32; cooldown: f32; };
-    phaseWalk;                                                          // Passive: walks through walls
+// The keys of the ability slots, in order. A hero can have as many abilities as there are keys
+AbilityKeys  :: [KeyboardKey.q, .w, .e, .r, .d, .f];
+MaxAbilities :: 6;
+
+// What an ability does
+AbilityEffect :: union {
+    // Cast with the key
+    sprint: struct { speedMultiplier: f32; duration: f32; };     // Runs faster for a while
+    hook:   struct { range: f32; pullSpeed: f32; };              // Hooks the ground at the cursor and pulls the hero there
+    freeze: struct { radius: f32; duration: f32; };              // Freezes the cars around the hero
+    blink:  struct { range: f32; };                              // Jumps to the cursor, at most range away
+    fade:   struct { duration: f32; };                           // The cars drive through the hero for a while
+
+    // Passives: always on
+    phaseWalk;                                                   // Walks through walls
+    quickFeet: struct { speedBonus: f32; };                      // Faster, e.g 0.1 is 10% faster
+    chillAura: ChillAura;                                        // Cars near the hero drive slower
 }
 
-// The seconds before the ability can be used again. 0 for a passive
-cooldown :: method (ability: Ability) -> f32 {
-    return switch v in ability {
-        case .sprint    => v.cooldown;
-        case .hook      => v.cooldown;
-        case .freeze    => v.cooldown;
-        case .phaseWalk => 0;
+ChillAura :: struct {
+    radius: f32;
+    slow:   f32;            // 0.4 is 40% slower
+}
+
+isPassive :: method (effect: AbilityEffect) -> bool {
+    return switch effect.kind {
+        case .phaseWalk
+        case .quickFeet
+        case .chillAura => true;
+        else            => false;
     };
 }
 
-isPassive :: method (ability: Ability) -> bool {
-    return ability.kind == .phaseWalk;
+Ability :: struct {
+    name:        string;
+    description: string;
+    icon:        string;        // data/icons/<icon>.png
+    cooldown:    f32;           // Seconds. 0 for a passive
+    effect:      AbilityEffect;
+
+    isPassive :: method () -> bool {
+        return self.effect.isPassive();
+    }
 }
 
 HeroDefinition :: struct {
-    name:        string;
-    color:       Color;
-    width:       f32;
-    height:      f32;
-    moveSpeed:   f32;
-    hitRadius:   f32;       // The circle on the ground that the cars hit
-    ability:     Ability;
-    abilityName: string;
-    abilityText: string;
+    name:      string;
+    color:     Color;           // Of the portrait and the bits flying when run over
+    width:     f32;             // Of the model, for its shadow and the circle under it
+    height:    f32;
+    moveSpeed: f32;
+    hitRadius: f32;             // The circle on the ground that the cars hit
+    abilities: [..]Ability;
 }
 
-definition :: method (kind: HeroKind) -> HeroDefinition {
-    return switch kind {
-        case .allan => HeroDefinition{
-            name: "Allan", color: {214, 48, 49, 255},
-            width: 2.2, height: 4.4, moveSpeed: 9, hitRadius: 0.75,
-            ability: {sprint: {speedMultiplier: 2.1, duration: 1.4, cooldown: 6}},
-            abilityName: "Sprint", abilityText: "Runs twice as fast for a moment",
-        };
-        case .ghosty => HeroDefinition{
-            name: "Ghosty", color: {190, 210, 255, 150},
-            width: 2.2, height: 3.8, moveSpeed: 7.5, hitRadius: 0.7,
-            ability: .phaseWalk,
-            abilityName: "Phase walk", abilityText: "Floats straight through the walls",
-        };
-        case .butcher => HeroDefinition{
-            name: "Butcher", color: {120, 72, 52, 255},
-            width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15,
-            ability: {hook: {range: 26, pullSpeed: 48, cooldown: 7}},
-            abilityName: "Meat hook", abilityText: "Hooks the ground at the cursor and pulls himself there",
-        };
-        case .frosty => HeroDefinition{
-            name: "Frosty", color: {110, 220, 235, 255},
-            width: 2.0, height: 4.0, moveSpeed: 8, hitRadius: 0.7,
-            ability: {freeze: {radius: 20, duration: 2.5, cooldown: 10}},
-            abilityName: "Cold snap", abilityText: "Freezes the cars around him",
-        };
-    };
+@private
+heroDefinitions: [HeroKind.count]HeroDefinition;
+
+// The heroes and their abilities. Made the first time they are asked for
+definition :: method (kind: HeroKind) -> *HeroDefinition {
+    if heroDefinitions[0].name.len == 0 { defineHeroes(); }
+    return &heroDefinitions[kind];
+}
+
+@private
+defineHeroes :: () {
+    allan := HeroDefinition{name: "Allan", color: {214, 48, 49, 255}, width: 2.2, height: 4.2, moveSpeed: 9, hitRadius: 0.75};
+    allan.abilities.add(Ability{
+        name: "Sprint", icon: "sprint", cooldown: 6,
+        description: "Runs twice as fast for a moment",
+        effect: {sprint: {speedMultiplier: 2.1, duration: 1.4}},
+    });
+    allan.abilities.add(Ability{
+        name: "Blink", icon: "blink", cooldown: 12,
+        description: "Jumps to the cursor, up to 12 away",
+        effect: {blink: {range: 12}},
+    });
+    allan.abilities.add(Ability{
+        name: "Quick feet", icon: "quick_feet",
+        description: "Walks 10% faster than he looks",
+        effect: {quickFeet: {speedBonus: 0.1}},
+    });
+
+    ghosty := HeroDefinition{name: "Ghosty", color: {190, 210, 255, 255}, width: 2.2, height: 3.2, moveSpeed: 7.5, hitRadius: 0.7};
+    ghosty.abilities.add(Ability{
+        name: "Fade", icon: "fade", cooldown: 14,
+        description: "Fades away for 1.5 seconds: the cars drive straight through him",
+        effect: {fade: {duration: 1.5}},
+    });
+    ghosty.abilities.add(Ability{
+        name: "Phase walk", icon: "phase_walk",
+        description: "Floats straight through the walls",
+        effect: .phaseWalk,
+    });
+
+    butcher := HeroDefinition{name: "Butcher", color: {150, 90, 70, 255}, width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15};
+    butcher.abilities.add(Ability{
+        name: "Meat hook", icon: "hook", cooldown: 7,
+        description: "Hooks the ground at the cursor and pulls himself there",
+        effect: {hook: {range: 26, pullSpeed: 48}},
+    });
+    butcher.abilities.add(Ability{
+        name: "Charge", icon: "charge", cooldown: 10,
+        description: "Charges ahead, very fast, for a short moment",
+        effect: {sprint: {speedMultiplier: 2.8, duration: 0.8}},
+    });
+
+    frosty := HeroDefinition{name: "Frosty", color: {110, 220, 235, 255}, width: 2.2, height: 4.3, moveSpeed: 8, hitRadius: 0.7};
+    frosty.abilities.add(Ability{
+        name: "Cold snap", icon: "freeze", cooldown: 10,
+        description: "Freezes the cars around him for 2.5 seconds",
+        effect: {freeze: {radius: 20, duration: 2.5}},
+    });
+    frosty.abilities.add(Ability{
+        name: "Slide", icon: "slide", cooldown: 8,
+        description: "Slides to the cursor, up to 9 away",
+        effect: {blink: {range: 9}},
+    });
+    frosty.abilities.add(Ability{
+        name: "Chill aura", icon: "chill",
+        description: "Cars near him drive 40% slower",
+        effect: {chillAura: {radius: 12, slow: 0.4}},
+    });
+
+    heroDefinitions[HeroKind.allan]   = allan;
+    heroDefinitions[HeroKind.ghosty]  = ghosty;
+    heroDefinitions[HeroKind.butcher] = butcher;
+    heroDefinitions[HeroKind.frosty]  = frosty;
 }
 
 // The hook of the butcher: it flies out to the point, then pulls him after it
@@ -90,14 +159,22 @@ Hero :: struct {
     isMoving:  bool;
     facing:    f32;         // Radians around y. 0 looks down +z
     walkCycle: f32;         // Drives the bobbing while walking
+    timeAlive: f32;
 
-    cooldownLeft:   f32;    // Seconds before the ability can be used again
-    sprintTimeLeft: f32;
-    hook:           ?HookState;
-    timeAlive:      f32;
+    cooldowns: [MaxAbilities]f32;   // Seconds before the ability of each slot can be cast again
 
-    info :: method () -> HeroDefinition {
+    // What the abilities are doing right now
+    sprintLeft:       f32;
+    sprintMultiplier: f32;
+    fadeLeft:         f32;
+    hook:             ?HookState;
+
+    info :: method () -> *HeroDefinition {
         return self.kind.definition();
+    }
+
+    abilities :: method () -> [..]Ability {
+        return self.info().abilities;
     }
 
     ground :: method () -> Vector2 {
@@ -105,23 +182,40 @@ Hero :: struct {
     }
 
     speed :: method () -> f32 {
-        info := self.info();
-        speed := info.moveSpeed;
-        if self.sprintTimeLeft > 0 {
-            switch v in info.ability {
-                case .sprint { speed *= v.speedMultiplier; }
-                else         { }
+        speed := self.info().moveSpeed;
+        for ability in self.abilities() {
+            switch v in ability.effect {
+                case .quickFeet { speed *= 1 + v.speedBonus; }
+                else            { }
             }
         }
+        if self.sprintLeft > 0 { speed *= self.sprintMultiplier; }
         return speed;
     }
 
     walksThroughWalls :: method () -> bool {
-        return self.info().ability.kind == .phaseWalk;
+        return self.abilities().some(ability => ability.effect.kind == .phaseWalk);
     }
 
-    abilityReady :: method () -> bool {
-        return self.cooldownLeft <= 0 && !self.info().ability.isPassive();
+    chillAura :: method () -> ?ChillAura {
+        for ability in self.abilities() {
+            switch v in ability.effect {
+                case .chillAura { return v; }
+                else            { }
+            }
+        }
+        return null;
+    }
+
+    isFaded :: method () -> bool {
+        return self.fadeLeft > 0;
+    }
+
+    // If the ability in a slot can be cast now
+    abilityReady :: method (slot: int) -> bool {
+        abilities := self.abilities();
+        if slot < 0 || slot >= abilities.count { return false; }
+        return !abilities[slot].isPassive() && self.cooldowns[slot] <= 0;
     }
 
     // Starts walking to a point on the ground
@@ -137,11 +231,11 @@ Hero :: struct {
     }
 }
 
-newHero :: (kind: HeroKind, position: Vector3) -> Hero {
+newHero :: (kind: HeroKind, position: Vector3, facing: f32) -> Hero {
     return Hero{
         kind:     kind,
         position: position,
         target:   position,
-        facing:   Pi * 0.5,     // Looking across the road
+        facing:   facing,
     };
 }
