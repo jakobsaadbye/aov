@@ -25,10 +25,17 @@ Assets :: struct {
 
     icons: Map<string, Texture>;       // The icon of each ability, by its name in heroes.sd
 
+    sceneryModels: [SceneryKind.count]Model;
+    scenery:       [..]Decoration;
+
     cursor: Texture;
 }
 
 // The data folder is next to src, and the program is in src/build, so it is found from wherever the game is started
+dataFolder :: () -> string {
+    return fmt.sprint("%../../data/", GetApplicationDirectory().toString());
+}
+
 dataPath :: (file: string) -> c.string {
     path := fmt.sprint("%../../data/%", GetApplicationDirectory().toString(), file);
     defer path.free();
@@ -82,6 +89,15 @@ loadAssets :: () -> Assets {
     }
     assets.wall = assets.lighting.loadModel("models/wall.obj");
 
+    for kind in SceneryKind.values {
+        file := fmt.sprint("models/%.obj", SceneryModels[kind]);
+        assets.sceneryModels[kind] = assets.lighting.loadModel(file);
+        file.free();
+    }
+    assets.scenery = newScenery(77);
+
+    loadFonts();
+
     assets.cursor = loadTexture("textures/cursor/human.png");
 
     iconPath := dataPath("window_icon.png");
@@ -102,6 +118,9 @@ unload :: method (assets: *Assets) {
     for model in assets.vehicles { UnloadModel(model); }
     for model in assets.heroes   { UnloadModel(model); }
     UnloadModel(assets.wall);
+    for model in assets.sceneryModels { UnloadModel(model); }
+    assets.scenery.free();
+    unloadFonts();
     for _, icon in assets.icons  { UnloadTexture(icon); }
 
     UnloadMesh(assets.cube);
@@ -131,10 +150,19 @@ drawWall :: method (assets: *Assets, wall: Rectangle) {
 }
 
 // Draws a vehicle with the color of the car on its body
-drawVehicle :: method (assets: *Assets, kind: CarKind, position: Vector3, color: Color) {
+// The tufts, flowers and rocks near a point, e.g what the camera looks at
+drawScenery :: method (assets: *Assets, around: Vector3, reach: f32) {
+    for decoration in assets.scenery {
+        if math.fabsf(decoration.position.x - around.x) > reach || math.fabsf(decoration.position.z - around.z) > reach { continue; }
+        s := decoration.scale;
+        DrawModelEx(assets.sceneryModels[decoration.kind], decoration.position, {0, 1, 0}, decoration.angle, {s, s, s}, White);
+    }
+}
+
+drawVehicle :: method (assets: *Assets, kind: CarKind, position: Vector3, color: Color, scale: f32) {
     model := assets.vehicles[kind];
     model.materials[assets.vehicleBody[kind]].maps[MaterialMapIndex.materialMapAlbedo].color = color;
-    DrawModelEx(model, position, {0, 1, 0}, 0, {1, 1, 1}, White);
+    DrawModelEx(model, position, {0, 1, 0}, 0, {scale, scale, scale}, White);
 }
 
 // Draws a hero turned to look along the angle, in radians around y (0 looks towards +z)

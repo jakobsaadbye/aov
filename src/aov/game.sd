@@ -4,6 +4,7 @@ import fmt;
 import math;
 import mem;
 import random;
+import aov.sound;
 use raylib;
 
 // What the game is doing right now
@@ -107,13 +108,18 @@ update :: method (game: *Game, dt: f32) {
                 point := game.mouseGround.value();
                 game.hero.moveTo(point);
                 game.effects.clickMarker(point.xz());
+                sound.play("ui.click");
             }
         }
         if IsKeyPressed(.s) { game.hero.stop(); }
 
-        // The first ability is on Q, the second on W, ...
-        for key, slot in AbilityKeys {
-            if IsKeyPressed(key) { game.useAbility(slot as int); }
+        // The first ability that is cast is on Q, the second on W, ... Passives have no key
+        for key, i in AbilityKeys {
+            if !IsKeyPressed(key) { continue; }
+            slot := game.hero.abilityOnKey(i as int);
+            if slot < 0 { continue; }
+            if game.hero.abilityReady(slot) { game.useAbility(slot); }
+            else                            { sound.play("ui.not_ready"); }
         }
     }
 
@@ -130,13 +136,26 @@ simulate :: method (game: *Game, dt: f32) {
         case .playing {
             game.moveHero(dt);
 
-            // Did a car get the hero?
+            // A car on the hero takes health, fast. Without one for a while, the hero heals
             hero := &game.hero;
             car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius);
             if car.hasValue() && !hero.isFaded() {
-                game.heroRunOver(car.value());
-            } else if hasCrossed(hero.ground(), game.startSide) {
-                game.heroCrossed();
+                if hero.hurtFor > 0.3 { sound.playAt("hero.hurt", hero.position, 0.8); }
+                hero.health -= car.value().damagePerSecond() * dt;
+                hero.hurtFor = 0;
+                if hero.health <= 0 {
+                    game.heroRunOver(car.value());
+                }
+            } else {
+                hero.hurtFor += dt;
+                if hero.hurtFor > HealDelay {
+                    hero.health = math.min(hero.info().maxHealth, hero.health + HealPerSecond * dt);
+                }
+            }
+
+            if game.phase.kind == .playing {
+                game.honkAtHero();
+                if hasCrossed(hero.ground(), game.startSide) { game.heroCrossed(); }
             }
         }
         case .runOver {
@@ -167,6 +186,19 @@ simulate :: method (game: *Game, dt: f32) {
     game.banner.timeLeft -= dt;
 }
 
+// A car that comes up behind the hero in its lane honks, once
+honkAtHero :: method (game: *Game) {
+    hero := &game.hero;
+    for *car in game.traffic.cars {
+        if !car.isActive || car.hasHonked || car.frozenLeft > 0 { continue; }
+        behind := hero.position.z - (car.z + car.length() * 0.5);
+        if behind > 0 && behind < HornDistance && math.fabsf(laneCenter(car.lane) - hero.position.x) < LaneWidth * 0.6 {
+            car.hasHonked = true;
+            sound.playAt("car.horn", car.position(), 0.7, 0.05);
+        }
+    }
+}
+
 moveHero :: method (game: *Game, dt: f32) {
     hero := &game.hero;
     info := hero.info();
@@ -192,7 +224,13 @@ moveHero :: method (game: *Game, dt: f32) {
             direction := toTarget / distance;
             hero.position += direction.at() * step;
             hero.facing = math.atan2f(direction.x, direction.y);
+
+            // A step each time the bobbing comes down
+            before := math.floorf(hero.walkCycle / Pi);
             hero.walkCycle += step * 1.6;
+            if math.floorf(hero.walkCycle / Pi) != before && !hero.walksThroughWalls() {
+                sound.playAt("hero.step", hero.position, 0.5, 0.08);
+            }
         }
     }
 
@@ -218,6 +256,7 @@ pullHook :: method (game: *Game, dt: f32) {
 
     if hook.flight < 1 {
         hook.flight = math.min(1, hook.flight + dt / HookFlightTime);
+        if hook.flight >= 1 { sound.playAt("ability.hook_hit", hook.point, 1); }
         hero.hook = hook;
         return;
     }
@@ -301,6 +340,7 @@ useAbility :: method (game: *Game, slot: int) {
     }
 
     hero.cooldowns[slot] = ability.cooldown;
+    if ability.sound.len > 0 { sound.playAt(ability.sound, hero.position); }
 }
 
 // The point towards the cursor, at most range away from the hero, or nothing without a cursor on the ground
@@ -326,6 +366,7 @@ heroRunOver :: method (game: *Game, car: *Car) {
     game.effects.burst(hero.position + Vector3{0, info.height * 0.5, 0}, color, 70, push, &game.rng);
     game.effects.addSplat(hero.ground(), info.width * 0.9, Color{150, 20, 25, 255});
     game.camera.shake = 0.35;
+    sound.playAt("hero.death", hero.position);
 
     vehicle := switch car.kind {
         case .car   => "a car";
@@ -353,6 +394,7 @@ heroCrossed :: method (game: *Game) {
 
     hero.stop();
     game.effects.addRing(hero.ground(), 0.5, 8, {120, 255, 140, 255}, 0.8);
+    sound.play("hero.crossed", 0.8);
     game.phase = Phase{crossed: {timeLeft: 1.6}};
 }
 
@@ -369,4 +411,5 @@ spawnHero :: method (game: *Game, kind: HeroKind) {
     if game.startSide == .right { facing = -Pi * 0.5; }
     game.hero  = newHero(kind, game.world.spawnPoint(game.startSide), facing);
     game.phase = .playing;
+    sound.play("hero.spawn", 0.6);
 }

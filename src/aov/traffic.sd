@@ -21,6 +21,18 @@ Car :: struct {
     color:      Color;
     speed:      f32;
     frozenLeft: f32;        // Seconds it is frozen by Frosty
+    layer:      int;        // 0 to 3, different for cars after each other in a lane. Drawn a bit bigger by it, so two
+                            // cars that drive through each other don't have their faces in the same place (z-fighting)
+    hasHonked:  bool;
+
+    // The health it takes off a hero it is on, per second
+    damagePerSecond :: method () -> f32 {
+        return switch self.kind {
+            case .car   => CarDamagePerSecond;
+            case .van   => CarDamagePerSecond * 1.2;
+            case .truck => CarDamagePerSecond * 1.6;
+        };
+    }
 
     length :: method () -> f32 {
         return self.kind.length();
@@ -57,6 +69,7 @@ length :: method (kind: CarKind) -> f32 {
 Lane :: struct {
     speed:      f32;        // The speed its cars drive around
     spawnTimer: f32;        // Seconds to the next car
+    spawned:    int;        // Cars so far, for the layer of the next
 }
 
 Traffic :: struct {
@@ -169,7 +182,9 @@ spawn :: method (traffic: *Traffic, lane: int, rng: *random.Random) {
             z:        -RoadEnd - kind.length() * 0.5,
             color:    rng.choice(CarColors),
             speed:    speed,
+            layer:    traffic.lanes[lane].spawned % 4,
         };
+        traffic.lanes[lane].spawned += 1;
         return;
     }
     // Every car is on the road already

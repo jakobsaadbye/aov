@@ -17,11 +17,47 @@ DimColor    :: Color{160, 165, 170, 255};
 @threadLocal
 frameArena: allocators.Arena;
 
+// The fonts: Cinzel for titles and names, in the style of the titles of Dota 2, and Fira Sans for the rest. Both are
+// in data/fonts, under the SIL Open Font License
+Fonts :: struct {
+    text:  Font;
+    title: Font;
+}
+
+@private
+fonts: ?Fonts;
+
+FontLoadSize :: 64;     // The size the glyphs are made at. Smaller text is drawn from them, smoothed by mipmaps
+
+loadFonts :: () {
+    // The Latin-1 letters, with æ, ø and å
+    codepoints: [..]int;
+    for c in 32..256 { codepoints.add(c as int); }
+    defer codepoints.free();
+
+    load :: (file: string, codepoints: [..]int) -> Font {
+        path := dataPath(file);
+        defer path.free();
+        font := LoadFontEx(path, FontLoadSize, codepoints.data, codepoints.count as int);
+        GenTextureMipmaps(&font.texture);
+        SetTextureFilter(font.texture, .trilinear);
+        return font;
+    };
+    fonts = Fonts{text: load("fonts/FiraSans-SemiBold.ttf", codepoints), title: load("fonts/Cinzel-Bold.ttf", codepoints)};
+}
+
+unloadFonts :: () {
+    if !fonts.hasValue() { return; }
+    UnloadFont(fonts.value().text);
+    UnloadFont(fonts.value().title);
+}
+
 drawHud :: method (game: *Game, assets: *Assets) {
     previous := mem.setAllocator(&frameArena);
     defer frameArena.clear();
     defer mem.setAllocator(previous);
 
+    if game.phase.kind != .runOver { drawHealthOverHero(game); }
     drawScore(game);
     drawHeroCard(game, assets);
     drawBanner(game);
@@ -34,68 +70,115 @@ drawHud :: method (game: *Game, assets: *Assets) {
 }
 
 drawScore :: (game: *Game) {
-    panel := Rectangle{16, 16, 270, 132};
+    panel := Rectangle{16, 16, 270, 136};
     drawPanel(panel);
 
     x := panel.x as int + 14;
-    y := panel.y as int + 12;
-    drawText("ALLAN OVER VEJEN", x, y, 20, {255, 210, 90, 255});
-    drawText(fmt.sprint("Level %", game.stats.level + 1), x, y + 30, 18, TextColor);
-    drawText(fmt.sprint("Crossings  %", game.stats.crossings), x, y + 54, 18, TextColor);
-    drawText(fmt.sprint("Run over   %", game.stats.deaths), x, y + 76, 18, TextColor);
+    y := panel.y as int + 10;
+    drawTitle("Allan over vejen", x, y, 22, {255, 210, 90, 255});
 
     best := "-";
     if game.stats.bestTime.hasValue() { best = fmt.sprint("% s", fmt.fixed(game.stats.bestTime.value(), 1)); }
-    drawText(fmt.sprint("Best time  %", best), x, y + 98, 18, TextColor);
+    rows := [
+        ["Level",     fmt.sprint("%", game.stats.level + 1)],
+        ["Crossings", fmt.sprint("%", game.stats.crossings)],
+        ["Run over",  fmt.sprint("%", game.stats.deaths)],
+        ["Best time", best],
+    ];
+    for row, i in rows {
+        drawText(row[0], x, y + 34 + i as int * 22, 18, DimColor);
+        drawText(row[1], x + 120, y + 34 + i as int * 22, 18, TextColor);
+    }
 }
 
-// The bottom of the screen, like in Dota 2: the portrait of the hero, and a button for each ability with its icon, its
-// key and its cooldown. The mouse on a button shows what the ability does
+// The health of the hero over its head, like in Warcraft 3
+drawHealthOverHero :: (game: *Game) {
+    hero := &game.hero;
+    info := hero.info();
+    head := GetWorldToScreen(hero.position + Vector3{0, info.height + 1.0, 0}, game.camera.view);
+    width: f32 = 60;
+    bar := Rectangle{head.x - width * 0.5, head.y, width, 8};
+    drawHealthBar(bar, hero.health / info.maxHealth);
+}
+
+drawHealthBar :: (bar: Rectangle, fraction: f32) {
+    fraction = math.clamp(fraction, 0, 1);
+    DrawRectangleRec({bar.x - 1, bar.y - 1, bar.width + 2, bar.height + 2}, {0, 0, 0, 200});
+    color := ColorLerp({230, 50, 40, 255}, {80, 210, 70, 255}, math.clamp(fraction * 1.6 - 0.3, 0, 1));
+    DrawRectangleRec({bar.x, bar.y, bar.width * fraction, bar.height}, color);
+    DrawRectangleRec({bar.x, bar.y, bar.width * fraction, bar.height * 0.35}, {255, 255, 255, 50});   // A shine
+}
+
+// The bottom of the screen, like in Dota 2: the portrait of the hero, its health, and a button for each ability with
+// its icon, its key and its cooldown. The passives come last, set back, without a key. The mouse on a button shows
+// what the ability does
 AbilityButtonSize :: 64;
 AbilityButtonGap  :: 10;
-AbilityKeyNames   :: ["Q", "W", "E", "R", "D", "F"];
+PassiveGap        :: 26;     // Between the abilities that are cast and the passives
 
 drawHeroCard :: (game: *Game, assets: *Assets) {
     hero := &game.hero;
     info := hero.info();
     abilities := hero.abilities();
 
+    // Where each button goes: the abilities that are cast first, then the passives
     portraitSize := 96;
-    buttons := abilities.count as int;
-    width  := 24 + portraitSize + 20 + buttons * (AbilityButtonSize + AbilityButtonGap) - AbilityButtonGap + 12;
-    width   = math.max(width, 420);
-    height := 132;
+    left := 0;
+    slots: [..]int;
+    for ability, i in abilities { if !ability.isPassive() { slots.add(i as int); } }
+    actives := slots.count as int;
+    for ability, i in abilities { if ability.isPassive() { slots.add(i as int); } }
+
+    buttonsWidth := slots.count as int * (AbilityButtonSize + AbilityButtonGap) - AbilityButtonGap;
+    if actives > 0 && actives < slots.count { buttonsWidth += PassiveGap - AbilityButtonGap; }
+    width  := math.max(12 + portraitSize + 20 + buttonsWidth + 16, 440);
+    height := 150;
     panel := Rectangle{(GetScreenWidth() - width) as f32 * 0.5, (GetScreenHeight() - height - 16) as f32, width as f32, height as f32};
     drawPanel(panel);
 
     x := panel.x as int + 12;
-    y := panel.y as int + 12;
+    y := panel.y as int + 10;
 
     // The portrait: the color of the hero, with eyes
-    portrait := Rectangle{x as f32, (y + 12) as f32, portraitSize as f32, portraitSize as f32};
+    portrait := Rectangle{x as f32, (y + 8) as f32, portraitSize as f32, portraitSize as f32};
     DrawRectangleRec(portrait, info.color);
     DrawRectangleLinesEx(portrait, 2, {255, 255, 255, 90});
-    DrawRectangle(x + 26, y + 48, 12, 14, {20, 20, 20, 255});
-    DrawRectangle(x + 58, y + 48, 12, 14, {20, 20, 20, 255});
+    DrawRectangle(x + 26, y + 44, 12, 14, {20, 20, 20, 255});
+    DrawRectangle(x + 58, y + 44, 12, 14, {20, 20, 20, 255});
 
-    left := x + portraitSize + 20;
-    drawText(info.name, left, y, 24, TextColor);
+    left = x + portraitSize + 20;
+    drawTitle(info.name, left, y - 2, 26, TextColor);
     drawText(fmt.sprint("% s", fmt.fixed(hero.timeAlive, 1)), panel.x as int + width - 70, y + 4, 18, DimColor);
+
+    // Health, under the portrait and the abilities
+    healthBar := Rectangle{x as f32, (y + 114) as f32, (width - 24) as f32, 16};
+    drawHealthBar(healthBar, hero.health / info.maxHealth);
+    healthText := fmt.sprint("% / %", math.ceilf(math.max(hero.health, 0)) as int, info.maxHealth as int);
+    drawText(healthText, x + (width - 24 - textWidth(healthText, 15)) / 2, y + 114, 15, White);
 
     // The abilities
     mouse := GetMousePosition();
     game.hoveredAbility = -1;
-    for ability, i in abilities {
-        slot := i as int;
-        button := Rectangle{(left + slot * (AbilityButtonSize + AbilityButtonGap)) as f32, (y + 36) as f32, AbilityButtonSize, AbilityButtonSize};
-        drawAbilityButton(game, assets, ability, slot, button);
-        if CheckCollisionPointRec(mouse, button) { game.hoveredAbility = slot; }
+    hoveredButton: Rectangle;
+    bx := left;
+    for slot, n in slots {
+        if n as int == actives && actives > 0 {
+            // A line between the abilities that are cast and the passives
+            bx += PassiveGap - AbilityButtonGap;
+            DrawRectangle(bx - PassiveGap / 2 - 1, y + 40, 2, AbilityButtonSize - 8, {255, 255, 255, 40});
+        }
+        button := Rectangle{bx as f32, (y + 36) as f32, AbilityButtonSize, AbilityButtonSize};
+        drawAbilityButton(game, assets, abilities[slot], slot, button);
+        if CheckCollisionPointRec(mouse, button) {
+            game.hoveredAbility = slot;
+            hoveredButton = button;
+        }
+        bx += AbilityButtonSize + AbilityButtonGap;
     }
+    slots.free();
 
     if game.hoveredAbility >= 0 {
-        slot := game.hoveredAbility;
-        button := Rectangle{(left + slot * (AbilityButtonSize + AbilityButtonGap)) as f32, (y + 36) as f32, AbilityButtonSize, AbilityButtonSize};
-        drawAbilityTooltip(abilities[slot], slot, button);
+        drawAbilityTooltip(hero, abilities[game.hoveredAbility], game.hoveredAbility, hoveredButton, panel);
     }
 }
 
@@ -104,71 +187,78 @@ drawAbilityButton :: (game: *Game, assets: *Assets, ability: Ability, slot: int,
     x := button.x as int;
     y := button.y as int;
     size := AbilityButtonSize;
-
     icon := assets.icons[ability.icon];
-    DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, button, {0, 0}, 0, White);
+    source := Rectangle{0, 0, icon.width as f32, icon.height as f32};
 
     if ability.isPassive() {
-        // A passive is always on: a darker frame, and no cooldown
-        DrawRectangleLinesEx(button, 2, {120, 110, 90, 255});
-    } else {
-        cooldown := hero.cooldowns[slot];
-        if cooldown > 0 {
-            // The dark part shrinks clockwise from the top, like in Warcraft 3 and Dota 2, with the seconds left on it
-            left := cooldown / ability.cooldown;
-            BeginScissorMode(x, y, size, size);
-            DrawCircleSector({button.x + size * 0.5, button.y + size * 0.5}, size as f32, -90 + (1 - left) * 360, 270, 48, {0, 0, 0, 170});
-            EndScissorMode();
-
-            seconds := fmt.sprint("%", math.ceilf(cooldown) as int);
-            if cooldown < 1 { seconds = fmt.sprint("%", fmt.fixed(cooldown, 1)); }
-            textSize := 26;
-            textX := x + (size - textWidth(seconds, textSize)) / 2;
-            drawText(seconds, textX + 2, y + 21, textSize, Black);
-            drawText(seconds, textX, y + 19, textSize, White);
-        }
-
-        // Lit up while its effect is going on, e.g a sprint
-        isActive := false;
-        switch v in ability.effect {
-            case .sprint { isActive = hero.sprintLeft > 0; }
-            case .fade   { isActive = hero.fadeLeft > 0; }
-            case .hook   { isActive = hero.hook.hasValue(); }
-            else         { }
-        }
-
-        frame := Color{60, 55, 45, 255};
-        if cooldown <= 0 { frame = {200, 180, 120, 255}; }
-        if isActive      { frame = {255, 230, 90, 255}; }
-        DrawRectangleLinesEx(button, 2, frame);
-        if isActive { DrawRectangleLinesEx({button.x - 3, button.y - 3, button.width + 6, button.height + 6}, 2, {255, 230, 90, 140}); }
+        // A passive sits back in a sunken slot: smaller, a bit dimmed, with shadow on its top and left edges
+        DrawRectangleRec(button, {12, 12, 14, 255});
+        inset: f32 = 8;
+        DrawTexturePro(icon, source, {button.x + inset, button.y + inset, size - inset * 2, size - inset * 2}, {0, 0}, 0, {210, 210, 210, 255});
+        DrawRectangle(x, y, size, 3, {0, 0, 0, 255});
+        DrawRectangle(x, y, 3, size, {0, 0, 0, 255});
+        DrawRectangle(x, y + size - 2, size, 2, {255, 255, 255, 35});
+        DrawRectangle(x + size - 2, y, 2, size, {255, 255, 255, 35});
+        DrawRectangleLinesEx({button.x + inset - 1, button.y + inset - 1, size - inset * 2 + 2, size - inset * 2 + 2}, 1, {120, 110, 90, 200});
+        return;
     }
 
+    DrawTexturePro(icon, source, button, {0, 0}, 0, White);
+
+    cooldown := hero.cooldowns[slot];
+    if cooldown > 0 {
+        // The dark part shrinks clockwise from the top, like in Warcraft 3 and Dota 2, with the seconds left on it
+        left := cooldown / ability.cooldown;
+        BeginScissorMode(x, y, size, size);
+        DrawCircleSector({button.x + size * 0.5, button.y + size * 0.5}, size as f32, -90 + (1 - left) * 360, 270, 48, {0, 0, 0, 170});
+        EndScissorMode();
+
+        seconds := fmt.sprint("%", math.ceilf(cooldown) as int);
+        if cooldown < 1 { seconds = fmt.sprint("%", fmt.fixed(cooldown, 1)); }
+        textSize := 28;
+        textX := x + (size - textWidth(seconds, textSize)) / 2;
+        drawText(seconds, textX + 2, y + 18, textSize, Black);
+        drawText(seconds, textX, y + 16, textSize, White);
+    }
+
+    // Lit up while its effect is going on, e.g a sprint
+    isActive := false;
+    switch v in ability.effect {
+        case .sprint { isActive = hero.sprintLeft > 0; }
+        case .fade   { isActive = hero.fadeLeft > 0; }
+        case .hook   { isActive = hero.hook.hasValue(); }
+        else         { }
+    }
+
+    frame := Color{60, 55, 45, 255};
+    if cooldown <= 0 { frame = {200, 180, 120, 255}; }
+    if isActive      { frame = {255, 230, 90, 255}; }
+    DrawRectangleLinesEx(button, 2, frame);
+    if isActive { DrawRectangleLinesEx({button.x - 3, button.y - 3, button.width + 6, button.height + 6}, 2, {255, 230, 90, 140}); }
+
     // The key in the corner
-    key := AbilityKeyNames[slot];
-    DrawRectangle(x + 2, y + 2, 18, 18, {0, 0, 0, 180});
-    keyColor := White;
-    if ability.isPassive() { keyColor = DimColor; }
-    drawText(key, x + 6, y + 3, 16, keyColor);
+    key := AbilityKeyNames[hero.keyOf(slot)];
+    DrawRectangle(x + 2, y + 2, 18, 19, {0, 0, 0, 190});
+    drawText(key, x + 6, y + 2, 16, White);
 }
 
-drawAbilityTooltip :: (ability: Ability, slot: int, button: Rectangle) {
-    width := 320;
-    lines := wrapText(ability.description, 16, width - 24);
-    height := 64 + lines.count as int * 20;
+drawAbilityTooltip :: (hero: *Hero, ability: Ability, slot: int, button: Rectangle, panel: Rectangle) {
+    width := 340;
+    lines := wrapText(ability.description, 17, width - 24);
+    height := 70 + lines.count as int * 22;
 
     x := math.clamp(button.x as int + AbilityButtonSize / 2 - width / 2, 8, GetScreenWidth() - width - 8);
-    y := button.y as int - 48 - height - 8;      // Above the panel of the hero
+    y := panel.y as int - height - 8;      // Above the panel of the hero
     rect := Rectangle{x as f32, y as f32, width as f32, height as f32};
-    DrawRectangleRounded(rect, 0.06, 6, {14, 16, 20, 235});
+    DrawRectangleRounded(rect, 0.06, 6, {14, 16, 20, 240});
     DrawRectangleRoundedLinesEx(rect, 0.06, 6, 1, {200, 180, 120, 160});
 
-    drawText(ability.name, x + 12, y + 10, 22, {255, 210, 90, 255});
+    drawTitle(ability.name, x + 12, y + 8, 24, {255, 210, 90, 255});
     detail := fmt.sprint("Passive");
-    if !ability.isPassive() { detail = fmt.sprint("[%]   Cooldown % s", AbilityKeyNames[slot], ability.cooldown as int); }
-    drawText(detail, x + 12, y + 36, 16, DimColor);
+    if !ability.isPassive() { detail = fmt.sprint("Key %   ·   Cooldown % s", AbilityKeyNames[hero.keyOf(slot)], ability.cooldown as int); }
+    drawText(detail, x + 12, y + 40, 16, DimColor);
     for line, i in lines {
-        drawText(line, x + 12, y + 60 + i as int * 20, 16, TextColor);
+        drawText(line, x + 12, y + 64 + i as int * 22, 17, TextColor);
     }
 }
 
@@ -195,32 +285,42 @@ drawBanner :: (game: *Game) {
     if banner.timeLeft <= 0 || banner.text.len == 0 { return; }
 
     alpha := math.clamp(banner.timeLeft / 0.5, 0, 1);
-    size := 30;
-    width := textWidth(banner.text, size);
+    size := 32;
+    width := titleWidth(banner.text, size);
     x := (GetScreenWidth() - width) / 2;
     y := 90;
 
-    DrawRectangle(x - 20, y - 12, width + 40, size + 24, ColorAlpha(PanelColor, 0.8 * alpha));
-    drawText(banner.text, x + 2, y + 2, size, ColorAlpha(Black, 0.6 * alpha));
-    drawText(banner.text, x, y, size, ColorAlpha(banner.color, alpha));
+    DrawRectangle(x - 24, y - 12, width + 48, size + 22, ColorAlpha(PanelColor, 0.8 * alpha));
+    drawTitle(banner.text, x + 2, y + 2, size, ColorAlpha(Black, 0.6 * alpha));
+    drawTitle(banner.text, x, y, size, ColorAlpha(banner.color, alpha));
+}
+
+HelpLine :: struct {
+    keys: string;
+    what: string;
 }
 
 drawHelp :: () {
     lines := [
-        "Right click   walk there",
-        "Q W E R       the abilities",
-        "S             stop",
-        "Y             lock / unlock the camera",
-        "Space         camera to the hero",
-        "Wheel         zoom",
-        "P pause   F5 new game   H hide this",
+        HelpLine{"Right click", "Walk there"},
+        HelpLine{"Q W E R", "The abilities"},
+        HelpLine{"S", "Stop"},
+        HelpLine{"Y", "Lock or unlock the camera"},
+        HelpLine{"Space", "Camera to the hero"},
+        HelpLine{"Wheel", "Zoom"},
+        HelpLine{"M", "Music on or off"},
+        HelpLine{"P", "Pause"},
+        HelpLine{"F5", "New game"},
+        HelpLine{"H", "Hide this"},
     ];
 
-    lineHeight := 20;
-    panel := Rectangle{16, (GetScreenHeight() - lines.count * lineHeight - 40) as f32, 330, (lines.count * lineHeight + 24) as f32};
+    lineHeight := 21;
+    panel := Rectangle{16, (GetScreenHeight() - lines.count * lineHeight - 40) as f32, 320, (lines.count * lineHeight + 22) as f32};
     drawPanel(panel);
     for line, i in lines {
-        drawText(line, panel.x as int + 12, panel.y as int + 12 + i as int * lineHeight, 16, DimColor);
+        y := panel.y as int + 11 + i as int * lineHeight;
+        drawText(line.keys, panel.x as int + 14, y, 16, {255, 210, 90, 255});
+        drawText(line.what, panel.x as int + 120, y, 16, DimColor);
     }
 }
 
@@ -246,11 +346,11 @@ drawDebug :: (game: *Game) {
 
 drawPaused :: () {
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {0, 0, 0, 120});
-    text := "PAUSED";
-    width := textWidth(text, 60);
-    drawText(text, (GetScreenWidth() - width) / 2, GetScreenHeight() / 2 - 60, 60, White);
+    text := "Paused";
+    width := titleWidth(text, 64);
+    drawTitle(text, (GetScreenWidth() - width) / 2, GetScreenHeight() / 2 - 60, 64, White);
     hint := "Press P or Esc to go on";
-    drawText(hint, (GetScreenWidth() - textWidth(hint, 20)) / 2, GetScreenHeight() / 2 + 10, 20, DimColor);
+    drawText(hint, (GetScreenWidth() - textWidth(hint, 20)) / 2, GetScreenHeight() / 2 + 16, 20, DimColor);
 }
 
 drawPanel :: (rect: Rectangle) {
@@ -258,15 +358,45 @@ drawPanel :: (rect: Rectangle) {
     DrawRectangleRoundedLinesEx(rect, 0.08, 6, 1, BorderColor);
 }
 
-// raylib draws a c.string, so the text is copied with a 0 after it
+//
+// Text. raylib draws a c.string, so the text is copied with a 0 after it
+//
+
 drawText :: (text: string, x: int, y: int, size: int, color: Color) {
-    cText := text.toCString();
-    defer cText.free();
-    DrawText(cText, x, y, size, color);
+    drawWith(false, text, x, y, size, color);
+}
+
+drawTitle :: (text: string, x: int, y: int, size: int, color: Color) {
+    drawWith(true, text, x, y, size, color);
 }
 
 textWidth :: (text: string, size: int) -> int {
+    return measureWith(false, text, size);
+}
+
+titleWidth :: (text: string, size: int) -> int {
+    return measureWith(true, text, size);
+}
+
+@private
+drawWith :: (title: bool, text: string, x: int, y: int, size: int, color: Color) {
     cText := text.toCString();
     defer cText.free();
-    return MeasureText(cText, size);
+    if !fonts.hasValue() {
+        DrawText(cText, x, y, size, color);     // raylib's own, before the fonts are loaded
+        return;
+    }
+    font := fonts.value().text;
+    if title { font = fonts.value().title; }
+    DrawTextEx(font, cText, {x as f32, y as f32}, size as f32, size * 0.03, color);
+}
+
+@private
+measureWith :: (title: bool, text: string, size: int) -> int {
+    cText := text.toCString();
+    defer cText.free();
+    if !fonts.hasValue() { return MeasureText(cText, size); }
+    font := fonts.value().text;
+    if title { font = fonts.value().title; }
+    return MeasureTextEx(font, cText, size as f32, size * 0.03).x as int;
 }
