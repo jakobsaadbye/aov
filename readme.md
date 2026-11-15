@@ -198,8 +198,16 @@ it was.
 ### Difficulty
 
 Every difficulty plays the trained genome. Expert plays it as it is; hard, normal and easy with a handicap (`difficulty.sd`):
-slower to react, planning less often, later to dodge, less keen on abilities and enemies, and less time kept before the
-cars. `bot_arena.sd --mixed` plays a bot of each difficulty in every game and says how each did.
+slower to react, planning less often, later to dodge, less keen on abilities and enemies, and hesitant: it waits for
+bigger gaps than it needs. `bot_arena.sd --mixed` plays a bot of each difficulty in every game, in a different seat each
+game, and says how each did. With the trained genome, 40 games of 120 s:
+
+| Difficulty | Across | Run over | Kills | Fitness a game |
+|------------|-------:|---------:|------:|---------------:|
+| easy       | 24     | 37       | 0     | 0.5            |
+| normal     | 29     | 40       | 6     | 2.3            |
+| hard       | 47     | 42       | 19    | 8.0            |
+| expert     | 61     | 31       | 19    | 13.7           |
 
 ### The inspector
 

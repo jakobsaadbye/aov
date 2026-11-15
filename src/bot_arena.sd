@@ -26,6 +26,7 @@ main :: () {
     peaceful := false;
     mixed := false;         // A bot of each difficulty in each game, and how each difficulty did
     byDifficulty: [aov.Difficulty.count]aov.Stats;
+    fitnessOf:    [aov.Difficulty.count]f32;
     difficulty := aov.Difficulty.expert;
     args := os.args();
     i := 1;
@@ -61,7 +62,10 @@ main :: () {
         if mixed {
             rng := random.newRandom(seed + g as u64);
             personalities: [..]aov.BotPersonality;
-            for d in aov.Difficulty.values { personalities.add(aov.personalityFor(d, &rng)); }
+            // A different seat for each difficulty in each game, so where a bot starts doesn't count
+            for k in 0..aov.Difficulty.count {
+                personalities.add(aov.personalityFor(((k + g) % aov.Difficulty.count) as aov.Difficulty, &rng));
+            }
             game = aov.newGameWith(seed + g as u64, personalities, humans: 0);
         } else {
             game = aov.newGame(seed + g as u64, bots: bots, humans: 0, difficulty: difficulty);
@@ -93,7 +97,8 @@ main :: () {
                 fmt.fixed((profile.planSeconds / plans as f64 * 1000) as f32, 1), profile.plans, profile.forecasts,
                 profile.expanded / plans as i64, fmt.fixed(profile.reachedGoal as f32 / plans as f32, 2));
             if mixed {
-                level := &byDifficulty[i];
+                level := &byDifficulty[(i + g) % aov.Difficulty.count];
+                fitnessOf[(i + g) % aov.Difficulty.count] += aov.fitnessOf(game, i as int);
                 level.crossings += player.stats.crossings;
                 level.deaths += player.stats.deaths;
                 level.kills += player.stats.kills;
@@ -106,7 +111,7 @@ main :: () {
     if mixed {
         fmt.print("");
         for level, d in byDifficulty {
-            fmt.print("%:  across %, run over %, kills %", aov.Difficulty.names[d], level.crossings, level.deaths, level.kills);
+            fmt.print("%:  across %, run over %, kills %, fitness % a game", aov.Difficulty.names[d], level.crossings, level.deaths, level.kills, fmt.fixed(fitnessOf[d] / games as f32, 2));
         }
     }
     fmt.print("");

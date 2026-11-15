@@ -24,14 +24,14 @@ Handicap :: struct {
     dodgeLater:    f32;     // Times the time before a car that it dodges
     castBarRaise:  f32;     // Added to the bar of the abilities
     aggression:    f32;     // Times the aggression
-    recklessness:  f32;     // Taken from the time it keeps before a car
+    caution:       f32;     // Added to the time it keeps before a car: it waits for gaps that are bigger than needed
 }
 
 handicap :: method (difficulty: Difficulty) -> Handicap {
     return switch difficulty {
-        case .easy   => Handicap{reactionDelay: 0.35, planSlower: 2.2, dodgeLater: 0.45, castBarRaise: 0.3, aggression: 0.3, recklessness: 0.2};
-        case .normal => Handicap{reactionDelay: 0.18, planSlower: 1.6, dodgeLater: 0.7, castBarRaise: 0.15, aggression: 0.6, recklessness: 0.1};
-        case .hard   => Handicap{reactionDelay: 0.06, planSlower: 1.2, dodgeLater: 0.9, castBarRaise: 0.05, aggression: 0.85};
+        case .easy   => Handicap{reactionDelay: 0.35, planSlower: 2.2, dodgeLater: 0.45, castBarRaise: 0.3, aggression: 0.3, caution: 0.5};
+        case .normal => Handicap{reactionDelay: 0.18, planSlower: 1.6, dodgeLater: 0.7, castBarRaise: 0.15, aggression: 0.6, caution: 0.25};
+        case .hard   => Handicap{reactionDelay: 0.1, planSlower: 1.35, dodgeLater: 0.85, castBarRaise: 0.08, aggression: 0.75, caution: 0.1};
         case .expert => Handicap{planSlower: 1, dodgeLater: 1, aggression: 1};
     };
 }
@@ -43,7 +43,7 @@ apply :: method (handicap: Handicap, genome: Genome) -> Genome {
     result.set(.dodgeTime, genome.get(.dodgeTime) * handicap.dodgeLater);
     result.set(.castBar, genome.get(.castBar) + handicap.castBarRaise);
     result.set(.aggression, genome.get(.aggression) * handicap.aggression);
-    result.set(.leadTime, genome.get(.leadTime) - handicap.recklessness);
+    result.set(.leadTime, genome.get(.leadTime) + handicap.caution);
     return result;
 }
 
