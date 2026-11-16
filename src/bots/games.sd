@@ -35,6 +35,7 @@ newGameWith :: (seed: u64, personalities: []BotPersonality, humans: int = 1, dif
 // A game that plays a recording back
 newReplay :: (recording: Recording) -> *Game {
     game := newGame(recording.seed, bots: recording.bots, humans: recording.humans, difficulty: recording.difficulty);
+    game.setLength(recording.length);
     game.startReplay(recording);
     return game;
 }

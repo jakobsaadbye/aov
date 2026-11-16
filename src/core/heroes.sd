@@ -264,6 +264,7 @@ Hero :: struct {
     slideLeft:     f32;             // On an oil slick: seconds it slides on before it may turn (slicks.sd)
     slowedBy:      f32;             // By the Garlic of an enemy near it: 0.3 is 30% slower
     bounceLeft:    f32;             // Seconds until Spring Shoes bounce it again
+    shoveLeft:     f32;             // Seconds until it can shove another hero again (match.sd)
     slideVelocity: Vector2;
 
     // What the abilities are doing right now

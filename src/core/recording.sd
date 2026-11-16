@@ -39,7 +39,9 @@ RecordedFrame :: struct {
     @json.Field(omitEmpty: true)
     hero:       ?HeroKind;      // The hero the player at the keyboard changes to (setHero), before this frame
     @json.Field(omitEmpty: true)
-    difficulty: ?Difficulty;    // Set before this frame, with a restart           // F6: the next hero for the player at the keyboard, before this frame
+    difficulty: ?Difficulty;    // Set before this frame, with a restart
+    @json.Field(omitEmpty: true)
+    length:     ?GameLength;    // And the length of the game           // F6: the next hero for the player at the keyboard, before this frame
 }
 
 Checksum :: struct {
@@ -53,6 +55,7 @@ Recording :: struct {
     bots:      int;
     humans:    int;
     difficulty: Difficulty = .normal;
+    length:    GameLength = .medium;
     firstHero: int = -1;        // The hero the player at the keyboard started with (--hero), or -1 for a random one
     frames:    [..]RecordedFrame;
     checksums: [..]Checksum;
