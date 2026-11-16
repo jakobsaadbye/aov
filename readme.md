@@ -81,7 +81,8 @@ A font is a `.ttf` in `data/fonts`, loaded in `loadFonts()` in `hud.sd`.
 
 | | |
 | --- | --- |
-| Right click (or left) | Walk there |
+| Right click | Walk there. On an item in the backpack: lock it, or unlock it |
+| Left click on an ability's icon | Cast it. One that is cast at a point (hook, blink, leap, time lock) waits for a left click on the ground; a right click calls it off |
 | Q, W, E, R, D, F | The abilities of the hero: the first is on Q, the second on W, ... Passives have no key |
 | S | Stop |
 | Y | Lock or unlock the camera. Locked (at the start), it follows the hero |
@@ -199,7 +200,9 @@ shows the backpacks and when the next item comes, and the hero card yours (the m
 | Garlic | A stench: enemy heroes near the hero walk 30% slower |
 | Spring Shoes | A car that hits the hero bounces it over the car, towards the far side. Every 12 seconds |
 
-Two of the same do it twice. An item is a value of `ItemKind`, its definition, and what it does in `boostOf`
+Two of the same do it twice. With a full backpack a new item takes the place of the oldest one, unless it is locked
+(right click on it); with both locked, a hero walks over items. The backpack shows the cooldown of Spring Shoes, and a
+used clover darkened until the next hero. An item is a value of `ItemKind`, its definition, and what it does in `boostOf`
 (`core/items.sd`); its icon is drawn by `tools/make_textures.py items`. The bots go for an item when the way past it
 isn't more than the gene `itemDetour` longer than the way across. To try one: `spawnItem hourglass` or
 `giveItem clover` in the console, and `items` says what everyone has.

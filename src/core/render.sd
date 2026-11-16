@@ -215,10 +215,12 @@ drawAbilityHints :: (game: *Game) {
         DrawCircle3D(back.value().position + Vector3{0, 0.16, 0}, hero.info().width * 0.6, {1, 0, 0}, 90, {120, 220, 255, 140});
     }
 
-    if game.hoveredAbility < 0 || game.hoveredAbility >= abilities.count { return; }
+    shown := game.hoveredAbility;
+    if shown < 0 { shown = game.aiming; }
+    if shown < 0 || shown >= abilities.count { return; }
 
     reach: f32 = 0;
-    switch v in abilities[game.hoveredAbility].effect {
+    switch v in abilities[shown].effect {
         case .hook   { reach = v.range; }
         case .blink  { reach = v.range; }
         case .freeze { reach = v.radius; }

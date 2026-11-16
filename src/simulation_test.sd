@@ -741,10 +741,31 @@ testItems :: () {
     assert(near(you.hero.speed(), speed * 1.15));
     assert(you.backpack.isFull());
 
-    // A full backpack leaves an item on the road
+    // In a full backpack a new item takes the place of the oldest, unless it is locked (a command, so it is recorded)
+    you.order(core.Command{lockItem: 0});
+    game.simulate(Dt);
+    assert(you.backpack.locked[0]);
     game.items.onRoad = core.GroundItem{kind: .hardHat, position: you.hero.ground()};
     game.simulate(Dt);
-    assert(game.items.onRoad.hasValue() && you.backpack.count == 2);
+    assert(!game.items.onRoad.hasValue() && you.backpack.count == 2);
+    assert(you.backpack.items[0] == .firstAid && you.backpack.locked[0] && you.backpack.items[1] == .hardHat);
+
+    // With all of them locked, it stays on the road
+    you.order(core.Command{lockItem: 1});
+    game.simulate(Dt);
+    game.items.onRoad = core.GroundItem{kind: .clover, position: you.hero.ground()};
+    game.simulate(Dt);
+    assert(game.items.onRoad.hasValue() && you.backpack.items[1] == .hardHat);
+    game.items.onRoad = null;
+
+    // Unlocked, the oldest goes first
+    you.order(core.Command{lockItem: 0});
+    game.simulate(Dt);
+    game.pickUp(game.local, .sneakers);
+    assert(you.backpack.items[0] == .hardHat && you.backpack.locked[0] && you.backpack.items[1] == .sneakers);
+    you.backpack = core.Backpack{};
+    game.pickUp(game.local, .firstAid);
+    game.pickUp(game.local, .sneakers);
 
     // The next hero has the boost too
     game.spawnHero(game.local, .butcher);
