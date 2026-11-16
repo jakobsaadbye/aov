@@ -1,6 +1,7 @@
 namespace core;
 
-// Bent the Bus Driver: he knows the timetable by heart, hops onto passing cars, and honks people out of his way
+// Bent the Bus Driver: he knows the timetable by heart, hops onto passing cars, and sends his night bus down a lane:
+// slow, and nothing gets past it
 
 import math;
 use raylib;
@@ -13,9 +14,9 @@ defineBent :: () -> HeroDefinition {
         range: 5, duration: 2.5,
     });
     hero.abilities.add(Ability{
-        name: "Honk", icon: "honk", sound: "ability.honk", cooldown: 9, cast: castHonk, bot: .knockEnemy,
-        description: "Honks the horn: every enemy within 8 jumps 5 away from him",
-        range: 8, power: 5, duration: 0.3,
+        name: "Night bus", icon: "night_bus", sound: "ability.honk", cooldown: 16, targeting: .point, cast: castNightBus, bot: .none,
+        description: "Sends his bus down the lane at the cursor, from the far end of the road. It is slow, and the cars behind it can't get past, so the lane behind it is empty. In front of it, it is a bus",
+        range: 200, power: 5,
     });
     hero.abilities.add(passive("Timetable", "timetable", "He knows when the next cars come: the lanes light up before a car comes onto the field", .timetable));
     return hero;
@@ -29,17 +30,10 @@ castHopOn :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> b
     return true;
 }
 
-castHonk :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
-    hero := &game.players[caster].hero;
-    ground := hero.ground();
-    range := hero.reach(ability.range);
-    for *player, i in game.players {
-        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
-        if player.hero.ground().distance(ground) > range { continue; }
-        player.hero.addStatus(.stun, ability.duration, source: caster, time: game.time);
-        game.knockAway(i as int, ground, ability.power, caster);
-    }
-    game.effects.addRing(ground, 1, range, {255, 230, 120, 255}, 0.35);
-    game.effects.addRing(ground, 0.5, range * 0.6, {255, 230, 120, 255}, 0.25);
+castNightBus :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    if math.fabsf(target.x) > RoadHalfWidth { return false; }
+    lane := laneAt(target.x);
+    game.traffic.spawnBus(lane, ability.power);
+    game.effects.addRing(Vector2{laneCenter(lane), -MapHalfLength + 4}, 0.5, LaneWidth, {250, 190, 30, 255}, 0.6);
     return true;
 }

@@ -1,7 +1,7 @@
 namespace core;
 
-// Stormy the Weather Girl: she strikes cars with lightning, brings rain that slows everything down, and the wind is
-// always at her back
+// Stormy the Weather Girl: she plants lightning rods that strike what comes near them, and her gusts blow heroes and cars
+// alike. Every third spell she casts leaves her charged up for another
 
 import math;
 use raylib;
@@ -9,60 +9,128 @@ use raylib;
 defineStormy :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Stormy", title: "the Weather Girl", color: {60, 110, 220, 255}, width: 2.4, height: 4.4, moveSpeed: 8, hitRadius: 0.75, maxHealth: 28};
     hero.abilities.add(Ability{
-        name: "Lightning", icon: "lightning", sound: "ability.lightning", cooldown: 10, targeting: .point, cast: castLightning, bot: .stopCarsAhead,
-        description: "Strikes the car nearest the cursor, up to 30 away: it stops dead for 3.5 seconds, and the cars behind it queue up",
-        range: 30, duration: 3.5,
+        name: "Lightning rod", icon: "lightning_rod", sound: "ability.build", cooldown: 13, targeting: .point, cast: castLightningRod, bot: .stopCarsAhead,
+        description: "Plants a lightning rod at the cursor, up to 14 away, for 6 seconds. Every second, lightning strikes the nearest enemy within 5 of it, stunning it for 0.8 seconds, or else the nearest car, which stops dead for 1.2",
+        range: 14, duration: 6, radius: 5, power: 0.8, delay: 1.2,
     });
     hero.abilities.add(Ability{
-        name: "Downpour", icon: "downpour", sound: "ability.downpour", cooldown: 14, cast: castDownpour, bot: .stopCars,
-        description: "Rain within 16 of her for 4 seconds: the cars in it drive 40% slower, and the enemies in it walk 35% slower",
-        radius: 16, duration: 4, power: 0.4,
+        name: "Gust", icon: "gust", sound: "ability.downpour", cooldown: 9, targeting: .point, cast: castGust, bot: .knockEnemy,
+        description: "A gust towards the cursor: the enemies in a cone 12 long are blown 6 away, and the cars in it are blown a lane over",
+        range: 12, power: 6,
     });
-    hero.abilities.add(passive("Tailwind", "tailwind", "The wind is at her back: 15% faster towards the far side", Trait{tailwind: 1.15}));
+    hero.abilities.add(passive("Static charge", "static_charge", "Every third spell she casts doesn't cool down", .staticCharge));
     return hero;
 }
 
-castLightning :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+LightningRod :: struct {
+    position:  Vector2;
+    timeLeft:  f32;
+    nextStrike: f32;
+    radius:    f32;
+    stun:      f32;
+    stop:      f32;
+    owner:     int;
+}
+
+RodStrikeEvery :: 1.0;
+GustHalfAngle :: 0.55;
+
+castLightningRod :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
-    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
-    index := game.traffic.carNear(aim, 6);
-    if index < 0 { return false; }
-    car := &game.traffic.cars[index];
-    duration := ability.duration + hero.stats.coldBlooded;
-    car.frozenLeft = math.max(car.frozenLeft, duration);
-    game.traffic.halt(car.lane, car.lane, car.z - car.length() * 0.5 - QueueGap, duration);
-    at := car.position() + Vector3{0, car.height(), 0};
-    game.effects.particles.emit(.sparks, at, 30);
-    game.effects.particles.emit(.flash, at, 10);
-    game.effects.addRing(car.position().xz(), 0.5, 5, {255, 240, 150, 255}, 0.3);
-    game.strikes.add(Strike{at: at, timeLeft: 0.25});
+    point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    game.rods.add(LightningRod{position: point, timeLeft: ability.duration * hero.stats.buildTime, nextStrike: 0.5, radius: ability.radius,
+        stun: ability.power, stop: ability.delay + hero.stats.coldBlooded, owner: caster});
+    game.effects.particles.emit(.sparks, point.at(1), 12);
     return true;
 }
 
-castDownpour :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
-    hero := &game.players[caster].hero;
-    radius := hero.reach(ability.radius);
-    game.rain.add(Rain{center: hero.ground(), radius: radius, slow: ability.power, timeLeft: ability.duration + hero.stats.coldBlooded});
-    for *player, i in game.players {
-        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
-        if player.hero.ground().distance(hero.ground()) <= radius {
-            player.hero.addStatus(.slow, ability.duration, 0.35, source: caster, time: game.time);
+updateRods :: method (game: *Game, dt: f32) {
+    for *rod in game.rods {
+        rod.timeLeft -= dt;
+        rod.nextStrike -= dt;
+        if rod.nextStrike > 0 { continue; }
+        top := rod.position.at(4.2);
+        victim := game.enemyNear(rod.owner, rod.position, rod.radius);
+        if victim >= 0 {
+            hero := &game.players[victim].hero;
+            hero.addStatus(.stun, rod.stun, source: rod.owner, time: game.time);
+            hero.clearStatus(.sleep);
+            game.strikes.add(Strike{from: top, at: hero.position + Vector3{0, 2, 0}, timeLeft: 0.25});
+            rod.nextStrike = RodStrikeEvery;
+            game.sounds.playAt("ability.lightning", hero.position);
+            continue;
+        }
+        index := game.traffic.carNear(rod.position, rod.radius);
+        if index >= 0 && game.traffic.cars[index].kind != .ambulance {
+            car := &game.traffic.cars[index];
+            car.frozenLeft = math.max(car.frozenLeft, rod.stop);
+            game.traffic.halt(car.lane, car.lane, car.z - car.length() * 0.5 - QueueGap, rod.stop);
+            at := car.position() + Vector3{0, car.height(), 0};
+            game.strikes.add(Strike{from: top, at: at, timeLeft: 0.25});
+            game.effects.particles.emit(.sparks, at, 20);
+            game.sounds.playAt("ability.lightning", at);
+            rod.nextStrike = RodStrikeEvery;
         }
     }
+    game.rods.removeWhere(rod => rod.timeLeft <= 0);
+}
+
+castGust :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    aim := target - ground;
+    if aim.length() < 0.5 { aim = Vector2{0, hero.goalSign}; }
+    aim = aim.normalize();
+    range := hero.reach(ability.range);
+    hero.facing = math.atan2f(aim.x, aim.y);
+
+    inCone :: (point: Vector2, from: Vector2, aim: Vector2, range: f32) -> bool {
+        offset := point - from;
+        distance := offset.length();
+        if distance > range { return false; }
+        if distance < 1.5 { return true; }
+        return offset.normalize().dot(aim) > math.cosf(GustHalfAngle);
+    };
+    for *player, i in game.players {
+        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        if inCone(player.hero.ground(), ground, aim, range) {
+            game.knockAway(i as int, player.hero.ground() - aim, ability.power, caster);
+        }
+    }
+    across := math.sign(aim.x) as int;
+    if across != 0 {
+        for *car, c in game.traffic.cars {
+            if !car.isActive || car.kind == .ambulance || car.kind == .bus { continue; }
+            if inCone(car.position().xz(), ground, aim, range) { game.traffic.moveToLane(c as int, car.lane + across); }
+        }
+    }
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1.5, 0} + aim.at() * 1.5, 30, tint: {200, 220, 255, 255}, push: aim.at(20));
     return true;
 }
 
-// A bolt of lightning from the sky, for a moment
+// A bolt of lightning, for a moment: from the sky, or from a rod
 Strike :: struct {
+    from:     ?Vector3;
     at:       Vector3;
     timeLeft: f32;
 }
 
 drawStrikes :: (game: *Game) {
     for strike in game.strikes {
-        top := strike.at + Vector3{1.5, 30, -1};
-        middle := strike.at + Vector3{-1.2, 14, 0.8};
+        top := strike.from ?? strike.at + Vector3{1.5, 30, -1};
+        middle := (top + strike.at) * 0.5 + Vector3{-0.8, 0, 0.6};
         DrawCylinderEx(top, middle, 0.3, 0.25, 5, {255, 250, 200, 255});
         DrawCylinderEx(middle, strike.at, 0.25, 0.15, 5, {255, 250, 200, 255});
+    }
+}
+
+drawRods :: (game: *Game) {
+    for rod in game.rods {
+        base := rod.position.at(0);
+        DrawCylinder(base, 0.12, 0.08, 4.2, 6, {170, 175, 190, 255});
+        DrawCube(base + Vector3{0, 0.1, 0}, 1.0, 0.2, 1.0, {90, 90, 100, 255});
+        glow := 0.25 + 0.25 * math.sinf(game.time * 12);
+        DrawSphere(base + Vector3{0, 4.3, 0}, 0.25, {255, 250, 200, 255});
+        DrawCircle3D(rod.position.at(0.15), rod.radius, {1, 0, 0}, 90, ColorAlpha({255, 240, 150, 255}, glow));
     }
 }

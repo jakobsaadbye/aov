@@ -26,16 +26,20 @@ Trait :: union {
     unshovable;                 // Isn't pushed by heroes that walk into it, or by abilities that knock it away
     ambulanceProof;             // The ambulances drive round it
     stunTaken:    f32;          // Times how long stuns and the like hold it
-    carsBrake:    f32;          // Cars this far behind it slow down for it (Gudrun, a reflective vest)
     momentum;                   // Faster the longer it walks straight on, slower when it turns (Mads)
-    tailwind:     f32;          // Times the speed while walking towards the goal
-    berserk:      f32;          // Times the speed below half its health
-    roll;                       // The first car that hits each hero only knocks it down (Kenji)
     timetable;                  // Sees where the next cars come from, before they are there (Bent)
-    lost;                       // Now and then a burst of speed, for no reason (Tobias)
     decoysFirst;                // Spells cast on it hit its decoy instead, while it has one (Tim & Tom)
-    jaywalker:    f32;          // Times the speed on the road, and the inverse of it off the road
-    secondWind;                 // Faster for a moment after it is shoved or knocked away
+    adrenaline;                 // A car that only just misses it makes its abilities ready again (Allan)
+    blendIn;                    // Enemies can't target it once it has stood still for a moment (Tobias)
+    shadowed;                   // Enemies can't target it while it is right next to a car (Kenji)
+    bloodlust;                  // An enemy run over near it makes its abilities ready again (Ivar)
+    staticCharge;               // Every third spell it casts doesn't cool down (Stormy)
+    tripsShovers;               // Can't be shoved: who walks into it trips (Gudrun)
+    lollipop;                   // Its stop sign stays up as long as it stands still (Hilda)
+    buildTime:    f32;          // Times how long what it builds stays (Birgit)
+    shoveTaken:   f32;          // Times how far the enemies it shoves go (the perk Scrapper)
+    hitAndRun;                  // An enemy it gets run over makes its abilities ready (the perk Hit and Run)
+    slipProof;                  // Doesn't slip on banana peels, nor slide on oil (the perk Thick Soles)
     revenge:      f32;          // Seconds added to the cooldowns of whoever ran it over
     pocket;                     // One more slot in the backpack
     nimble;                     // Steps aside by itself when a car is about to hit it, now and then
@@ -69,16 +73,20 @@ HeroStats :: struct {
     unshovable:  bool;
     ambulanceProof: bool;
     stunTaken:   f32 = 1;
-    carsBrake:   f32;
     momentum:    bool;
-    tailwind:    f32 = 1;
-    berserk:     f32 = 1;
-    roll:        bool;
     timetable:   bool;
-    lost:        bool;
     decoysFirst: bool;
-    jaywalker:   f32 = 1;
-    secondWind:  bool;
+    adrenaline:  bool;
+    blendIn:     bool;
+    shadowed:    bool;
+    bloodlust:   bool;
+    staticCharge: bool;
+    tripsShovers: bool;
+    lollipop:    bool;
+    buildTime:   f32 = 1;
+    shoveTaken:  f32 = 1;
+    hitAndRun:   bool;
+    slipProof:   bool;
     revenge:     f32;
     pockets:     int;
     nimble:      bool;
@@ -116,16 +124,20 @@ addTrait :: method (stats: *HeroStats, trait: Trait) {
         case .unshovable   { stats.unshovable = true; }
         case .ambulanceProof { stats.ambulanceProof = true; }
         case .stunTaken    { stats.stunTaken *= v; }
-        case .carsBrake    { stats.carsBrake = math.max(stats.carsBrake, v); }
         case .momentum     { stats.momentum = true; }
-        case .tailwind     { stats.tailwind *= v; }
-        case .berserk      { stats.berserk *= v; }
-        case .roll         { stats.roll = true; }
         case .timetable    { stats.timetable = true; }
-        case .lost         { stats.lost = true; }
         case .decoysFirst  { stats.decoysFirst = true; }
-        case .jaywalker    { stats.jaywalker *= v; }
-        case .secondWind   { stats.secondWind = true; }
+        case .adrenaline   { stats.adrenaline = true; }
+        case .blendIn      { stats.blendIn = true; }
+        case .shadowed     { stats.shadowed = true; }
+        case .bloodlust    { stats.bloodlust = true; }
+        case .staticCharge { stats.staticCharge = true; }
+        case .tripsShovers { stats.tripsShovers = true; stats.unshovable = true; }
+        case .lollipop     { stats.lollipop = true; }
+        case .buildTime    { stats.buildTime *= v; }
+        case .shoveTaken   { stats.shoveTaken *= v; }
+        case .hitAndRun    { stats.hitAndRun = true; }
+        case .slipProof    { stats.slipProof = true; stats.oilProof = true; }
         case .revenge      { stats.revenge += v; }
         case .pocket       { stats.pockets += 1; }
         case .nimble       { stats.nimble = true; }

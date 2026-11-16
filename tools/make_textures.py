@@ -156,14 +156,6 @@ def icon_sprint():
     finish(image, "sprint")
 
 
-def icon_charge():
-    image, draw = icon_base((170, 40, 30), (70, 10, 10))
-    chevrons(draw, (255, 140, 90), 34)
-    poly(draw, [(40, 40), (90, 70), (60, 100)], (240, 230, 210))        # Horns
-    poly(draw, [(216, 40), (166, 70), (196, 100)], (240, 230, 210))
-    finish(image, "charge")
-
-
 def icon_hook():
     image, draw = icon_base((90, 80, 80), (30, 25, 25))
     draw.line([(128, 20), (128, 140)], fill=(30, 30, 30), width=26)
@@ -200,22 +192,6 @@ def icon_chill():
         draw.ellipse([c - r, c - r, c + r, c + r], outline=(190, 235, 255), width=w)
     draw.ellipse([c - 16, c - 16, c + 16, c + 16], fill=(255, 255, 255))
     finish(image, "chill")
-
-
-def icon_blink():
-    image, draw = icon_base((150, 80, 220), (40, 10, 90))
-    for i, r in enumerate((95, 70, 45)):
-        draw.arc([128 - r, 128 - r, 128 + r, 128 + r], start=200 + i * 40, end=470 + i * 40, fill=(230, 200, 255), width=14)
-    poly(draw, [(150, 60), (220, 128), (150, 196), (150, 156), (80, 156), (80, 100), (150, 100)], (250, 240, 255))
-    finish(image, "blink")
-
-
-def icon_slide():
-    image, draw = icon_base((180, 230, 250), (60, 130, 190))
-    for i, y in enumerate((80, 128, 176)):
-        draw.line([(30 + i * 10, y), (170 + i * 10, y)], fill=(255, 255, 255), width=12)
-    poly(draw, [(170, 70), (236, 128), (170, 186)], (255, 255, 255))
-    finish(image, "slide")
 
 
 def ghost(draw, fill, outline=(40, 40, 60)):
@@ -255,16 +231,6 @@ def icon_fade():
     finish(image, "fade")
 
 
-def icon_quick_feet():
-    image, draw = icon_base((90, 170, 90), (20, 70, 30))
-    poly(draw, [(70, 50), (130, 50), (130, 150), (200, 170), (200, 210), (70, 210)], (150, 90, 50))   # A boot
-    draw.rectangle([70, 190, 200, 210], fill=(60, 40, 25))
-    for i, y in enumerate((90, 130, 170)):
-        draw.line([(20, y), (55 - i * 5, y)], fill=(255, 255, 255), width=10)
-    poly(draw, [(130, 60), (190, 30), (170, 80)], (240, 240, 255))     # A wing
-    finish(image, "quick_feet")
-
-
 def icon_leap():
     image, draw = icon_base((200, 140, 80), (90, 50, 20))
     draw.arc([30, 70, 226, 330], start=195, end=345, fill=(30, 20, 10), width=26)      # The arc of the leap
@@ -299,18 +265,6 @@ def icon_stop_sign():
     poly(draw, octagon(r - 12), (210, 25, 30), outline=(210, 25, 30), width=1)
     draw.rectangle([74, 86, 182, 110], fill=(255, 255, 255))                                # The bar of a stop sign
     finish(image, "stop_sign")
-
-
-def icon_time_warp():
-    image, draw = icon_base((110, 70, 190), (25, 10, 60))
-    c = S / 2
-    for k in range(4):                                                                      # A spiral
-        r = 100 - k * 22
-        draw.arc([c - r, c - r, c + r, c + r], start=k * 70, end=k * 70 + 250, fill=(220, 190, 255), width=10)
-    draw.ellipse([c - 46, c - 46, c + 46, c + 46], fill=(250, 240, 220), outline=(30, 20, 40), width=6)   # A clock face
-    draw.line([(c, c), (c, c - 34)], fill=(30, 20, 40), width=8)
-    draw.line([(c, c), (c + 24, c + 10)], fill=(30, 20, 40), width=8)
-    finish(image, "time_warp")
 
 
 def icon_rewind():
@@ -355,20 +309,6 @@ def icon_time_lock():
 #
 # The items (items.sd)
 #
-
-def icon_item_sneakers():
-    image, draw = icon_base((90, 170, 230), (20, 60, 120))
-    # A sneaker from the side: the sole, the body and the laces
-    poly(draw, [(30, 190), (226, 190), (226, 214), (40, 214)], (245, 245, 245))
-    poly(draw, [(40, 190), (60, 100), (120, 96), (150, 140), (222, 160), (226, 190)], (230, 70, 60))
-    draw.line([(64, 120), (110, 112)], fill=(255, 255, 255), width=10)
-    draw.line([(70, 140), (120, 134)], fill=(255, 255, 255), width=10)
-    for k in range(3):
-        draw.line([(150 + k * 22, 200), (170 + k * 22, 200)], fill=(40, 40, 40), width=6)
-    for i, y in enumerate((80, 110, 140)):                                  # Speed lines behind it
-        draw.line([(10, y + 40), (30 - i * 6, y + 40)], fill=(255, 255, 255), width=8)
-    finish(image, "item_sneakers")
-
 
 def icon_item_hard_hat():
     image, draw = icon_base((90, 90, 100), (30, 30, 36))
@@ -423,22 +363,6 @@ def icon_item_clover():
     finish(image, "item_clover")
 
 
-def icon_item_frost_charm():
-    image, draw = icon_base((60, 110, 170), (10, 30, 70))
-    draw.line([(128, 10), (128, 70)], fill=(200, 200, 210), width=6)                           # The string
-    draw.ellipse([58, 60, 198, 200], fill=(170, 230, 255), outline=(30, 50, 80), width=7)     # The amulet
-    c, cy = 128, 130
-    for k in range(6):
-        a = math.pi / 3 * k
-        x, y = c + math.cos(a) * 50, cy + math.sin(a) * 50
-        draw.line([(c, cy), (x, y)], fill=(255, 255, 255), width=9)
-        bx, by = c + math.cos(a) * 32, cy + math.sin(a) * 32
-        for side in (-1, 1):
-            b = a + side * 0.8
-            draw.line([(bx, by), (bx + math.cos(b) * 16, by + math.sin(b) * 16)], fill=(255, 255, 255), width=6)
-    finish(image, "item_frost_charm")
-
-
 def icon_item_garlic():
     image, draw = icon_base((120, 140, 60), (40, 50, 20))
     for i in range(3):                                                                         # The stench
@@ -462,13 +386,11 @@ def icon_item_spring_shoes():
 
 
 def item_icons():
-    icon_item_sneakers()
     icon_item_hard_hat()
     icon_item_hourglass()
     icon_item_spyglass()
     icon_item_first_aid()
     icon_item_clover()
-    icon_item_frost_charm()
     icon_item_garlic()
     icon_item_spring_shoes()
 
@@ -521,7 +443,7 @@ def make_particles():
 
 
 #
-# The UI (core/ui.sd): frames in the style of Warcraft 3, dark stone inside, beveled bronze and gold around. Each is drawn
+# The UI (core/ui.sd): frames of dark stone inside, beveled bronze and gold around. Each is drawn
 # as a nine patch: the corners as they are, the edges and the middle stretched
 #
 
@@ -650,19 +572,14 @@ if __name__ == "__main__":
     make_asphalt()
     make_pavement()
     icon_sprint()
-    icon_charge()
     icon_hook()
     icon_freeze()
     icon_chill()
-    icon_blink()
-    icon_slide()
     icon_phase_walk()
     icon_fade()
-    icon_quick_feet()
     icon_leap()
     icon_iron_hide()
     icon_stop_sign()
-    icon_time_warp()
     icon_rewind()
     icon_shield_bash()
     icon_time_lock()

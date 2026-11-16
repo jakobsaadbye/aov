@@ -40,15 +40,17 @@ drawScene :: method (game: *Game, assets: *Assets) {
     assets.drawScenery(&frustum);
     profileEnd(.scenery);
 
-    warped := game.traffic.isWarped();
     profileBegin(.cars);
     for *car in game.traffic.cars {
-        if car.isActive && frustum.sees(car.position(), car.length() * 0.5 + 1) { drawCar(assets, car, warped, game.time); }
+        if car.isActive && frustum.sees(car.position(), car.length() * 0.5 + 1) { drawCar(game, assets, car); }
     }
     profileEnd(.cars);
     for sign in game.stopSigns { drawStopSign(assets, sign); }
     drawBridges(game);
-    drawRain(game);
+    drawCones(game);
+    drawTrampolines(game);
+    drawPortals(game);
+    drawRods(game);
     drawPeels(game);
     drawProjectiles(game);
     drawStrikes(game);
@@ -139,10 +141,17 @@ drawGoalStrip :: (side: Side) {
     DrawCube(Vector3{side.sign() * GoalX, 0.1, 0}, 0.25, 0.02, MapHalfLength * 2, {255, 240, 150, 160});
 }
 
-drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
+drawCar :: (game: *Game, assets: *Assets, car: *Car) {
+    time := game.time;
     color := car.color;
     if car.frozenLeft > 0 { color = ColorLerp(color, FrozenColor, 0.75); }
-    if warped && car.kind != .ambulance { color = ColorLerp(color, WarpColor, 0.35); }
+    // Backing up (Mira's reverse) or rushing (Hilda's wave)
+    lane := game.traffic.lanes[car.lane];
+    if lane.paceLeft > 0 && car.kind != .ambulance {
+        if lane.pace < 0 { color = ColorLerp(color, ReverseColor, 0.4); }
+        else             { color = ColorLerp(color, RushColor, 0.3); }
+    }
+    if car.hauntedBy >= 0 { color = ColorLerp(color, {190, 210, 255, 255}, 0.5 + 0.2 * math.sinf(time * 8)); }
     // Cars that drive through each other are drawn at slightly different sizes, so their faces don't fight
     scale := 1 + car.layer as f32 * 0.012;
     position := car.position();
@@ -158,6 +167,13 @@ drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
     }
     assets.drawVehicle(car.kind, position, color, scale);
     if car.kind == .ambulance { drawEmergencyLights(assets, car, time); }
+    if car.magnetLeft > 0 {
+        // Magnus's magnet: blue rings that run in to the car
+        for k in 0..3 {
+            t := math.fmodf(time * 1.5 + k as f32 / 3, 1);
+            DrawCircle3D(car.position() + Vector3{0, 0.3, 0}, MagnetRadius * (1 - t), {1, 0, 0}, 90, ColorAlpha({80, 140, 255, 255}, t * 0.8));
+        }
+    }
 
     if car.frozenLeft > 0 {
         // A shell of ice
@@ -173,29 +189,14 @@ drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
     }
 }
 
-WarpColor :: Color{150, 110, 230, 255};
+ReverseColor :: Color{150, 110, 230, 255};
+RushColor    :: Color{255, 220, 80, 255};
 
 // Hilda's stop sign where she raised it, and a stop line across the lanes it stops
 drawStopSign :: (assets: *Assets, sign: StopSign) {
     left  := laneCenter(sign.lanes[0]) - LaneWidth * 0.5;
     right := laneCenter(sign.lanes[1]) + LaneWidth * 0.5;
     fade := math.min(1, sign.timeLeft * 2);
-    if sign.kind == .barricade {
-        // Striped boards on legs across the lane, red and white
-        z := sign.line + 0.8;
-        segments := 6;
-        width := (right - left) / segments as f32;
-        for k in 0..segments {
-            color := White;
-            if k % 2 == 0 { color = {220, 40, 35, 255}; }
-            x := left + (k as f32 + 0.5) * width;
-            DrawCube({x, 1.2, z}, width, 0.5, 0.25, ColorAlpha(color, fade));
-            DrawCube({x, 0.6, z}, width, 0.35, 0.25, ColorAlpha(color, fade));
-        }
-        for x in [left + 0.4, right - 0.4] { DrawCube({x, 0.7, z}, 0.2, 1.4, 0.8, ColorAlpha({60, 60, 60, 255}, fade)); }
-        DrawSphere({left + 0.4, 1.6, z}, 0.18, ColorAlpha({255, 170, 40, 255}, fade * (0.5 + 0.5 * math.sinf(sign.timeLeft * 12))));
-        return;
-    }
     DrawCube({(left + right) * 0.5, 0.11, sign.line}, right - left, 0.02, 0.6, ColorAlpha(White, 0.9 * fade));
     DrawCube({(left + right) * 0.5, 0.1, sign.line - 1.5}, right - left, 0.02, 2.4, ColorAlpha({255, 60, 50, 255}, 0.25 * fade));
 
@@ -222,8 +223,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     if hero.isStopped()                     { bob = 0; }
     bob += game.rideHeight(hero) + game.bridgeHeightAt(hero.ground());
 
-    // A shadow that stays on the ground, and a circle in the color of the player, as under the units of Warcraft.
-    // Yours is thicker
+    // A shadow that stays on the ground, and a circle in the color of the player. Yours is thicker
     shadow := info.width * 0.55 * (1 - bob / (LeapHeight * 2));
     DrawCylinder(hero.position + Vector3{0, 0.12, 0}, shadow, shadow, 0.02, 16, ShadowColor);
     ring := info.width * 0.85;
@@ -236,7 +236,13 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     if hero.walksThroughWalls() { tint.a = 150; }      // Ghosty is see-through
     if hero.isFaded()           { tint.a = 70; }       // and more so when he fades
     if hero.has(.timeLock)      { tint = {200, 160, 255, 255}; }
-    if hero.has(.hex) {
+    if hero.isBlended() || hero.inShadow { tint.a = 110; }
+    if hero.possess.hasValue() {
+        // In the car: only a wisp over its roof
+        return;
+    } else if hero.has(.igloo) {
+        drawIgloo(hero);
+    } else if hero.has(.hex) {
         drawToad(hero.position + Vector3{0, bob, 0}, hero.facing, game.time);
     } else {
         assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);

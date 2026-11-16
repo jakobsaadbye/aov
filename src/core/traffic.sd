@@ -12,6 +12,7 @@ CarKind :: enum {
     van,
     truck,
     ambulance,      // Now and then, much faster than the rest, with a siren a moment before it comes (traffic_events.sd)
+    bus,            // Bent's night bus: slow, and the cars of its lane can't get past it
 }
 
 Car :: struct {
@@ -29,6 +30,13 @@ Car :: struct {
     leakTimer:  f32;        // Seconds to its next drop
     layer:      int;        // 0 to 3, different for cars after each other in a lane. Drawn a bit bigger by it, so two
                             // cars that drive through each other don't have their faces in the same place (z-fighting)
+    shift:      f32;        // Across the road, from the middle of its lane: a car that is pushed into another lane
+                            // slides over to it (moveToLane)
+    fromLane:   int = -1;   // The lane it is sliding over from, while it is still partly in it
+    magnetLeft: f32;        // Seconds it pulls the enemies of magnetOwner near it (Magnus)
+    magnetOwner: int = -1;
+    magnetPull: f32;        // How fast it pulls them
+    hauntedBy:  int = -1;   // The player whose ghost is in it (Ghosty)
 
     // The health it takes off a hero it is on, per second
     damagePerSecond :: method () -> f32 {
@@ -37,6 +45,7 @@ Car :: struct {
             case .van   => CarDamagePerSecond * 1.2;
             case .truck => CarDamagePerSecond * 1.6;
             case .ambulance => CarDamagePerSecond * 2;
+            case .bus       => CarDamagePerSecond * 1.6;
         };
     }
 
@@ -50,18 +59,24 @@ Car :: struct {
             case .van       => VanHeight;
             case .ambulance => VanHeight;
             case .truck => TruckHeight;
+            case .bus       => BusHeight;
         };
+    }
+
+    // The middle of the car across the road
+    x :: method () -> f32 {
+        return laneCenter(self.lane) + self.shift;
     }
 
     // The footprint on the ground: x and z
     rect :: method () -> Rectangle {
-        x := laneCenter(self.lane);
+        x := self.x();
         length := self.length();
         return {x - CarWidth * 0.5, self.z - length * 0.5, CarWidth, length};
     }
 
     position :: method () -> Vector3 {
-        return {laneCenter(self.lane), 0, self.z};
+        return {self.x(), 0, self.z};
     }
 }
 
@@ -71,6 +86,7 @@ length :: method (kind: CarKind) -> f32 {
         case .van       => VanLength;
         case .ambulance => VanLength;
         case .truck => TruckLength;
+        case .bus       => BusLength;
     };
 }
 
@@ -80,14 +96,14 @@ Lane :: struct {
     spawned:    int;        // Cars so far, for the layer of the next
     haltLeft:   f32;        // Seconds the lane is stopped by Hilda. Its cars queue up before haltLine
     haltLine:   f32;        // The z that the first car in the queue stops at with its front
+    paceLeft:   f32;        // Seconds its cars drive at pace times their speed: faster (Hilda's wave), or backwards
+    pace:       f32 = 1;    // when it is below 0 (Mira's reverse)
 }
 
 Traffic :: struct {
     cars:  [MaxCars]Car;
     lanes: [LaneCount]Lane;
     level: int;
-    warpLeft: f32;          // Seconds left of Mira's time warp, which slows every car by warpSlow
-    warpSlow: f32;
 
     // Rush hour and ambulances (traffic_events.sd)
     hasEvents:     bool;        // Not while the road is filled at the start
@@ -100,6 +116,7 @@ Traffic :: struct {
 
 LiftHeight :: 2.6;      // How high Karl's jack lifts a car
 LiftTime   :: 3.0;
+ShiftSpeed :: 14.0;     // How fast a car slides over to another lane
 
 // The room a car in a queue leaves to the car in front of it
 QueueGap :: 1.5;
@@ -170,16 +187,31 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZones: []
         traffic.queueUp(l as int, &limits);
     }
 
-    warp: f32 = 1;
-    if traffic.warpLeft > 0 {
-        traffic.warpLeft -= dt;
-        warp = 1 - traffic.warpSlow;
+    for *lane in traffic.lanes {
+        if lane.paceLeft <= 0 { continue; }
+        lane.paceLeft -= dt;
+        if lane.paceLeft <= 0 { lane.pace = 1; }
+    }
+
+    // A bus holds up the cars behind it in its lane
+    for bus in traffic.cars {
+        if !bus.isActive || bus.kind != .bus { continue; }
+        for *car, i in traffic.cars {
+            if !car.isActive || car.kind == .bus || car.kind == .ambulance || car.lane != bus.lane || car.z >= bus.z { continue; }
+            limits[i] = math.min(limits[i], bus.z - bus.length() * 0.5 - QueueGap - car.length() * 0.5);
+        }
     }
 
     for *car, i in traffic.cars {
         if !car.isActive { continue; }
 
         car.age += dt;
+        car.magnetLeft = math.max(0, car.magnetLeft - dt);
+        if car.shift != 0 {
+            step := ShiftSpeed * dt;
+            if math.fabsf(car.shift) <= step { car.shift = 0; car.fromLane = -1; }
+            else                             { car.shift -= math.sign(car.shift) * step; }
+        }
         // An ambulance is in a hurry: nothing slows it or stops it
         if car.kind == .ambulance {
             car.z += car.speed * dt;
@@ -199,7 +231,9 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZones: []
         for zone in slowZones {
             if CheckCollisionCircleRec(zone.center, zone.radius, car.rect()) { speed *= 1 - zone.slow; }
         }
-        next := car.z + speed * warp * dt;
+        lane := traffic.lanes[car.lane];
+        if lane.paceLeft > 0 { speed *= lane.pace; }
+        next := car.z + speed * dt;
         if next > limits[i] {
             next = math.max(car.z, limits[i]);
             car.isBraking = true;
@@ -307,14 +341,32 @@ halt :: method (traffic: *Traffic, first: int, last: int, line: f32, duration: f
     }
 }
 
-// Every car on the road drives slower for a while
-warpTime :: method (traffic: *Traffic, slow: f32, duration: f32) {
-    traffic.warpLeft = duration;
-    traffic.warpSlow = slow;
+// The cars of the lanes from first to last drive at pace times their speed for a while: faster, or backwards below 0
+setPace :: method (traffic: *Traffic, first: int, last: int, pace: f32, duration: f32) {
+    for lane in math.max(first, 0)...math.min(last, LaneCount - 1) {
+        traffic.lanes[lane].pace = pace;
+        traffic.lanes[lane].paceLeft = duration;
+    }
 }
 
-isWarped :: method (traffic: *Traffic) -> bool {
-    return traffic.warpLeft > 0;
+// Pushes a car into another lane: it slides over, and is in its new lane at once
+moveToLane :: method (traffic: *Traffic, index: int, lane: int) {
+    car := &traffic.cars[index];
+    lane = math.clamp(lane, 0, LaneCount - 1);
+    if lane == car.lane { return; }
+    x := car.x();
+    car.fromLane = car.lane;
+    car.lane = lane;
+    car.shift = x - laneCenter(lane);
+}
+
+// Bent's night bus, down a lane from the far end of the road
+spawnBus :: method (traffic: *Traffic, lane: int, speed: f32) {
+    for *car in traffic.cars {
+        if car.isActive { continue; }
+        *car = Car{isActive: true, kind: .bus, lane: lane, z: -RoadEnd - BusLength * 0.5, color: {250, 190, 30, 255}, speed: speed};
+        return;
+    }
 }
 
 // Freezes the cars within the radius of a point

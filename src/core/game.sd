@@ -70,7 +70,7 @@ Player :: struct {
 }
 
 PlayerColors :: [
-    Color{90, 255, 110, 255},     // You: green, like the selected unit of Warcraft
+    Color{90, 255, 110, 255},     // You: green
     Color{255, 90, 80, 255},
     Color{80, 170, 255, 255},
     Color{255, 200, 60, 255},
@@ -87,7 +87,7 @@ Banner :: struct {
 
 BannerTime :: 2.5;
 
-// The lines in the corner of what happened to the other players, like the kill feed of Dota
+// The lines in the corner of what happened to the other players
 FeedLine :: struct {
     text:     string;
     color:    Color;
@@ -172,12 +172,15 @@ Game :: struct {
     restartPending:  bool;                  // Keys of this frame, carried out by advance
     pendingHero: ?HeroKind;                 // The hero the player at the keyboard changes to, e.g by setHero
     keyboardTaken: bool;                    // The console (F1) is open: the game reads no keys or mouse
-    stopSigns:   [..]StopSign;              // Hilda's signs and Birgit's barricades, while their lanes are stopped
+    stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
     bridges:     [..]Bridge;                // Birgit's footbridges (motions.sd)
     projectiles: [..]Projectile;            // Thrown things, e.g Ivar's axe (world_effects.sd)
-    rain:        [..]Rain;                  // Stormy's downpours
+    cones:       [..]Cone;                  // Traffic cones in the lanes (world_effects.sd)
     peels:       [..]Peel;                  // Banana peels on the ground
     strikes:     [..]Strike;                // Stormy's lightning, while it is seen
+    rods:        [..]LightningRod;          // Stormy's lightning rods
+    trampolines: [..]Trampoline;            // Birgit's trampolines
+    portals:     [..]Portal;                // The pairs of portals of portal guns (item_abilities.sd)
     items:       Items;                     // The item on the road, and when the next one comes (items.sd)
     slicks:      Slicks;                    // The oil on the road (slicks.sd)
     restarts:    int;                       // Games started, the first one too
@@ -208,18 +211,14 @@ announceTraffic :: method (game: *Game, rushBefore: RushPhase, sirenBefore: int)
     }
 }
 
-// What stops the cars of some lanes for a while, where it stands
-SignKind :: enum {
-    stopSign,       // Hilda holds it up
-    barricade,      // Birgit put it on the road
-}
-
+// Hilda's stop sign: it stops the cars of some lanes for a while, where it stands
 StopSign :: struct {
-    kind:     SignKind;
     position: Vector3;
     timeLeft: f32;
     lanes:    [2]int;                       // The first and the last lane it stops
     line:     f32;                          // Where the cars stop
+    owner:    int = -1;
+    age:      f32;                          // Seconds it has been up
 }
 
 // A game with you (or no one at the keyboard with humans: 0) and bots with these brains, named by the names. The bots
@@ -253,9 +252,12 @@ restart :: method (game: *Game) {
     game.stopSigns.clear();
     game.bridges.clear();
     game.projectiles.clear();
-    game.rain.clear();
+    game.cones.clear();
     game.peels.clear();
     game.strikes.clear();
+    game.rods.clear();
+    game.trampolines.clear();
+    game.portals.clear();
     for *player in game.players { player.decoy = null; }
     // Seeded by the games so far, so a replay has the same items and oil as the game it recorded
     game.restarts += 1;
@@ -286,9 +288,12 @@ free :: method (game: *Game) {
     game.stopSigns.free();
     game.bridges.free();
     game.projectiles.free();
-    game.rain.free();
+    game.cones.free();
     game.peels.free();
     game.strikes.free();
+    game.rods.free();
+    game.trampolines.free();
+    game.portals.free();
     game.effects.particles.free();
     game.slicks.list.free();
     for *player in game.players {
@@ -585,6 +590,11 @@ simulate :: method (game: *Game, dt: f32) {
     // Chill auras, rain and Gudrun slow the cars around them
     slowZones := game.slowZones();
     defer slowZones.free();
+    game.holdStopSigns(dt);
+    game.pullToMagnets(dt);
+    for i in 0..game.players.count {
+        if game.players[i].isPlaying() { game.holdCarsAtIgloo(i as int); }
+    }
     rushBefore := game.traffic.rush;
     sirenBefore := game.traffic.emergencyLane;
     profileBegin(.traffic);
@@ -597,6 +607,9 @@ simulate :: method (game: *Game, dt: f32) {
     }
     game.stopSigns.removeWhere(sign => sign.timeLeft <= 0);
     game.updateBridges(dt);
+    game.updateTrampolines(dt);
+    game.updatePortals(dt);
+    game.updateRods(dt);
     game.updateWorldEffects(dt);
     game.updatePeels(dt);
     for *strike in game.strikes { strike.timeLeft -= dt; }
@@ -687,6 +700,7 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
                     game.heroRunOver(index, car.value());
                 }
             } else {
+                if !car.hasValue() { game.nearMiss(index); }
                 hero.hurtFor += dt;
                 // Only a First Aid Kit heals, a while after a car was on the hero
                 if hero.hurtFor > HealDelay && hero.stats.regen > 0 {
@@ -734,7 +748,14 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     hero.bounceLeft = math.max(0, hero.bounceLeft - dt);
     hero.shoveLeft  = math.max(0, hero.shoveLeft - dt);
     hero.nimbleLeft = math.max(0, hero.nimbleLeft - dt);
+    hero.nearMissLeft = math.max(0, hero.nearMissLeft - dt);
+    hero.inShadow = game.isInShadow(index);
     game.updateTraitsOverTime(index, dt);
+
+    if hero.possess.hasValue() {
+        game.haunt(index, dt);
+        return;
+    }
 
     if hero.ride.hasValue() {
         game.rideCar(index, dt);
@@ -756,7 +777,10 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
         return;
     }
     if hero.hook.hasValue() && game.pullHook(index, dt) { return; }
-    if hero.isStopped() { return; }
+    if hero.isStopped() {
+        hero.stillFor += dt;
+        return;
+    }
 
     // Scared, taunted or a puppet: it walks by itself
     steered := hero.steeredTo();
@@ -786,6 +810,11 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     }
 
     hero.position = game.world.resolveCollisions(hero.ground(), info.hitRadius, hero.walksThroughWalls()).at();
+    game.holdLeash(index);
+    game.bounceOnTrampoline(index);
+    game.walkThroughPortal(index);
+    if Vector3Distance(before, hero.position) < 0.01 { hero.stillFor += dt; }
+    else                                             { hero.stillFor = 0; }
 
     // Mads gathers speed walking straight on, and loses it when he turns
     if hero.stats.momentum {
@@ -866,6 +895,10 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
 
     // An enemy who hooked, bashed or locked it just before gets the kill
     killer := -1;
+    if car.hauntedBy >= 0 && car.hauntedBy != index {
+        hero.harmedBy = car.hauntedBy;
+        hero.harmedAt = game.time;
+    }
     if hero.harmedBy >= 0 && hero.harmedBy != index && game.time - hero.harmedAt < KillCredit {
         killer = hero.harmedBy;
         game.players[killer].stats.kills += 1;
@@ -873,7 +906,11 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
         if hero.stats.revenge > 0 {
             for *cooldown in game.players[killer].hero.cooldowns { *cooldown += hero.stats.revenge; }
         }
+        if game.players[killer].hero.stats.hitAndRun && game.players[killer].isPlaying() {
+            game.readyAbilities(killer);
+        }
     }
+    game.feedBloodlust(index);
 
     // The car throws the bits along the road
     push := Vector3{0, 0, car.speed * 0.6};
@@ -891,6 +928,7 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
         case .van   => "a van";
         case .truck => "a truck";
         case .ambulance => "an ambulance";
+        case .bus   => "a bus";
     };
     if killer >= 0 {
         game.announce(index, {255, 90, 80, 255}, "% (%) was run over by %, thanks to %", info.name, player.name, vehicle, game.players[killer].name);
@@ -958,7 +996,9 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
 
     player.hero  = newHero(kind, spot, facing);
     player.hero.goalSign = player.startSide.opposite().sign();
-    player.hero.lostIn = LostEveryLow;
+    for *car in game.traffic.cars {
+        if car.hauntedBy == index { car.hauntedBy = -1; }
+    }
     player.phase = .playing;
     player.hero.stats = statsOf(player);
     player.backpack.size = BackpackSize + player.hero.stats.pockets;

@@ -13,11 +13,31 @@ defineButcher :: () -> HeroDefinition {
         range: 34,
     });
     hero.abilities.add(Ability{
-        name: "Charge", icon: "charge", sound: "ability.charge", cooldown: 10, cast: castSprint, bot: .speedUp,
-        description: "Charges ahead, very fast, for a short moment",
-        power: 2.8, duration: 0.8,
+        name: "Heave", icon: "heave", sound: "ability.charge", cooldown: 9, targeting: .point, cast: castHeave, bot: .stopCarsAhead,
+        description: "Grabs the car nearest the cursor, within 7 of him, and throws it two lanes over, away from him. Whoever is in the lane it lands in is in its way",
+        range: 7, count: 2,
     });
     return hero;
+}
+
+// The car nearest the point, within range of him, goes count lanes over, away from him
+castHeave :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    range := hero.reach(ability.range);
+    aim := towards(hero.ground(), target, range) ?? hero.ground();
+    index := game.traffic.carNear(aim, 5);
+    if index < 0 { return false; }
+    car := &game.traffic.cars[index];
+    rect := car.rect();
+    nearest := Vector2{math.clamp(hero.position.x, rect.x, rect.x + rect.width), math.clamp(hero.position.z, rect.y, rect.y + rect.height)};
+    if nearest.distance(hero.ground()) > range + hero.info().hitRadius || car.kind == .ambulance || car.kind == .bus { return false; }
+    away := math.sign(car.x() - hero.position.x);
+    if away == 0 { away = hero.goalSign; }
+    game.traffic.moveToLane(index, car.lane + away as int * ability.count);
+    hero.facing = math.atan2f(car.x() - hero.position.x, car.z - hero.position.z);
+    game.effects.particles.emit(.dust, car.position(), 24);
+    game.effects.particles.emit(.shove, car.position() + Vector3{0, 1.5, 0}, 12);
+    return true;
 }
 
 // Throws the hook towards the point, at most range away
@@ -101,8 +121,8 @@ pullHook :: method (game: *Game, index: int, dt: f32) -> bool {
         return false;
     }
     side: f32 = -1;
-    if hero.position.x > laneCenter(car.lane) { side = 1; }
-    target := Vector2{laneCenter(car.lane) + side * (CarWidth * 0.5 + hero.info().hitRadius + 0.4), car.z + hook.bite.z};
+    if hero.position.x > car.x() { side = 1; }
+    target := Vector2{car.x() + side * (CarWidth * 0.5 + hero.info().hitRadius + 0.4), car.z + hook.bite.z};
     toTarget := target - hero.ground();
     distance := toTarget.length();
     step := pullSpeed * dt;

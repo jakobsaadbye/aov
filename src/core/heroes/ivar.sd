@@ -1,7 +1,7 @@
 namespace core;
 
-// Ivar the Berserker: his battle cry sends his enemies running, his axe stuns whoever it hits, and he gets faster the
-// more he is hurt
+// Ivar the Berserker: his battle cry sends his enemies running, his axe stuns whoever it hits, and every enemy that falls
+// near him gets him going again
 
 use raylib;
 
@@ -17,7 +17,7 @@ defineIvar :: () -> HeroDefinition {
         description: "Throws his axe towards the cursor, 22 far: the first enemy it hits is stunned for 1.3 seconds",
         range: 22, power: 1.3,
     });
-    hero.abilities.add(passive("Berserk", "berserk", "Below half his health, he runs 30% faster", Trait{berserk: 1.3}));
+    hero.abilities.add(passive("Bloodlust", "bloodlust", "An enemy run over within 20 of him makes his abilities ready again, and heals him a fifth of his health", .bloodlust));
     return hero;
 }
 
@@ -40,3 +40,4 @@ castAxeThrow :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -
 }
 
 AxeSpeed :: 40.0;
+BloodlustReach :: 20.0;

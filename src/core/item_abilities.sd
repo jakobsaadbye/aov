@@ -41,6 +41,7 @@ coolItems :: method (player: *Player, dt: f32) {
         player.backpack.cooldowns[slot] = math.max(0, player.backpack.cooldowns[slot] - dt);
     }
     player.hero.mirrorLeft = math.max(0, player.hero.mirrorLeft - dt);
+    player.hero.portalLeft = math.max(0, player.hero.portalLeft - dt);
 }
 
 castBananaPeel :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
@@ -55,13 +56,117 @@ castEnergyDrink :: (game: *Game, caster: int, ability: *Ability, target: Vector2
     return true;
 }
 
-// A cone on the road: the cars near it crawl
+// A cone in a lane: the cars that come to it swerve round it
 castTrafficCone :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
     point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
     if math.fabsf(point.x) > RoadHalfWidth { return false; }
-    game.rain.add(Rain{center: point, radius: ability.radius, slow: 0.8, timeLeft: ability.duration + hero.stats.coldBlooded, isCone: true});
+    point.x = laneCenter(laneAt(point.x));
+    game.cones.add(Cone{position: point, timeLeft: ability.duration * hero.stats.buildTime});
     return true;
+}
+
+// The car nearest the point goes count lanes over, away from the hero
+castRemoteControl :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    index := game.traffic.carNear(aim, 6);
+    if index < 0 { return false; }
+    car := &game.traffic.cars[index];
+    if car.kind == .ambulance || car.kind == .bus { return false; }
+    away: f32 = 1;
+    if hero.position.x > car.x() { away = -1; }
+    if car.lane + (away as int) * ability.count < 0 || car.lane + (away as int) * ability.count >= LaneCount { away = -away; }
+    game.traffic.moveToLane(index, car.lane + (away as int) * ability.count);
+    game.effects.particles.emit(.sparks, car.position() + Vector3{0, car.height() + 0.5, 0}, 10, tint: {120, 220, 255, 255});
+    return true;
+}
+
+castStopwatch :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    if !hero.cooldowns.some(cooldown => cooldown > 0) { return false; }
+    game.readyAbilities(caster);
+    return true;
+}
+
+castSnowGlobe :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    duration := ability.duration + hero.stats.coldBlooded;
+    for *car in game.traffic.cars {
+        if !car.isActive || car.kind == .ambulance { continue; }
+        car.frozenLeft = math.max(car.frozenLeft, duration);
+    }
+    for *player, i in game.players {
+        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        player.hero.addStatus(.timeLock, ability.duration, source: caster, time: game.time);
+        game.effects.particles.emit(.snow, player.hero.position + Vector3{0, 2, 0}, 14);
+    }
+    game.effects.addRing(hero.ground(), 1, 40, {220, 240, 255, 255}, 0.6);
+    game.announce(-1, {200, 230, 255, 255}, "% shook a snow globe: everything stops!", game.players[caster].name);
+    return true;
+}
+
+castPortalGun :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    to := towards(hero.ground(), target, hero.reach(ability.range));
+    if !to.hasValue() { return false; }
+    there := game.world.resolveCollisions(to.value(), PortalRadius, false);
+    game.portals.add(Portal{ends: [hero.ground(), there], timeLeft: ability.duration});
+    hero.portalLeft = PortalCooldown;     // It doesn't send the hero through it at once
+    return true;
+}
+
+//
+// Portals: anyone that walks into one end comes out of the other
+//
+
+Portal :: struct {
+    ends:     [2]Vector2;
+    timeLeft: f32;
+}
+
+PortalRadius   :: 1.2;
+PortalCooldown :: 1.0;     // Seconds before a hero that came through a portal can go through one again
+
+updatePortals :: method (game: *Game, dt: f32) {
+    for *portal in game.portals { portal.timeLeft -= dt; }
+    game.portals.removeWhere(portal => portal.timeLeft <= 0);
+}
+
+walkThroughPortal :: method (game: *Game, index: int) {
+    hero := &game.players[index].hero;
+    if hero.portalLeft > 0 || hero.isAirborne() { return; }
+    for portal in game.portals {
+        for end, k in portal.ends {
+            if hero.ground().distance(end) > PortalRadius { continue; }
+            out := portal.ends[1 - k];
+            game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 14, tint: {90, 200, 255, 255});
+            // It walks on from the other end, to where it was going
+            hero.target += (out - end).at();
+            hero.position = game.world.resolveCollisions(out, hero.info().hitRadius, hero.walksThroughWalls()).at();
+            hero.portalLeft = PortalCooldown;
+            hero.forgetTrail();
+            game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 14, tint: {255, 160, 60, 255});
+            game.sounds.playAt("ability.blink", hero.position, 0.6);
+            return;
+        }
+    }
+}
+
+drawPortals :: (game: *Game) {
+    for portal in game.portals {
+        fade := math.min(portal.timeLeft, 1);
+        colors := [Color{90, 200, 255, 255}, Color{255, 160, 60, 255}];
+        for end, k in portal.ends {
+            spin := game.time * 3 + k as f32;
+            center := end.at(1.6);
+            DrawCylinderEx(end.at(0.05), end.at(0.1), PortalRadius, PortalRadius, 24, ColorAlpha(colors[k], 0.35 * fade));
+            for r in 0..3 {
+                radius := PortalRadius * (0.5 + 0.25 * r as f32);
+                DrawCircle3D(center + Vector3{0, math.sinf(spin + r as f32) * 0.2, 0}, radius, {0, 1, 0}, spin * 30, ColorAlpha(colors[k], fade));
+            }
+        }
+    }
 }
 
 castMegaphone :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {

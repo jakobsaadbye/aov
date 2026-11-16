@@ -1,6 +1,7 @@
 namespace core;
 
-// Magnus the Magnet: a man of steel. He pushes the cars back, pulls his enemies in, and nothing pushes him
+// Magnus the Magnet: a man of steel. He turns a car into a magnet for his enemies, pulls them in to him, and
+// nothing pushes him
 
 import math;
 use raylib;
@@ -8,9 +9,9 @@ use raylib;
 defineMagnus :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Magnus", title: "the Magnet", color: {150, 155, 170, 255}, width: 2.8, height: 4.4, moveSpeed: 7.2, hitRadius: 0.9, maxHealth: 65};
     hero.abilities.add(Ability{
-        name: "Repel", icon: "repel", sound: "ability.repel", cooldown: 11, cast: castRepel, bot: .stopCars,
-        description: "Pushes the cars within 14 that are coming at him 7 back up the road",
-        radius: 14, power: 7,
+        name: "Magnetize", icon: "magnetize", sound: "ability.repel", cooldown: 12, targeting: .point, cast: castMagnetize, bot: .dropTrap,
+        description: "Magnetizes the car nearest the cursor, up to 16 away, for 5 seconds: it pulls his enemies within 9 of it towards it",
+        range: 16, duration: 5, power: 4.5,
     });
     hero.abilities.add(Ability{
         name: "Attract", icon: "attract", sound: "ability.attract", cooldown: 12, targeting: .enemy, cast: castAttract, bot: .pullEnemy,
@@ -21,20 +22,40 @@ defineMagnus :: () -> HeroDefinition {
     return hero;
 }
 
-castRepel :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+MagnetRadius :: 9.0;
+
+castMagnetize :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
-    ground := hero.ground();
-    radius := hero.reach(ability.radius);
-    pushed := 0;
-    for *car in game.traffic.cars {
-        if !car.isActive || car.kind == .ambulance || car.z > ground.y + 1 { continue; }
-        if !CheckCollisionCircleRec(ground, radius, car.rect()) { continue; }
-        car.z -= ability.power;
-        pushed += 1;
-    }
-    game.effects.addRing(ground, 1, radius, {200, 210, 255, 255}, 0.4);
-    game.effects.particles.emit(.sparks, hero.position + Vector3{0, 2, 0}, 16);
+    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    index := game.traffic.carNear(aim, 6);
+    if index < 0 { return false; }
+    car := &game.traffic.cars[index];
+    car.magnetLeft = ability.duration + hero.stats.coldBlooded;
+    car.magnetOwner = caster;
+    car.magnetPull = ability.power;
+    game.effects.addRing(car.position().xz(), 0.5, MagnetRadius, {200, 210, 255, 255}, 0.4);
+    game.effects.particles.emit(.sparks, car.position() + Vector3{0, car.height(), 0}, 16);
     return true;
+}
+
+// The magnetized cars pull the enemies of their magnet's owner in
+pullToMagnets :: method (game: *Game, dt: f32) {
+    for car in game.traffic.cars {
+        if !car.isActive || car.magnetLeft <= 0 || car.magnetOwner < 0 { continue; }
+        center := car.position().xz();
+        for *player, i in game.players {
+            if i as int == car.magnetOwner || !player.isPlaying() { continue; }
+            hero := &player.hero;
+            if hero.stats.unshovable || hero.isAirborne() || !hero.isTargetable() { continue; }
+            offset := center - hero.ground();
+            distance := offset.length();
+            if distance > MagnetRadius || distance < 0.5 { continue; }
+            step := offset.normalize() * math.min(car.magnetPull * dt, distance);
+            hero.position = game.world.resolveCollisions(hero.ground() + step, hero.info().hitRadius, hero.stats.throughWalls).at(hero.position.y);
+            hero.harmedBy = car.magnetOwner;
+            hero.harmedAt = game.time;
+        }
+    }
 }
 
 castAttract :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {

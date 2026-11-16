@@ -10,7 +10,7 @@ use raylib;
 // intervals of time when no car is on it (safe intervals).
 //
 // A car only ever drives along its lane, so where it will be is a function of time with a few straight pieces: held by a
-// freeze, slowed by a time warp, stopped at Hilda's line, then on at its speed. Each car's pieces are worked out once
+// freeze, sped up or slowed for its lane, stopped at Hilda's line, then on at its speed. Each car's pieces are worked out once
 // (Trajectory), and when it is on a cell is then solved exactly from them instead of stepping through time. The safe
 // intervals of a cell are only worked out when the search asks for them, so the cells it never looks at cost nothing.
 //
@@ -307,7 +307,15 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
 
     for car in game.traffic.cars {
         if !car.isActive || (options.ambulanceProof && car.kind == .ambulance) { continue; }
-        forecast.lanes[car.lane].add(trajectoryOf(game, car, 0));
+        trajectory := trajectoryOf(game, car, 0);
+        sweep := reverseSweep(game, car);
+        forecast.lanes[car.lane].add(trajectory);
+        if sweep.hasValue() { forecast.lanes[car.lane].add(sweep.value()); }
+        // Sliding over from another lane: still in that one too, for a moment
+        if car.fromLane >= 0 && car.fromLane != car.lane {
+            forecast.lanes[car.fromLane].add(trajectory);
+            if sweep.hasValue() { forecast.lanes[car.fromLane].add(sweep.value()); }
+        }
     }
     for bridge in game.bridges {
         // Safe a little after it starts to go up, and a little before it is gone
@@ -399,35 +407,60 @@ trajectoryOf :: (game: *Game, car: Car, appears: f32) -> Trajectory {
         t += car.frozenLeft;
     }
 
-    // Slower near a hero with a chill aura, in rain, ..., as long as it is in there now
+    // Slower near a hero with a chill aura, as long as it is in there now
     speed := car.speed;
     zones := game.slowZones();
     defer zones.free();
     for zone in zones {
         if CheckCollisionCircleRec(zone.center, zone.radius, car.rect()) { speed *= 1 - zone.slow; }
     }
+    // Behind a bus, no faster than it
+    if car.kind != .bus {
+        for other in traffic.cars {
+            if other.isActive && other.kind == .bus && other.lane == car.lane && other.z > car.z { speed = math.min(speed, other.speed); }
+        }
+    }
+
+    // Driving backwards: where it is when that is over, seen in the meantime by reverseSweep
+    if t < lane.paceLeft && lane.pace < 0 {
+        z += speed * lane.pace * (lane.paceLeft - t);
+        t = lane.paceLeft;
+    }
+    paced := speed;
+    if t < lane.paceLeft { paced *= lane.pace; }
 
     // Held before Hilda's line until her sign comes down
     if t < lane.haltLeft && z + trajectory.halfLength <= lane.haltLine + 0.5 {
         stopAt := lane.haltLine - trajectory.halfLength;
-        warped := speed;
-        if t < traffic.warpLeft { warped *= 1 - traffic.warpSlow; }
-        arrives := t + math.max(stopAt - z, 0) / math.max(warped, 0.01);
+        arrives := t + math.max(stopAt - z, 0) / math.max(paced, 0.01);
         if arrives < lane.haltLeft {
-            trajectory.add(t, z, warped);
+            trajectory.add(t, z, paced);
             trajectory.add(arrives, stopAt, 0);
             t = lane.haltLeft;
             z = stopAt;
         }
     }
 
-    // Slowed by a time warp, then at its own speed
-    if t < traffic.warpLeft {
-        warped := speed * (1 - traffic.warpSlow);
-        trajectory.add(t, z, warped);
-        z += warped * (traffic.warpLeft - t);
-        t = traffic.warpLeft;
+    // Sped up or slowed for its lane, then at its own speed
+    if t < lane.paceLeft {
+        trajectory.add(t, z, paced);
+        z += paced * (lane.paceLeft - t);
+        t = lane.paceLeft;
     }
     trajectory.add(t, z, speed);
     return trajectory;
+}
+
+// A car that drives backwards for a while: it is somewhere between where it is and where it backs up to until then. Seen
+// as a car as long as all of that, standing still, which then is gone
+reverseSweep :: (game: *Game, car: Car) -> ?Trajectory {
+    lane := game.traffic.lanes[car.lane];
+    if car.kind == .ambulance || lane.pace >= 0 { return null; }
+    start := car.frozenLeft + car.liftedLeft;
+    if start >= lane.paceLeft { return null; }
+    span := -car.speed * lane.pace * (lane.paceLeft - start);
+    sweep := Trajectory{halfLength: car.length() * 0.5 + span * 0.5};
+    sweep.add(0, car.z - span * 0.5, 0);
+    sweep.add(lane.paceLeft, car.z - span * 0.5, 1000);
+    return sweep;
 }

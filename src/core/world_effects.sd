@@ -1,17 +1,15 @@
 namespace core;
 
-// What abilities leave in the world for a while: things thrown through the air (Ivar's axe, a banana peel), rain that
-// slows the cars (Stormy), Tim & Tom's decoy, and the zones that slow the cars, which the traffic and the forecast of
-// the bots both use (slowZones)
+// What abilities leave in the world for a while: things thrown through the air (Ivar's axe, a banana peel), traffic
+// cones, Tim & Tom's decoy, and the zones that slow the cars, which the traffic and the forecast of the bots both use
+// (slowZones)
 
 import math;
 use raylib;
 
 //
-// Where the cars drive slower: chill auras, rain, and behind Gudrun
+// Where the cars drive slower: chill auras
 //
-
-GudrunZoneBehind :: 6.0;     // How far behind her the middle of the zone is
 
 slowZones :: method (game: *Game) -> [..]SlowZone {
     zones: [..]SlowZone;
@@ -20,22 +18,17 @@ slowZones :: method (game: *Game) -> [..]SlowZone {
         hero := &player.hero;
         aura := hero.chillAura();
         if aura.hasValue() { zones.add(SlowZone{hero.ground(), aura.value().radius, aura.value().slow}); }
-        // The cars brake for her when she is on the road in front of them
-        if hero.stats.carsBrake > 0 && math.fabsf(hero.position.x) < RoadHalfWidth {
-            zones.add(SlowZone{hero.ground() - Vector2{0, GudrunZoneBehind}, hero.stats.carsBrake * 0.8, 0.75});
-        }
     }
-    for rain in game.rain { zones.add(SlowZone{rain.center, rain.radius, rain.slow}); }
     return zones;
 }
 
-Rain :: struct {
-    center:   Vector2;
-    radius:   f32;
-    slow:     f32;
+// A traffic cone in a lane: the cars that come to it swerve into a lane beside it
+Cone :: struct {
+    position: Vector2;
     timeLeft: f32;
-    isCone:   bool;         // A traffic cone, not rain
 }
+
+ConeSwerveAhead :: 6.0;     // How far before the cone the cars swerve
 
 //
 // Thrown things
@@ -72,8 +65,7 @@ throwProjectile :: method (game: *Game, owner: int, kind: ProjectileKind, target
 }
 
 updateWorldEffects :: method (game: *Game, dt: f32) {
-    for *rain in game.rain { rain.timeLeft -= dt; }
-    game.rain.removeWhere(rain => rain.timeLeft <= 0);
+    game.swerveAtCones(dt);
 
     for *projectile in game.projectiles {
         step := projectile.velocity * dt;
@@ -189,20 +181,37 @@ drawDecoys :: (game: *Game, assets: *Assets) {
     }
 }
 
-drawRain :: (game: *Game) {
-    for rain in game.rain {
-        alpha := math.min(rain.timeLeft, 1);
-        if rain.isCone {
-            // An orange cone with white stripes
-            base := rain.center.at(0);
-            DrawCube(base + Vector3{0, 0.05, 0}, 1.2, 0.1, 1.2, ColorAlpha({255, 110, 20, 255}, alpha));
-            DrawCylinder(base, 0.5, 0.06, 1.6, 10, ColorAlpha({255, 110, 20, 255}, alpha));
-            DrawCylinder(base + Vector3{0, 0.7, 0}, 0.32, 0.26, 0.25, 10, ColorAlpha(White, alpha));
-            DrawCircle3D(rain.center.at(0.15), rain.radius, {1, 0, 0}, 90, ColorAlpha({255, 140, 40, 255}, 0.5 * alpha));
-            continue;
+swerveAtCones :: method (game: *Game, dt: f32) {
+    for *cone in game.cones {
+        cone.timeLeft -= dt;
+        lane := laneAt(cone.position.x);
+        for *car, c in game.traffic.cars {
+            if !car.isActive || car.lane != lane || car.shift != 0 { continue; }
+            front := car.z + car.length() * 0.5;
+            if front > cone.position.y + 0.5 || cone.position.y - front > ConeSwerveAhead { continue; }
+            if car.kind == .bus {
+                if cone.position.y - front < 0.5 {
+                    cone.timeLeft = 0;
+                    game.effects.particles.emit(.bits, cone.position.at(0.5), 12, tint: {255, 110, 20, 255});
+                }
+                continue;
+            }
+            side := 1;
+            if lane == LaneCount - 1 || (lane > 0 && c % 2 == 0) { side = -1; }
+            game.traffic.moveToLane(c as int, lane + side);
         }
-        DrawCylinder(rain.center.at(0.13), rain.radius, rain.radius, 0.02, 40, ColorAlpha({90, 130, 200, 255}, 0.18 * alpha));
-        DrawCircle3D(rain.center.at(0.15), rain.radius, {1, 0, 0}, 90, ColorAlpha({150, 190, 255, 255}, 0.6 * alpha));
+    }
+    game.cones.removeWhere(cone => cone.timeLeft <= 0);
+}
+
+drawCones :: (game: *Game) {
+    for cone in game.cones {
+        alpha := math.min(cone.timeLeft, 1);
+        // An orange cone with a white stripe
+        base := cone.position.at(0);
+        DrawCube(base + Vector3{0, 0.05, 0}, 1.2, 0.1, 1.2, ColorAlpha({255, 110, 20, 255}, alpha));
+        DrawCylinder(base, 0.5, 0.06, 1.6, 10, ColorAlpha({255, 110, 20, 255}, alpha));
+        DrawCylinder(base + Vector3{0, 0.7, 0}, 0.32, 0.26, 0.25, 10, ColorAlpha(White, alpha));
     }
 }
 
@@ -235,6 +244,7 @@ updatePeels :: method (game: *Game, dt: f32) {
 
 slipOnBanana :: method (game: *Game, victim: int, owner: int) {
     hero := &game.players[victim].hero;
+    if hero.stats.slipProof { return; }
     forward := Vector2{math.sinf(hero.facing), math.cosf(hero.facing)};
     hero.addStatus(.stun, 0.9, source: owner, time: game.time);
     if !hero.stats.unshovable {

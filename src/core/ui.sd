@@ -1,6 +1,6 @@
 namespace core;
 
-// The look of the UI, in the style of Warcraft 3: dark stone panels in beveled bronze frames with gold, sunken slots,
+// The look of the UI: dark stone panels in beveled bronze frames with gold, sunken slots,
 // gold frames around icons, bars in sunken troughs, title plaques and gold dividers. Every panel, slot, button, bar and
 // tooltip of the HUD is drawn with these, so they all look alike. The frames are textures (tools/make_textures.py ui),
 // drawn as nine patches: the corners as they are, the edges and the middle stretched to any size.
