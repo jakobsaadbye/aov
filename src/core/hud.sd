@@ -144,7 +144,7 @@ drawHealthOverHero :: (game: *Game, index: int) {
     head := GetWorldToScreen(hero.position + Vector3{0, info.height + 1.0, 0}, game.camera.view);
     width: f32 = 60;
     bar := Rectangle{head.x - width * 0.5, head.y, width, 8};
-    drawHealthBar(bar, hero.health / info.maxHealth);
+    drawHealthBar(bar, hero);
     if index != game.local {
         nameWidth := textWidth(player.name, 15);
         drawText(player.name, head.x as int - nameWidth / 2 + 1, head.y as int - 18, 15, ColorAlpha(Black, 0.8));
@@ -152,12 +152,27 @@ drawHealthOverHero :: (game: *Game, index: int) {
     }
 }
 
-drawHealthBar :: (bar: Rectangle, fraction: f32) {
-    fraction = math.clamp(fraction, 0, 1);
+// The whole bar is the most health of the hero. The health it has of its own is green (red when it is low), and what an
+// item adds (the First Aid Kit) comes after it in grey
+drawHealthBar :: (bar: Rectangle, hero: *Hero) {
+    most := hero.maxHealth();
+    own := hero.info().maxHealth;
+    health := math.clamp(hero.health, 0, most);
     DrawRectangleRec({bar.x - 1, bar.y - 1, bar.width + 2, bar.height + 2}, {0, 0, 0, 200});
-    color := ColorLerp({230, 50, 40, 255}, {80, 210, 70, 255}, math.clamp(fraction * 1.6 - 0.3, 0, 1));
-    DrawRectangleRec({bar.x, bar.y, bar.width * fraction, bar.height}, color);
-    DrawRectangleRec({bar.x, bar.y, bar.width * fraction, bar.height * 0.35}, {255, 255, 255, 50});   // A shine
+
+    ownWidth := bar.width * math.min(health, own) / most;
+    share := math.min(health, own) / own;
+    color := ColorLerp({230, 50, 40, 255}, {80, 210, 70, 255}, math.clamp(share * 1.6 - 0.3, 0, 1));
+    DrawRectangleRec({bar.x, bar.y, ownWidth, bar.height}, color);
+    if health > own {
+        extraWidth := bar.width * (health - own) / most;
+        DrawRectangleRec({bar.x + ownWidth, bar.y, extraWidth, bar.height}, {175, 180, 185, 255});
+    }
+    fill := bar.width * health / most;
+    DrawRectangleRec({bar.x, bar.y, fill, bar.height * 0.35}, {255, 255, 255, 50});       // A shine
+    if most > own {
+        DrawRectangleRec({bar.x + bar.width * own / most - 1, bar.y, 2, bar.height}, {0, 0, 0, 160});   // Where its own ends
+    }
 }
 
 // The bottom of the screen, like in Dota 2: the portrait of the hero, its health, and a button for each ability with
@@ -204,7 +219,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
 
     // Health, under the portrait and the abilities
     healthBar := Rectangle{x as f32, (y + 114) as f32, (width - 24) as f32, 16};
-    drawHealthBar(healthBar, hero.health / hero.maxHealth());
+    drawHealthBar(healthBar, hero);
     healthText := fmt.sprint("% / %", math.ceilf(math.max(hero.health, 0)) as int, hero.maxHealth() as int);
     drawText(healthText, x + (width - 24 - textWidth(healthText, 15)) / 2, y + 114, 15, White);
 
@@ -339,7 +354,7 @@ drawAbilityTooltip :: (hero: *Hero, ability: Ability, slot: int, button: Rectang
 
     drawTitle(ability.name, x + 12, y + 8, 24, {255, 210, 90, 255});
     detail := fmt.sprint("Passive");
-    if !ability.isPassive() { detail = fmt.sprint("Key %   ·   Cooldown % s", AbilityKeyNames[hero.keyOf(slot)], ability.cooldown as int); }
+    if !ability.isPassive() { detail = fmt.sprint("Cooldown % s", fmt.fixed(ability.cooldown * hero.boost.cooldown, 1)); }
     drawText(detail, x + 12, y + 40, 16, DimColor);
     for line, i in lines {
         drawText(line, x + 12, y + 64 + i as int * 22, 17, TextColor);

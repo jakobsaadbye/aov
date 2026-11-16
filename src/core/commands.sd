@@ -6,6 +6,7 @@ namespace core;
 
 import console;
 import fmt;
+import math;
 use raylib;
 
 @console.command("Shows the edges of the triangles of the models")
@@ -115,7 +116,8 @@ heroes :: () {
 }
 
 @console.command("Moves the camera to a point on the ground and unlocks it from the hero (Y locks it again)")
-cameraTo :: (game: *Game, x: f32, z: f32) {
+cameraTo :: (game: *Game, x: f32, z: f32, distance: ?f32) {
     game.camera.isLocked = false;
     game.camera.focus = Vector3{x, 0, z};
+    if distance.hasValue() { game.camera.targetDistance = math.clamp(distance.value(), CameraMinDistance, CameraMaxDistance); }
 }
