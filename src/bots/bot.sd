@@ -162,7 +162,7 @@ profile :: method (bot: *Bot) -> BotProfile {
 think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     player := &game.players[me];
     // A perk to pick: one of them, at random, after a moment to think
-    if player.perkOffer.isOpen && player.perkOffer.timeLeft < PerkPickTime - 1 {
+    if player.perkOffer.hasValue() && player.perkOffer.value().timeLeft < PerkPickTime - 1 {
         player.order(Command{choosePerk: bot.rng.between(0, PerkChoices - 1)});
     }
     if !player.isPlaying() {

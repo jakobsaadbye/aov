@@ -50,13 +50,8 @@ PerkPickTime :: 12.0;      // Seconds to pick, before the first one is taken
 
 // Three perks to pick one of
 PerkOffer :: struct {
-    isOpen:   bool;
-    perks:    [PerkChoices]int;     // Values of PerkKind. As ints: a fixed array of an enum in a struct isn't copied right
+    perks:    [PerkChoices]PerkKind;
     timeLeft: f32;
-
-    perk :: method (k: int) -> PerkKind {
-        return self.perks[k] as PerkKind;
-    }
 }
 
 // After a crossing: every player is offered perks, three it doesn't have, at random
@@ -67,14 +62,14 @@ offerPerks :: method (game: *Game) {
 @private
 offerPerksTo :: method (game: *Game, index: int) {
     player := &game.players[index];
-    offer := PerkOffer{isOpen: true, timeLeft: PerkPickTime};
+    offer := PerkOffer{timeLeft: PerkPickTime};
     count := 0;
     attempts := 0;
     while count < PerkChoices && attempts < 60 {
         attempts += 1;
         kind := game.rng.between(0, PerkKind.count as int - 1) as PerkKind;
         if hasPerk(player, kind) || isOffered(&offer, count, kind) { continue; }
-        offer.perks[count] = kind as int;
+        offer.perks[count] = kind;
         count += 1;
     }
     if count == PerkChoices { player.perkOffer = offer; }
@@ -91,16 +86,16 @@ hasPerk :: (player: *Player, kind: PerkKind) -> bool {
 @private
 isOffered :: (offer: *PerkOffer, count: int, kind: PerkKind) -> bool {
     for k in 0..count {
-        if offer.perks[k] == kind as int { return true; }
+        if offer.perks[k] == kind { return true; }
     }
     return false;
 }
 
 choosePerk :: method (game: *Game, index: int, choice: int) {
     player := &game.players[index];
-    if !player.perkOffer.isOpen || choice < 0 || choice >= PerkChoices { return; }
-    kind := player.perkOffer.perk(choice);
-    player.perkOffer.isOpen = false;
+    if !player.perkOffer.hasValue() || choice < 0 || choice >= PerkChoices { return; }
+    kind := player.perkOffer.value().perks[choice];
+    player.perkOffer = null;
     player.perks.add(kind);
     player.refreshStats();
     if index == game.watched { game.showBanner(UiGold, "Perk: %", kind.perkDefinition().name); }
@@ -110,9 +105,11 @@ choosePerk :: method (game: *Game, index: int, choice: int) {
 // Picks a perk at random for whoever didn't pick in time
 updatePerkOffers :: method (game: *Game, dt: f32) {
     for *player, i in game.players {
-        if !player.perkOffer.isOpen { continue; }
-        player.perkOffer.timeLeft -= dt;
-        if player.perkOffer.timeLeft <= 0 { game.choosePerk(i as int, game.rng.between(0, PerkChoices - 1)); }
+        if !player.perkOffer.hasValue() { continue; }
+        offer := player.perkOffer.value();
+        offer.timeLeft -= dt;
+        player.perkOffer = offer;
+        if offer.timeLeft <= 0 { game.choosePerk(i as int, game.rng.between(0, PerkChoices - 1)); }
     }
 }
 
@@ -125,8 +122,8 @@ drawPerkOffer :: (game: *Game, assets: *Assets) {
     game.hoveredPerk = -1;
     if !game.hasLocal() || game.watched != game.local { return; }
     player := &game.players[game.local];
-    if !player.perkOffer.isOpen { return; }
-    offer := player.perkOffer;
+    if !player.perkOffer.hasValue() { return; }
+    offer := player.perkOffer.value();
     gap := 24;
     total := PerkChoices * PerkCardWidth + (PerkChoices - 1) * gap;
     x := (GetScreenWidth() - total) / 2;
@@ -134,7 +131,7 @@ drawPerkOffer :: (game: *Game, assets: *Assets) {
     uiPlaque(tprint("Pick a perk  ·  % s", math.ceilf(offer.timeLeft) as int), GetScreenWidth() / 2, y - 48, 22);
     mouse := GetMousePosition();
     for k in 0..PerkChoices {
-        definition := offer.perk(k as int).perkDefinition();
+        definition := offer.perks[k].perkDefinition();
         card := Rectangle{(x + k as int * (PerkCardWidth + gap)) as f32, y as f32, PerkCardWidth, PerkCardHeight};
         hovered := CheckCollisionPointRec(mouse, card);
         if hovered { game.hoveredPerk = k as int; }
