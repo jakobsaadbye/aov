@@ -175,6 +175,9 @@ Game :: struct {
     side:        Side = .left;              // Where everybody starts from, in this round
     winner:      int = -1;                  // Who won, while the results are shown
     endLeft:     f32;                       // Seconds until the next game
+    asyncBots:   bool;                      // The bots search for their ways on threads of their own, so a frame never
+                                            // waits for them. Only in the window: elsewhere a seed always plays the
+                                            // same game (bots/search_job.sd)
 }
 
 // Says when a rush hour is coming, starts and ends, and sounds the siren of an ambulance
@@ -474,17 +477,25 @@ readInput :: method (game: *Game) {
 
 // Moves the world on by dt seconds: the bots think, the orders are carried out, the heroes and the cars move
 simulate :: method (game: *Game, dt: f32) {
+    profileBegin(.simulate);
+    defer profileEnd(.simulate);
     game.time += dt;
     game.updateStench();
 
     // While the results are shown, the heroes stand still
     over := game.isOver();
     for *player, i in game.players {
-        if player.isBot() && !over { player.brain.think(game, i as int, dt); }
+        if player.isBot() && !over {
+            profileBegin(.bots);
+            player.brain.think(game, i as int, dt);
+            profileEnd(.bots);
+        }
         if game.isStepping { game.recordOrReplay(i as int); }
         if over { player.commands.clear(); continue; }
+        profileBegin(.heroes);
         game.carryOut(i as int);
         game.updatePlayer(i as int, dt);
+        profileEnd(.heroes);
     }
     game.updateMatch(dt);
 
@@ -503,7 +514,9 @@ simulate :: method (game: *Game, dt: f32) {
     }
     rushBefore := game.traffic.rush;
     sirenBefore := game.traffic.emergencyLane;
+    profileBegin(.traffic);
     game.traffic.update(dt, &game.rng, slowZones);
+    profileEnd(.traffic);
     game.announceTraffic(rushBefore, sirenBefore);
 
     for i in 0..game.stopSigns.count {
@@ -514,8 +527,10 @@ simulate :: method (game: *Game, dt: f32) {
     for *line in game.feed { line.timeLeft -= dt; }
     while game.feed.count > 0 && game.feed[0].timeLeft <= 0 { game.feed.removeAt(0).text.free(); }
 
+    profileBegin(.effects);
     game.effects.update(dt);
     game.emitEffects(dt);
+    profileEnd(.effects);
     game.banner.timeLeft -= dt;
 }
 

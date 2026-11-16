@@ -74,6 +74,8 @@ Bot :: struct {
     decision:    BotDecision;
     chasing:     ?Vector2;          // The item it plans to pick up on its way
     stats:       BotProfile;
+    job:         *SearchJob;        // Searches on a thread of its own, with game.asyncBots (search_job.sd)
+    generation:  int;               // Counts the resets, so a search of before one is thrown away
 }
 
 // What the thinking of a bot has cost, for bot_arena.sd and the debug overlay
@@ -106,9 +108,14 @@ reset :: method (bot: *Bot) {
     bot.hasForecast = false;
     bot.chasing = null;
     bot.arena.clear();
+    bot.generation += 1;
 }
 
 free :: method (bot: *Bot) {
+    if bot.job != null {
+        bot.job.stop();
+        mem.delete(bot.job);
+    }
     bot.arena.free();
     bot.plan.free();
     mem.delete(bot);
@@ -129,7 +136,7 @@ SearchesPerFrame :: 1;
 @private @threadLocal searchesLeft: int;
 
 // Whether a bot of the game may search this frame, which takes the search
-takeSearch :: (game: *Game) -> bool {
+takeSearchTurn :: (game: *Game) -> bool {
     if searchGame != game || searchTime != game.time {
         searchGame = game;
         searchTime = game.time;
@@ -175,6 +182,7 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
         return;
     }
 
+    bot.takeSearch(game);
     bot.replanIn -= dt;
     if bot.isBehindPlan(game.time) { bot.mustSearch = true; }
     if bot.replanIn <= 0 || bot.mustSearch {
@@ -266,19 +274,22 @@ wayIsFree :: method (bot: *Bot, from: Vector2, to: Vector2, start: f32, speed: f
 // Makes a new forecast of the cars. When the plan doesn't hold up against it, or it is time to look for a better one,
 // it searches for a new plan through them
 replan :: method (bot: *Bot, game: *Game, me: int) {
+    // Still searching on its thread: on with the plan it has, until the new one comes
+    if bot.job != null && bot.job.isBusy() { return; }
     hero := &game.players[me].hero;
     bot.arena.clear();
     previous := mem.setAllocator(&bot.arena);
     defer mem.setAllocator(previous);
 
     started := time.clock();
-    bot.forecast = newForecast(game, ForecastOptions{
+    options := ForecastOptions{
         radius:       hero.info().hitRadius,
         throughWalls: hero.walksThroughWalls(),
         margin:       bot.gene(.margin),
         leadTime:     bot.gene(.leadTime),
         trailTime:    bot.gene(.trailTime),
-    });
+    };
+    bot.forecast = newForecast(game, options);
     bot.forecastAt = game.time;
     bot.hasForecast = true;
     forecastDone := time.clock();
@@ -295,9 +306,9 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     lookForBetter := !bot.reachesGoal && game.time - bot.searchedAt > 1.0;
     if !bot.mustSearch && !lookForBetter && bot.planHolds() { return; }
 
-    // Another bot searched this frame: its turn is next frame. Unless it is by the road, where a plan that doesn't hold
-    // any more can't wait
-    if !takeSearch(game) && !isNearRoad(game.players[me].hero.ground()) {
+    // On a thread of its own, the frame doesn't wait for it. Otherwise: another bot searched this frame, so its turn is
+    // next frame. Unless it is by the road, where a plan that doesn't hold any more can't wait
+    if !game.asyncBots && !takeSearchTurn(game) && !isNearRoad(game.players[me].hero.ground()) {
         bot.mustSearch = true;
         return;
     }
@@ -307,7 +318,7 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     speed := hero.speed();
     sprintSpeed := speed;
     if hero.sprintLeft > 0 { speed = speed / hero.sprintMultiplier; }
-    result := planCrossing(&bot.forecast, PlanRequest{
+    request := PlanRequest{
         start:       hero.ground(),
         goalSide:    game.players[me].startSide.opposite(),
         goalPoint:   bot.chasing,
@@ -316,11 +327,28 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         sprintLeft:  hero.sprintLeft,
         now:         game.time,
         waitOnRoad:  bot.gene(.waitOnRoad),
-    });
+    };
+    if game.asyncBots {
+        if bot.job == null { bot.job = new(SearchJob, mem.heap()); }
+        bot.job.start(game, options, request, bot.generation);
+        return;
+    }
+    result := planCrossing(&bot.forecast, request);
+    bot.usePlan(&result, time.clock() - forecastDone);
+}
 
+// A search on its thread that is done: its plan is followed from now on
+takeSearch :: method (bot: *Bot, game: *Game) {
+    if bot.job == null || !bot.job.takeResult() { return; }
+    if bot.job.generation != bot.generation { return; }      // Of before a reset
+    bot.usePlan(&bot.job.result, bot.job.seconds);
+}
+
+@private
+usePlan :: method (bot: *Bot, result: *PlanResult, seconds: f64) {
     bot.stats.plans += 1;
-    bot.stats.planSeconds += time.clock() - forecastDone;
-    bot.decision.lastSearch = time.clock() - forecastDone;
+    bot.stats.planSeconds += seconds;
+    bot.decision.lastSearch = seconds;
     bot.decision.lastStates = result.expanded;
     bot.stats.expanded += result.expanded;
     if result.reachesGoal { bot.stats.reachedGoal += 1; }

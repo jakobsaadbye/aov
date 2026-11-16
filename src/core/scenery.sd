@@ -1,5 +1,6 @@
 namespace core;
 
+import math;
 import random;
 use raylib;
 
@@ -26,6 +27,31 @@ Decoration :: struct {
     position: Vector3;
     angle:    f32;          // Degrees around y
     size:     Vector3;      // Times the model, e.g a building that is taller
+}
+
+// How tall and wide each model is, about: for the sphere around a decoration, which isn't drawn when it is out of view
+@private
+modelExtent :: (kind: SceneryKind) -> Vector2 {
+    return switch kind {
+        case .office  => Vector2{BuildingSize, 34};
+        case .brick   => Vector2{BuildingSize, 17};
+        case .shop    => Vector2{BuildingSize, 10};
+        case .tower   => Vector2{BuildingSize, 51};
+        case .lamp    => Vector2{5, 7};
+        case .tree    => Vector2{5, 7};
+        case .bench   => Vector2{2.5, 1.2};
+        case .hydrant => Vector2{1, 1.2};
+        case .bin     => Vector2{1, 1.2};
+    };
+}
+
+// The sphere around it: its middle, and its radius
+bounds :: method (decoration: Decoration) -> Vector3, f32 {
+    extent := modelExtent(decoration.kind);
+    width := extent.x * math.max(decoration.size.x, decoration.size.z);
+    height := extent.y * decoration.size.y;
+    radius := math.sqrtf(width * width * 0.5 + height * height * 0.25);
+    return decoration.position + Vector3{0, height * 0.5, 0}, radius;
 }
 
 BlockSize      :: 40.0;     // A block of the city: four buildings with room between them

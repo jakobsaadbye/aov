@@ -5,7 +5,7 @@ namespace core;
 
 WindowWidth  :: 1600;
 WindowHeight :: 900;
-TargetFps    :: 144;
+TargetFps :: 120;
 
 // The playing field
 MapHalfWidth  :: 128.0;     // x from -128 to 128

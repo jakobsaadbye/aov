@@ -3,6 +3,7 @@ namespace bots;
 use core;
 
 import math;
+import mem;
 use raylib;
 
 // What the road will look like in the next seconds, for the bots: the ground as a grid of cells, and for each cell the
@@ -92,8 +93,8 @@ ForecastOptions :: struct {
 
 Forecast :: struct {
     options:    ForecastOptions;
-    blocked:    [..]bool;               // For each cell: a wall, or the edge of the field. Never safe
-    oily:       [..]bool;               // For each cell: an oil slick, where a hero can't turn. Never safe either
+    blocked:    []bool;                 // For each cell: a wall, or the edge of the field. Never safe. Shared (blockedCells)
+    slicks:     [..]Slick;              // The oil slicks, where a hero can't turn. Never safe either
     firstSafe:  [..]int;                // For each cell: where its safe intervals start in safe, -1 until asked for
     safeCount:  [..]int;
     safe:       [..]TimeInterval;
@@ -155,11 +156,13 @@ Forecast :: struct {
     @private
     work :: method * (cell: int) {
         self.firstSafe[cell] = self.safe.count as int;
-        if self.oily[cell] {
-            self.safeCount[cell] = 0;
-            return;
-        }
         center := cellCenter(cell);
+        for slick in self.slicks {
+            if slick.contains(center) {
+                self.safeCount[cell] = 0;
+                return;
+            }
+        }
 
         // The cars on the cell, sorted by when they come, in a buffer of the stack
         hits: [MaxHitsPerCell]TimeInterval;
@@ -237,24 +240,16 @@ cellCenter :: (cell: int) -> Vector2 {
 // Predicts the cars of the game. Its lists take their memory from the allocator of the thread, e.g the arena of a bot
 newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
     forecast := Forecast{options: options, reachX: CarWidth * 0.5 + options.radius + options.margin};
-    forecast.blocked.reserve(GridCells);
+    forecast.blocked = blockedCells(game, options);
+    for slick in game.slicks.list { forecast.slicks.add(slick); }
+    // Nothing worked out yet: -1 for every cell (all its bytes set), and no intervals
     forecast.firstSafe.reserve(GridCells);
     forecast.safeCount.reserve(GridCells);
+    mem.set(forecast.firstSafe.data, 255, GridCells * sizeof(int));
+    mem.set(forecast.safeCount.data, 0, GridCells * sizeof(int));
+    forecast.firstSafe.count = GridCells;
+    forecast.safeCount.count = GridCells;
     forecast.safe.reserve(4096);
-
-    for cell in 0..GridCells {
-        center := cellCenter(cell as int);
-        isBlocked := math.fabsf(center.x) > MapHalfWidth - options.radius || math.fabsf(center.y) > MapHalfLength - options.radius;
-        if !options.throughWalls && !isBlocked && math.fabsf(center.x) < RoadHalfWidth + WallWidth + options.radius + 1 {
-            for wall in game.world.walls {
-                if CheckCollisionCircleRec(center, options.radius + 0.3, wall) { isBlocked = true; }
-            }
-        }
-        forecast.blocked.add(isBlocked);
-        forecast.oily.add(game.slickAt(center));
-        forecast.firstSafe.add(-1);
-        forecast.safeCount.add(0);
-    }
 
     for car in game.traffic.cars {
         if car.isActive { forecast.lanes[car.lane].add(trajectoryOf(game, car, 0)); }
@@ -288,6 +283,33 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
         forecast.fastest[i] = lane.speed * MaxSpawnSpeed;
     }
     return forecast;
+}
+
+// The cells where a hero of a size doesn't fit: the walls (unless it goes through them) and the edges of the field. The
+// walls never move, so each thread works them out once for each size and keeps them on the heap
+@private @threadLocal
+blockedGrids: Map<int, *[..]bool>;
+
+blockedCells :: (game: *Game, options: ForecastOptions) -> []bool {
+    key := (options.throughWalls as int) * 10000 + (options.radius * 100) as int;
+    if blockedGrids.has(key) { return *blockedGrids[key]; }
+
+    previous := mem.setAllocator(mem.heap());
+    defer mem.setAllocator(previous);
+    grid := new([..]bool, mem.heap());
+    grid.reserve(GridCells);
+    for cell in 0..GridCells {
+        center := cellCenter(cell as int);
+        isBlocked := math.fabsf(center.x) > MapHalfWidth - options.radius || math.fabsf(center.y) > MapHalfLength - options.radius;
+        if !options.throughWalls && !isBlocked && math.fabsf(center.x) < RoadHalfWidth + WallWidth + options.radius + 1 {
+            for wall in game.world.walls {
+                if CheckCollisionCircleRec(center, options.radius + 0.3, wall) { isBlocked = true; }
+            }
+        }
+        grid.add(isBlocked);
+    }
+    blockedGrids[key] = grid;
+    return *grid;
 }
 
 // Where a car will be, the way Traffic.update moves it, from the time it appears

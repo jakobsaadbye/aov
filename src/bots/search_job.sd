@@ -1,0 +1,117 @@
+namespace bots;
+
+use core;
+
+// A search for a way across on a thread of its own, so a frame of the game never waits for one: the bot goes on with the
+// plan it has, and takes the new one when it is found, a frame or a few later. Only in the window of the game
+// (game.asyncBots): the tests, bot_arena.sd and bot_train.sd search on the thread of the game, so the same seed always
+// plays the same game.
+//
+// Each bot has one worker, which waits for its next search. It keeps its thread for the whole game, so the distance
+// fields (planner.sd), which each thread keeps, are made once. The search works on a forecast and an arena of its own,
+// as the bot's own forecast is made again while it searches.
+
+import allocators;
+import console;
+import mem;
+import thread;
+import time;
+
+SearchJob :: struct {
+    mutex:     thread.Mutex;
+    wake:      thread.Condition;
+    worker:    thread.Thread;
+    hasWorker: bool;
+
+    // Guarded by the mutex
+    isRunning: bool;            // Given to the worker, and not done yet
+    isDone:    bool;            // Done, and not taken by the bot yet
+    quit:      bool;
+
+    // Only the worker touches these while it runs, and only the bot otherwise
+    arena:      allocators.Arena;
+    forecast:   Forecast;
+    request:    PlanRequest;
+    result:     PlanResult;
+    seconds:    f64;
+    generation: int;            // Of the bot when it was given: a result of before a reset is thrown away
+}
+
+@private
+searchWorker :: (job: *SearchJob) {
+    mem.setAllocator(&job.arena);
+    while true {
+        job.mutex.lock();
+        while !job.isRunning && !job.quit { job.wake.wait(&job.mutex); }
+        quit := job.quit;
+        job.mutex.unlock();
+        if quit { return; }
+
+        started := time.clock();
+        job.result = planCrossing(&job.forecast, job.request);
+        job.seconds = time.clock() - started;
+
+        job.mutex.lock();
+        job.isRunning = false;
+        job.isDone = true;
+        job.mutex.unlock();
+    }
+}
+
+// Whether the worker is searching
+isBusy :: method (job: *SearchJob) -> bool {
+    job.mutex.lock();
+    defer job.mutex.unlock();
+    return job.isRunning;
+}
+
+// Gives the worker a search, which must not be busy. The forecast is made here, from the game as it is now
+start :: method (job: *SearchJob, game: *Game, options: ForecastOptions, request: PlanRequest, generation: int) {
+    job.arena.clear();
+    previous := mem.setAllocator(&job.arena);
+    job.forecast = newForecast(game, options);
+    mem.setAllocator(previous);
+    job.request = request;
+    job.generation = generation;
+
+    if !job.hasWorker {
+        worker, err := thread.spawn(searchWorker, job);
+        assert(err == null);
+        job.worker = worker;
+        job.hasWorker = true;
+    }
+    job.mutex.lock();
+    job.isDone = false;
+    job.isRunning = true;
+    job.wake.signal();
+    job.mutex.unlock();
+}
+
+// The result of the last search, once, when it is done
+takeResult :: method (job: *SearchJob) -> bool {
+    job.mutex.lock();
+    defer job.mutex.unlock();
+    if !job.isDone { return false; }
+    job.isDone = false;
+    return true;
+}
+
+// Waits for the search to end, ends the worker and gives back the memory
+stop :: method (job: *SearchJob) {
+    if job.hasWorker {
+        job.mutex.lock();
+        job.quit = true;
+        job.wake.signal();
+        job.mutex.unlock();
+        job.worker.join();
+        job.hasWorker = false;
+    }
+    job.arena.free();
+}
+
+@console.command("The bots search for their ways on threads of their own (or on, off), so a frame never waits for them. Off: on the thread of the game, one search a frame, like the tests")
+toggleAsyncBots :: (game: *Game, on: ?bool) {
+    game.asyncBots = on ?? !game.asyncBots;
+    if game.asyncBots { console.print("The bots search on threads of their own"); }
+    else              { console.print("The bots search on the thread of the game"); }
+}

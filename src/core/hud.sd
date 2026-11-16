@@ -467,22 +467,21 @@ drawHelp :: () {
 drawDebug :: (game: *Game) {
     camera := game.camera.view;
     hero := game.you().hero;
-    lines := [
-        fmt.sprint("FPS %", GetFPS()),
-        fmt.sprint("Camera % % %", fmt.fixed(camera.position.x, 1), fmt.fixed(camera.position.y, 1), fmt.fixed(camera.position.z, 1)),
-        fmt.sprint("Hero % %", fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1)),
-        fmt.sprint("Cars %", game.traffic.activeCount()),
-        fmt.sprint("Particles %: % ms + % ms", game.effects.particles.count(), fmt.fixed((game.effects.particles.updateSeconds * 1000) as f32, 2),
-            fmt.fixed((game.effects.particles.drawSeconds * 1000) as f32, 2)),
-        fmt.sprint("Phase %", game.you().phase.kind),
-        "Console: toggleWireframes, toggleHitboxes",
-    ];
+    lines: [..]string;
+    defer lines.free();
+    lines.add(tprint("FPS %", GetFPS()));
+    lines.add(tprint("Camera % % %", fmt.fixed(camera.position.x, 1), fmt.fixed(camera.position.y, 1), fmt.fixed(camera.position.z, 1)));
+    lines.add(tprint("Hero % %", fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1)));
+    lines.add(tprint("Cars %, particles %", game.traffic.activeCount(), game.effects.particles.count()));
+    timings := profileLines();
+    defer timings.free();
+    for line in timings { lines.add(line); }
 
-    width := 300;
+    width := 330;
     x := GetScreenWidth() - width - 16;
-    DrawRectangle(x, 16, width, lines.count as int * 20 + 20, PanelColor);
+    drawPanel({x as f32, 16, width as f32, (lines.count as int * 20 + 30) as f32});
     for line, i in lines {
-        drawText(line, x + 12, 26 + i as int * 20, 16, Lime);
+        drawText(line, x + 16, 30 + i as int * 20, 16, Lime);
     }
 }
 
