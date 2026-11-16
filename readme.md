@@ -137,7 +137,7 @@ The mouse on the icon of an ability shows what it does, and how far it reaches.
 | --- | --- |
 | Allan | **Sprint** (Q): runs twice as fast for a moment. **Quick feet** (passive): 10% faster |
 | Ghosty | **Fade** (Q): the cars drive through him for 1.5 seconds. **Phase walk** (passive): floats through the walls |
-| Butcher | **Meat hook** (Q): a hook on a chain, up to 34 away and slow enough to see coming. An enemy it hits is dragged back to him; else he pulls himself to where it bites. **Charge** (W): very fast for a short moment |
+| Butcher | **Meat hook** (Q): a hook on a chain, up to 34 away. It bites into the first car it meets, and he is pulled to the side of the car as it drives on; a hook that meets no car is reeled back in. He can walk while it flies. **Charge** (W): very fast for a short moment |
 | Frosty | **Cold snap** (Q): freezes the cars around him. **Slide** (W): slides to the cursor. **Chill aura** (passive): cars near him drive 40% slower |
 | Bjørn | A viking. **Leap** (Q): jumps to the cursor, high over the cars and the walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away, e.g into the traffic. **Iron hide** (passive): half the damage from the cars |
 | Hilda | A crossing guard. **Stop!** (Q): raises her stop sign, and the five lanes around her stop for 3 seconds while their cars queue up. **Brisk walker** (passive): 15% faster |

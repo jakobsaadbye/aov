@@ -469,18 +469,7 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
             return here;
         }
         case .hook {
-            // An enemy that is ahead, or on the road, is dragged back. Else it is a way out of trouble
-            enemy := bot.enemyToPunish(game, view, (v.range * reach) * 0.9);
-            if enemy >= 0 && aggression > 0 {
-                return AbilityChoice{aggression * bot.punishScore(game, view, enemy), game.players[enemy].hero.ground()};
-            }
-            if inDanger {
-                // It pulls him through what is between, so the way must be free too
-                choice := bot.escape(game, view, (v.range * reach), (v.range * reach) / HookSpeed, bot.gene(.escape));
-                if choice.score > 0 && bot.wayIsFree(view.ground, choice.target, game.time - bot.forecastAt + (v.range * reach) / HookSpeed, v.pullSpeed, 0.3) {
-                    return choice;
-                }
-            }
+            // It only bites into cars, and pulls him next to the car: a way across that the planner doesn't know yet
             return no;
         }
         case .freeze

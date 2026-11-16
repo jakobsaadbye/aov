@@ -311,30 +311,37 @@ testAbilities :: () {
     game.useAbility(5);
     assert(game.you().hero.cooldowns[2] == 0 && game.you().hero.cooldowns[5] == 0);
 
-    // The butcher hooks a point and is pulled to it, no further than the hook reaches
+    // The butcher's hook bites into a car, and he is pulled to its side
     game.spawnHero(0, .butcher);
-    game.you().hero.position = Vector3{-70, 0, 0};
-    game.mouseGround = Vector3{-55, 0, 10};
+    butcher := &game.you().hero;
+    grass := -core.RoadHalfWidth - core.WallWidth - 6;
+    butcher.position = Vector3{core.laneCenter(0), 0, 0};    // On the road, in an empty lane
+    game.traffic.cars[0] = core.Car{isActive: true, kind: .car, lane: 3, z: 0, speed: 0.001};
+    game.mouseGround = Vector3{core.laneCenter(3), 0, 0};
     game.useAbility(0);
-    assert(game.you().hero.hook.hasValue());
-    for 0..60 { game.simulate(Dt); }
-    assert(!game.you().hero.hook.hasValue());
-    assert(game.you().hero.position.distance(Vector3{-55, 0, 10}) < 0.5);
+    assert(butcher.hook.hasValue());
+    for 0..120 { game.simulate(Dt); }
+    assert(!butcher.hook.hasValue());
+    beside := core.laneCenter(3) - core.CarWidth * 0.5 - butcher.info().hitRadius - 0.4;
+    assert(near(butcher.position.x, beside, 0.5));
 
-    // Aimed past its reach, it goes as far as it reaches
-    game.you().hero.cooldowns[0] = 0;
-    game.mouseGround = Vector3{-55, 0, -190};
+    // Without a car to bite, it comes back and nothing happens
+    clearRoad(game);
+    butcher.cooldowns[0] = 0;
+    butcher.position = Vector3{grass, 0, 0};
+    game.mouseGround = Vector3{grass + 20, 0, 0};
     game.useAbility(0);
-    for 0..150 { game.simulate(Dt); }
-    assert(game.you().hero.position.distance(Vector3{-55, 0, 10 - 34}) < 0.5);
+    for 0..120 { game.simulate(Dt); }
+    assert(!butcher.hook.hasValue() && near(butcher.position.x, grass, 0.01));
 
-    // A wall in the way stops the pull at the wall
-    game.you().hero.cooldowns[0] = 0;
-    game.mouseGround = Vector3{0, 0, -16};
+    // He walks while it flies, and it goes past an enemy without catching it
+    butcher.cooldowns[0] = 0;
+    butcher.position = Vector3{grass, 0, 0};
+    butcher.moveTo(Vector3{grass, 0, 20});
+    game.mouseGround = Vector3{grass + 20, 0, 0};
     game.useAbility(0);
-    for 0..150 { game.simulate(Dt); }
-    assert(!game.you().hero.hook.hasValue());
-    assert(near(game.you().hero.position.x, -core.RoadHalfWidth - core.WallWidth - game.you().hero.info().hitRadius, 0.05));
+    for 0..12 { game.simulate(Dt); }
+    assert(butcher.hook.hasValue() && butcher.position.z > 1);
 
     // Frosty freezes the cars around him, and his chill aura slows the cars near him
     game.spawnHero(0, .frosty);
@@ -465,14 +472,14 @@ testEnemySpells :: () {
     enemy := &game.players[1];
     enemy.brain = null;         // It stands still, for the test
 
-    // The butcher's hook catches the enemy it passes, which is dragged back to him
+    // The butcher's hook only bites into cars: it goes past an enemy, which stays where it was
     game.spawnHero(0, .butcher);
     game.you().hero.position = Vector3{-70, 0, 0};
     enemy.hero.position = Vector3{-55, 0, 0};
     game.cast(0, 0, {-50, 0});
     for 0..120 { game.simulate(Dt); }
-    assert(enemy.hero.ground().distance(game.you().hero.ground()) < 4);
-    assert(!game.you().hero.hook.hasValue() && enemy.hero.canAct());
+    assert(near(enemy.hero.position.x, -55, 0.01) && enemy.hero.harmedBy < 0);
+    assert(!game.you().hero.hook.hasValue());
 
     // Bjørn's bash stuns the nearest enemy and knocks it away from him
     game.spawnHero(0, .bjorn);

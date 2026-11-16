@@ -332,6 +332,14 @@ carHitting :: method (traffic: *Traffic, center: Vector2, radius: f32) -> ?*Car 
     return null;
 }
 
+// The index of the first car that hits a circle on the ground, or -1
+carIndexHitting :: method (traffic: *Traffic, center: Vector2, radius: f32) -> int {
+    for car, i in traffic.cars {
+        if car.isActive && CheckCollisionCircleRec(center, radius, car.rect()) { return i as int; }
+    }
+    return -1;
+}
+
 activeCount :: method (traffic: *Traffic) -> int {
     return traffic.cars.countWhere(car => car.isActive);
 }
