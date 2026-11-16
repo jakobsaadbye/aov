@@ -35,7 +35,9 @@ RecordedFrame :: struct {
     @json.Field(omitEmpty: true)
     restart:    bool;           // F5: a new game, before this frame
     @json.Field(omitEmpty: true)
-    nextHero:   bool;
+    nextHero:   bool;           // Recordings before setHero: the next hero, in place of the one of the player
+    @json.Field(omitEmpty: true)
+    hero:       ?HeroKind;      // The hero the player at the keyboard changes to (setHero), before this frame
     @json.Field(omitEmpty: true)
     difficulty: ?Difficulty;    // Set before this frame, with a restart           // F6: the next hero for the player at the keyboard, before this frame
 }
@@ -91,8 +93,8 @@ gameChecksum :: (game: *Game) -> u64 {
 }
 
 // Keeps a frame of the game that is played, before it is simulated
-recordFrame :: method (game: *Game, dt: f32, restart: bool, nextHero: bool) {
-    frame := RecordedFrame{dt: dt, restart: restart, nextHero: nextHero};
+recordFrame :: method (game: *Game, dt: f32, restart: bool, hero: ?HeroKind) {
+    frame := RecordedFrame{dt: dt, restart: restart, hero: hero};
     game.recording.frames.add(frame);
 }
 

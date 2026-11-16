@@ -153,7 +153,8 @@ Game :: struct {
     difficulty:  Difficulty;                // Of the bots
     nextDifficulty: ?Difficulty;            // Chosen while paused, for the next game
     restartPending:  bool;                  // Keys of this frame, carried out by advance
-    nextHeroPending: bool;
+    pendingHero: ?HeroKind;                 // The hero the player at the keyboard changes to, e.g by setHero
+    keyboardTaken: bool;                    // The console (F1) is open: the game reads no keys or mouse
     stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
 }
 
@@ -257,14 +258,13 @@ update :: method (game: *Game, dt: f32) {
 
 // The keys that work at any time, also while paused. Once a frame
 handleKeys :: method (game: *Game) {
+    game.camera.takesKeys = !game.keyboardTaken;
+    if game.keyboardTaken { return; }
     if IsKeyPressed(.p) || IsKeyPressed(.escape) {
         game.isPaused = !game.isPaused;
         game.sounds.setPaused(game.isPaused);
     }
     if IsKeyPressed(.h)  { game.showHelp = !game.showHelp; }
-    if IsKeyPressed(.f1) { game.debug.wireframes = !game.debug.wireframes; }
-    if IsKeyPressed(.f2) { game.debug.hitboxes = !game.debug.hitboxes; }
-    if IsKeyPressed(.f3) { game.debug.overlay = !game.debug.overlay; }
     if IsKeyPressed(.f8) { game.saveRecordingNow(); }
     if game.isPaused && game.replay == null {
         // The difficulty of the bots, for the next game (F5)
@@ -278,9 +278,6 @@ handleKeys :: method (game: *Game) {
     }
     game.updateInspector();
     if game.replay != null { return; }      // A replay plays what was recorded
-
-    // Debug: the next hero, in place of this one. It is recorded, so a replay does the same
-    if IsKeyPressed(.f6) && game.you().isPlaying() && !game.you().isBot() { game.nextHeroPending = true; }
     if IsKeyPressed(.f5) { game.restartPending = true; }
 }
 
@@ -297,9 +294,9 @@ advance :: method (game: *Game, dt: f32) {
 step :: method (game: *Game, dt: f32) {
     step := dt;
     restart := game.restartPending;
-    nextHero := game.nextHeroPending;
+    hero := game.pendingHero;
     game.restartPending = false;
-    game.nextHeroPending = false;
+    game.pendingHero = null;
     difficulty: ?Difficulty = null;
     if restart && game.nextDifficulty.hasValue() && game.nextDifficulty.value() != game.difficulty {
         difficulty = game.nextDifficulty;
@@ -309,10 +306,11 @@ step :: method (game: *Game, dt: f32) {
         frame := game.replay.recording.frames[game.replay.frame];
         step = frame.dt;
         restart = frame.restart;
-        nextHero = frame.nextHero;
+        hero = frame.hero;
+        if frame.nextHero { hero = ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind; }    // Older recordings
         difficulty = frame.difficulty;
     } else {
-        game.recordFrame(step, restart, nextHero);
+        game.recordFrame(step, restart, hero);
         game.recording.frames[game.recording.frames.count - 1].difficulty = difficulty;
     }
 
@@ -321,9 +319,7 @@ step :: method (game: *Game, dt: f32) {
         game.restart();
         game.showBanner(White, "New game");
     }
-    if nextHero && game.you().isPlaying() {
-        game.spawnHero(game.local, ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind);
-    }
+    if hero.hasValue() && game.you().isPlaying() && !game.you().isBot() { game.spawnHero(game.local, hero.value()); }
 
     game.isStepping = true;
     game.simulate(step);
@@ -337,7 +333,7 @@ step :: method (game: *Game, dt: f32) {
 
 // The camera follows the hero, unless it is unlocked with Y. Space brings it back to the hero while held
 updateCamera :: method (game: *Game, dt: f32) {
-    if IsKeyPressed(.y) { game.camera.isLocked = !game.camera.isLocked; }
+    if IsKeyPressed(.y) && !game.keyboardTaken { game.camera.isLocked = !game.camera.isLocked; }
     game.camera.update(dt, game.followedHero(), IsKeyDown(.space));
 }
 
@@ -345,6 +341,7 @@ updateCamera :: method (game: *Game, dt: f32) {
 readInput :: method (game: *Game) {
     player := game.you();
     if !player.isPlaying() || player.isBot() { return; }      // A bot when you spectate
+    if game.keyboardTaken { return; }
 
     if (IsMouseButtonPressed(.right) || IsMouseButtonPressed(.left)) && game.mouseGround.hasValue() {
         point := game.mouseGround.value().xz();

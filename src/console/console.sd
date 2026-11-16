@@ -1,0 +1,601 @@
+namespace console;
+
+// The developer console: commands typed in a line, like the console of Counter-Strike, e.g
+//
+//     setSpeed 8
+//     toggleMute; spectate
+//     help setSpeed
+//
+// A command is any function with the attribute @console.command, in any namespace. Its name is the name of the command
+// (any case can be typed), and its parameters are what can be given to it, in their order:
+//
+//     @console.command("Runs the game faster or slower, e.g 4 to see a lot quickly")
+//     setSpeed :: (session: *Session, speed: f32) { ... }
+//
+//   * Numbers, bools (on, off, true, false, 1, 0), strings and enums (by the names of their values) are read from the
+//     words typed. A string that is the last parameter gets the rest of the line, e.g echo hello there
+//   * A parameter with a default, or a ?T, can be left out
+//   * A parameter of a type the program gives with provide, e.g *Game, isn't typed: the console passes it
+//
+// What a command prints with console.print shows in the console, and on the standard output too, e.g for an agent that
+// runs the game with commands on the command line: +setSpeed 8 +at 10 quit. This namespace knows nothing of the game,
+// or of how the console is drawn (core/console_view.sd).
+
+import allocators;
+import fmt;
+import math;
+import mem;
+import os;
+import reflect;
+
+// The attribute of a command, with a line that says what it does, for help
+@attribute
+command :: struct {
+    help: string;
+}
+
+LineKind :: enum {
+    output,
+    input,          // What was typed
+    warning,
+    error,
+}
+
+Line :: struct {
+    text: string;
+    kind: LineKind;
+}
+
+Entry :: struct {
+    name:     string;
+    help:     string;
+    function: *AttributedFunction;
+}
+
+// A command to run at a time, see at
+Scheduled :: struct {
+    at:   f32;
+    line: string;
+}
+
+@private
+Context :: struct {
+    type: *Type;
+    get:  () -> *void;
+}
+
+MaxLines   :: 2000;
+MaxHistory :: 100;
+
+@private
+State :: struct {
+    isReady:   bool;
+    commands:  [..]Entry;       // Sorted by name
+    lines:     [..]Line;
+    history:   [..]string;      // The lines typed, the last one last
+    contexts:  [..]Context;
+    scheduled: [..]Scheduled;
+    now:       f32;             // The time of the program, as update was last given it
+    arena:     allocators.Arena;    // The arguments of a call
+}
+
+@private
+state: State;
+
+// Finds the commands of the program, once
+@private
+ready :: () {
+    if state.isReady { return; }
+    state.isReady = true;
+    previous := mem.setAllocator(mem.heap());
+    defer mem.setAllocator(previous);
+    for *f in attributedFunctions() {
+        attribute: command;
+        if !f.attribute(&attribute) { continue; }
+        if lookup(f.name) != null {
+            warn("There are two commands named %: the one of % is left out", f.name, f.namespaceName);
+            continue;
+        }
+        state.commands.add(Entry{name: f.name, help: attribute.help, function: f});
+    }
+    state.commands.sort();
+}
+
+operator < :: (a: Entry, b: Entry) -> bool {
+    return compareText(a.name, b.name) < 0;
+}
+
+// The commands, sorted by name
+commands :: () -> []Entry {
+    ready();
+    return state.commands;
+}
+
+// The command with the name, in any case, or null
+lookup :: (name: string) -> *Entry {
+    for *entry in state.commands {
+        if sameText(entry.name, name) { return entry; }
+    }
+    return null;
+}
+
+// Gives the parameters of the type T to the commands, e.g provide(currentGame) for the commands that take a *Game. The
+// function is called each time such a command runs, so it can give what is current then, or null when there is none
+provide :: <T>(get: () -> T) {
+    sample: T;
+    value: any = sample;
+    for *context in state.contexts {
+        if context.type == value.type {
+            context.get = get as *void as () -> *void;
+            return;
+        }
+    }
+    state.contexts.add(Context{type: value.type, get: get as *void as () -> *void});
+}
+
+// The lines of the console, the last one last
+lines :: () -> []Line {
+    return state.lines;
+}
+
+// The lines that were typed, the last one last
+history :: () -> []string {
+    return state.history;
+}
+
+// A line of output, also on the standard output
+print :: (format: string, args: ...any) {
+    addLine(.output, format, ...args);
+}
+
+warn :: (format: string, args: ...any) {
+    addLine(.warning, format, ...args);
+}
+
+fail :: (format: string, args: ...any) {
+    addLine(.error, format, ...args);
+}
+
+@private
+addLine :: (kind: LineKind, format: string, args: ...any) {
+    previous := mem.setAllocator(mem.heap());
+    defer mem.setAllocator(previous);
+    text := fmt.sprint(format, ...args);
+    switch kind {
+        case .output  { fmt.print("%", text); }
+        case .input   { fmt.print("] %", text); }
+        case .warning { fmt.print("WARNING: %", text); }
+        case .error   { fmt.print("ERROR: %", text); }
+    }
+    if state.lines.count >= MaxLines { state.lines.removeAt(0).text.free(); }
+    state.lines.add(Line{text: text, kind: kind});
+}
+
+// Runs a line that was typed: one command, or several separated by ;
+execute :: (text: string) {
+    ready();
+    if isBlank(text) { return; }
+    addLine(.input, "%", text);
+    remember(text);
+    run(text);
+}
+
+// Runs a line without echoing it or keeping it in the history, e.g a line of a file or a scheduled one
+run :: (text: string) {
+    ready();
+    for part in splitCommands(text) {
+        words := splitWords(part);
+        defer words.free();
+        if words.count > 0 { runWords(words); }
+    }
+}
+
+// Runs the commands of the command line of the program, each after a +, e.g +setBots 5 +at 10 quit
+runArguments :: (args: []string) {
+    line := fmt.newStringBuilder(128);
+    defer line.free();
+    for arg, i in args {
+        if i == 0 { continue; }
+        if arg.startsWith("+") {
+            if line.cursor > 0 { run(line.toString()); }
+            line.cursor = 0;
+            line.add("%", arg.slice(1));
+            continue;
+        }
+        if line.cursor == 0 {
+            warn("'%' on the command line isn't a command: commands start with +, e.g +setSpeed 4", arg);
+            continue;
+        }
+        if arg.indexOf(" ") >= 0 { line.add(" \"%\"", arg); }
+        else                     { line.add(" %", arg); }
+    }
+    if line.cursor > 0 { run(line.toString()); }
+}
+
+// Moves the clock of the console on: the commands scheduled with at for now or before run
+update :: (now: f32) {
+    state.now = now;
+    i := 0;
+    while i < state.scheduled.count {
+        if state.scheduled[i].at > now { i += 1; continue; }
+        scheduled := state.scheduled.removeAt(i);
+        run(scheduled.line);
+        scheduled.line.free(mem.heap());
+    }
+}
+
+// The names of the commands that start with the text, for completion
+complete :: (prefix: string) -> [..]*Entry {
+    ready();
+    result: [..]*Entry;
+    for *entry in state.commands {
+        if startsWithText(entry.name, prefix) { result.add(entry); }
+    }
+    return result;
+}
+
+// How a command is typed, e.g setSpeed <speed: number>
+usage :: (entry: *Entry) -> string {
+    sb := fmt.newStringBuilder(64);
+    sb.add("%", entry.name);
+    for p in entry.function.parameters {
+        if contextOf(p.type) != null { continue; }
+        optional := p.hasDefault || isOptional(p.type);
+        if optional { sb.add(" ["); } else { sb.add(" <"); }
+        sb.add("%: %", p.name, kindName(p.type));
+        if p.hasDefault && p.defaultValue != null {
+            text := fmt.sprint("%", anyAt(p.defaultValue, p.type));
+            if text.startsWith(".") { text = text.slice(1); }      // An enum value
+            sb.add(" = %", text);
+        }
+        if optional { sb.add("]"); } else { sb.add(">"); }
+    }
+    return sb.toString();
+}
+
+//
+// The built in commands
+//
+
+@command("Lists the commands, or says how one is used, e.g help setSpeed")
+help :: (name: ?string) {
+    if name.hasValue() {
+        entry := lookup(name.value());
+        if entry == null {
+            fail("No command named %. Try find %", name.value(), name.value());
+            return;
+        }
+        print("%", usage(entry));
+        if entry.help.len > 0 { print("    %", entry.help); }
+        return;
+    }
+    print("The commands (help <name> for one of them, Tab completes, up and down go through what was typed):");
+    for *entry in state.commands { print("    %  -  %", entry.name, entry.help); }
+}
+
+@command("The commands whose name or help has the text in it")
+find :: (text: string) {
+    found := 0;
+    for *entry in state.commands {
+        if !containsText(entry.name, text) && !containsText(entry.help, text) { continue; }
+        print("    %  -  %", usage(entry), entry.help);
+        found += 1;
+    }
+    if found == 0 { print("No command has '%' in it", text); }
+}
+
+@command("Prints the text")
+echo :: (text: string) {
+    print("%", text);
+}
+
+@command("Clears the console")
+clear :: () {
+    for line in state.lines { line.text.free(mem.heap()); }
+    state.lines.clear();
+}
+
+@command("Runs the commands of a file, a line each. Lines that start with // are left out")
+exec :: (file: string) {
+    text, err := os.readFile(file);
+    if err != null {
+        fail("Couldn't read %: %", file, err.message);
+        return;
+    }
+    defer text.free();
+    for line in text.split("\n") {
+        line = trimmed(line);
+        if line.len == 0 || line.startsWith("//") || line.startsWith("#") { continue; }
+        run(line);
+    }
+}
+
+@command("Runs a command at a time of the game, in seconds, e.g at 10 screenshot shot.png")
+at :: (seconds: f32, line: string) {
+    state.scheduled.add(Scheduled{at: seconds, line: line.copy(mem.heap())});
+}
+
+//
+// Reading the words of a line into the parameters of a command
+//
+
+@private
+runWords :: (words: []string) {
+    entry := lookup(words[0]);
+    if entry == null {
+        fail("Unknown command '%'. help lists them", words[0]);
+        return;
+    }
+    f := entry.function;
+    state.arena.clear();
+    call := f.newCall(&state.arena);
+
+    next := 1;
+    for p, i in f.parameters {
+        context := contextOf(p.type);
+        if context != null {
+            value := context.get();
+            if value == null {
+                fail("% can't run now: there is no %", entry.name, p.type.name);
+                return;
+            }
+            call.setFrom(i as int, &value);
+            continue;
+        }
+        if next >= words.count {
+            if p.hasDefault && p.defaultValue != null { call.setFrom(i as int, p.defaultValue); continue; }
+            if p.hasDefault || isOptional(p.type) { continue; }
+            fail("% needs %. Usage: %", entry.name, p.name, usage(entry));
+            return;
+        }
+
+        // The last parameter, a string, takes the rest of the line
+        text := words[next];
+        last := i == f.parameters.count - 1;
+        if last && isText(p.type) && words.count - next > 1 {
+            text = joinWords(words, next);
+            next = words.count as int;
+        } else {
+            next += 1;
+        }
+        argument := call.argument(i as int);
+        if !assign(argument.data, p.type, text) {
+            fail("'%' doesn't fit % (%). Usage: %", text, p.name, kindName(p.type), usage(entry));
+            return;
+        }
+    }
+    if next < words.count {
+        fail("% takes no more than that. Usage: %", entry.name, usage(entry));
+        return;
+    }
+
+    call.invoke();
+    err := call.error();
+    if err != null { fail("%", err.message); }
+    for r, i in f.results {
+        if r.type.name == "error" { continue; }
+        print("%", call.result(i as int));
+    }
+}
+
+@private
+contextOf :: (type: *Type) -> *Context {
+    for *context in state.contexts {
+        if context.type == type { return context; }
+    }
+    return null;
+}
+
+@private
+isOptional :: (type: *Type) -> bool {
+    return type.flags & .isOptional != 0;
+}
+
+@private
+isText :: (type: *Type) -> bool {
+    if isOptional(type) { return isText((type as *TypeStruct).members[0].type); }
+    return type.kind == .string;
+}
+
+// What is typed for a type, for usage
+@private
+kindName :: (type: *Type) -> string {
+    if isOptional(type) { return kindName((type as *TypeStruct).members[0].type); }
+    switch type.kind {
+        case .bool   { return "on|off"; }
+        case .int    { return "whole number"; }
+        case .float  { return "number"; }
+        case .string { return "text"; }
+        case .enum {
+            sb := fmt.newStringBuilder(32);
+            for value, i in (type as *TypeEnum).values {
+                if i > 0 { sb.add("|"); }
+                sb.add("%", value.name);
+            }
+            return sb.toString();
+        }
+        else {}
+    }
+    return type.name;
+}
+
+// Reads the text into the place, which has the type. False when it isn't one
+@private
+assign :: (place: *void, type: *Type, text: string) -> bool {
+    if isOptional(type) {
+        members := (type as *TypeStruct).members;
+        if !assign(members[0].valueIn(place), members[0].type, text) { return false; }
+        *(members[1].valueIn(place) as *bool) = true;
+        return true;
+    }
+    switch type.kind {
+        case .bool {
+            if sameText(text, "on") || sameText(text, "true") || text == "1" || sameText(text, "yes") {
+                *(place as *bool) = true;
+                return true;
+            }
+            if sameText(text, "off") || sameText(text, "false") || text == "0" || sameText(text, "no") {
+                *(place as *bool) = false;
+                return true;
+            }
+            return false;
+        }
+        case .int {
+            value := text.toInt();
+            if !value.hasValue() { return false; }
+            return writeInteger(place, type.size, value.value());
+        }
+        case .float {
+            value := text.toFloat();
+            if !value.hasValue() { return false; }
+            if type.size == 4 { *(place as *f32) = value.value() as f32; }
+            else              { *(place as *f64) = value.value(); }
+            return true;
+        }
+        case .string {
+            *(place as *string) = text;
+            return true;
+        }
+        case .enum {
+            enumType := type as *TypeEnum;
+            for value in enumType.values {
+                if sameText(value.name, text) { return writeInteger(place, enumType.backingType.size, value.value); }
+            }
+            return false;
+        }
+        else {}
+    }
+    return false;
+}
+
+@private
+writeInteger :: (place: *void, size: int, value: i64) -> bool {
+    switch size {
+        case 1 { *(place as *i8) = value as i8; }
+        case 2 { *(place as *i16) = value as i16; }
+        case 4 { *(place as *i32) = value as i32; }
+        else   { *(place as *i64) = value; }
+    }
+    return true;
+}
+
+//
+// Words
+//
+
+// The commands of a line: split at ; outside quotes
+@private
+splitCommands :: (text: string) -> [..]string {
+    parts: [..]string;
+    start := 0;
+    quoted := false;
+    for c, i in text {
+        if c == '"' { quoted = !quoted; }
+        if c == ';' && !quoted {
+            parts.add(text.slice(start, i));
+            start = i as int + 1;
+        }
+    }
+    parts.add(text.slice(start));
+    return parts;
+}
+
+// The words of a command: split at spaces, and "a text in quotes" is one word
+@private
+splitWords :: (text: string) -> [..]string {
+    words: [..]string;
+    i := 0;
+    while i < text.len {
+        c := text[i];
+        if c == ' ' || c == '\t' || c == '\r' { i += 1; continue; }
+        if c == '"' {
+            end := text.indexOf("\"", i + 1);
+            if end < 0 { end = text.len as int; }
+            words.add(text.slice(i + 1, end));
+            i = end + 1;
+            continue;
+        }
+        start := i;
+        while i < text.len && text[i] != ' ' && text[i] != '\t' && text[i] != '\r' { i += 1; }
+        words.add(text.slice(start, i));
+    }
+    return words;
+}
+
+// Words joined with spaces again, e.g the line of at. From the arena of the call
+@private
+joinWords :: (words: []string, from: int) -> string {
+    previous := mem.setAllocator(&state.arena);
+    defer mem.setAllocator(previous);
+    sb := fmt.newStringBuilder(64);
+    for i in from..words.count {
+        word := words[i];
+        if i > from { sb.add(" "); }
+        if word.indexOf(" ") >= 0 || word.indexOf(";") >= 0 { sb.add("\"%\"", word); }
+        else                                                 { sb.add("%", word); }
+    }
+    return sb.toString();
+}
+
+@private
+remember :: (text: string) {
+    if state.history.count > 0 && state.history[state.history.count - 1] == text { return; }
+    if state.history.count >= MaxHistory { state.history.removeAt(0).free(mem.heap()); }
+    state.history.add(text.copy(mem.heap()));
+}
+
+@private
+isBlank :: (text: string) -> bool {
+    for c in text {
+        if c != ' ' && c != '\t' && c != '\r' && c != '\n' { return false; }
+    }
+    return true;
+}
+
+@private
+trimmed :: (text: string) -> string {
+    start := 0;
+    end := text.len as int;
+    while start < end && (text[start] == ' ' || text[start] == '\t') { start += 1; }
+    while end > start && (text[end - 1] == ' ' || text[end - 1] == '\t' || text[end - 1] == '\r') { end -= 1; }
+    return text.slice(start, end);
+}
+
+@private
+lower :: (c: u8) -> u8 {
+    if c >= 'A' && c <= 'Z' { return c + 32; }
+    return c;
+}
+
+sameText :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    for c, i in a {
+        if lower(c) != lower(b[i]) { return false; }
+    }
+    return true;
+}
+
+startsWithText :: (text: string, prefix: string) -> bool {
+    if prefix.len > text.len { return false; }
+    return sameText(text.slice(0, prefix.len), prefix);
+}
+
+@private
+containsText :: (text: string, part: string) -> bool {
+    if part.len == 0 { return true; }
+    for i in 0..(text.len - part.len + 1) {
+        if sameText(text.slice(i, i + part.len), part) { return true; }
+    }
+    return false;
+}
+
+@private
+compareText :: (a: string, b: string) -> int {
+    for i in 0..math.min(a.len, b.len) {
+        ca := lower(a[i]);
+        cb := lower(b[i]);
+        if ca != cb { return ca as int - cb as int; }
+    }
+    return (a.len - b.len) as int;
+}
+

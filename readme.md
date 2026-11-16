@@ -92,29 +92,40 @@ A font is a `.ttf` in `data/fonts`, loaded in `loadFonts()` in `hud.sd`.
 | P or Esc | Pause |
 | F5 | New game |
 | H | Hide the help |
-| F1 / F2 / F3 | Wireframes / hitboxes / debug numbers |
+| F1 | The console (twice quickly: over all of the screen). Esc or F1 closes it |
 | F4 | The inspector: what a bot thinks. Tab picks the next bot |
 | F8 | Save a recording of the game so far to `src/recordings/` |
-| F6 | Debug: switch to the next hero |
 
-### Options
+### The console
 
-After `--`, e.g `saad run main.sd -- --bots 5 --seed 7`. Most are for trying things out and for testing:
+F1 drops down the developer console, like the one of Counter-Strike: a command a line, e.g `setSpeed 8` or
+`toggleMute`, and several with `;` between them. `help` lists the commands and `help setSpeed` says how one is used, Tab
+completes a name, up and down go through what was typed, and the commands that match what is typed are shown under the
+console with how they are used.
 
-| | |
-| --- | --- |
-| `--bots N` | How many bots race you, 0 to 5 (3 when not given) |
-| `--difficulty D` | How good the bots are: `easy`, `normal` (when not given), `hard` or `expert`. Also on the pause screen, with the arrow keys, for the next game |
-| `--spectate` | No hero of your own: the camera follows the first bot |
-| `--seed N` | The same seed gives the same game |
-| `--hero NAME` | Your first hero, e.g `--hero butcher` |
-| `--inspect N` | Open the inspector on player N, e.g `--spectate --inspect 0` |
-| `--record FILE` | Save a recording of the game to FILE when it closes |
-| `--replay FILE` | Play a recording back |
-| `--speed X` | Run the game X times as fast |
-| `--screenshot S FILE` | Save a screenshot after S seconds of game time. Can be given more than once |
-| `--quit S` | Close after S seconds of game time, or at the end of a replay |
-| `--mute` | No sound |
+A command is any function with the attribute `@console.command`, in any namespace, and its parameters are what is typed
+after its name: numbers, `on`/`off`, text, and enums by the names of their values. A parameter with a default or a `?T`
+can be left out, and a parameter the program gives (`console.provide`), e.g the `*Game`, isn't typed at all:
+
+```odin
+@console.command("Your hero becomes another one, e.g setHero butcher")
+setHero :: (game: *Game, hero: HeroKind) { ... }
+```
+
+The console itself is in `src/console/` (namespace `console`) and knows nothing of the game. The commands of the game
+are in `core/commands.sd`, and the ones that start a new game (`setBots`, `setSeed`, `spectate`, `setDifficulty`,
+`replay`, ...) in `main.sd`.
+
+Commands can also be given on the command line, each after a `+`, and run before the game starts. `at <seconds>
+<command>` runs one at a time of the game, so the game can be run and looked at without playing it, e.g by an agent:
+
+```
+saad run main.sd -- +setBots 5 +setSeed 7
+build/out.exe +spectate +inspect 0 +setSpeed 4 +at 8 screenshot shot.png +at 10 quit
+```
+
+What a command prints goes to the standard output too. `data/autoexec.cfg`, when there is one, runs first: a command a
+line.
 
 The mouse on the icon of an ability shows what it does, and how far it reaches.
 
@@ -225,14 +236,14 @@ shows what it thinks with.
 
 ### Recordings
 
-F8 saves what was played so far to `src/recordings/<date>.json`, and `--replay FILE` plays it back, e.g to see again what a
+F8 saves what was played so far to `src/recordings/<date>.json`, and the command `replay FILE` plays it back, e.g to see again what a
 bot did, or to show a bug. The game is the same each time for the same seed, so a recording is only its settings and, for
 each frame, its time step and the commands of the players. In a replay the bots think too, so the inspector works, but
 their commands are the recorded ones. A checksum of the heroes every second shows when a replay stops matching, e.g
 because the game was changed since it was recorded, in a banner and on the console.
 
 ```
-saad run main.sd -- --replay recordings/2026-11-15_19-48-02.json --inspect 1 --speed 2
+saad run main.sd -- +replay recordings/2026-11-15_19-48-02.json +inspect 1 +setSpeed 2
 ```
 
 `src/bot_arena.sd` lets bots play on their own without a window, as fast as they can, and says how they did: crossings,
@@ -263,6 +274,10 @@ window and runs the loop.
 | `render.sd`, `hud.sd` | The 3D scene and the 2D overlay, with the hero drawn in 3D in its portrait |
 | `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
 | `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
+| `commands.sd`, `console_view.sd` | The console commands of the game, and the console on the screen (F1) |
+
+`src/console/console.sd` (namespace `console`) is the console itself: it finds the commands, reads what is typed into their
+parameters, and keeps the lines and the history.
 
 | `src/bots/` | |
 | --- | --- |

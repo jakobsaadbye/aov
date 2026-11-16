@@ -1,0 +1,113 @@
+namespace core;
+
+// The console commands of the game (F1, console/console.sd). Each is a function with @console.command, and gets the game
+// it works on from the console, which main.sd provides. The commands that make a new game (setBots, spectate, ...) are
+// in main.sd, which owns the game.
+
+import console;
+import fmt;
+use raylib;
+
+@console.command("Shows the edges of the triangles of the models")
+toggleWireframes :: (game: *Game) {
+    game.debug.wireframes = !game.debug.wireframes;
+}
+
+@console.command("Shows the boxes the heroes and the cars collide with")
+toggleHitboxes :: (game: *Game) {
+    game.debug.hitboxes = !game.debug.hitboxes;
+}
+
+@console.command("Shows the frames a second, where the camera and the hero are, and the number of cars")
+toggleDebugOverlay :: (game: *Game) {
+    game.debug.overlay = !game.debug.overlay;
+}
+
+@console.command("Shows or hides the keys in the corner (H)")
+toggleHelp :: (game: *Game) {
+    game.showHelp = !game.showHelp;
+}
+
+@console.command("Pauses the game, or goes on (P)")
+togglePause :: (game: *Game) {
+    game.isPaused = !game.isPaused;
+    game.sounds.setPaused(game.isPaused);
+}
+
+@console.command("Starts the game again, with the same players (F5)")
+restartGame :: (game: *Game) {
+    game.restartPending = true;
+}
+
+@console.command("Your hero becomes another one, e.g setHero butcher. It is recorded, so a replay does the same")
+setHero :: (game: *Game, hero: HeroKind) {
+    if game.replay != null {
+        console.fail("A replay plays what was recorded");
+        return;
+    }
+    if game.you().isBot() {
+        console.fail("You have no hero: you are spectating");
+        return;
+    }
+    game.pendingHero = hero;
+}
+
+@console.command("Your hero becomes the next one")
+nextHero :: (game: *Game) {
+    setHero(game, ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind);
+}
+
+@console.command("Opens the inspector (F4) on a player, e.g inspect 1 for the first bot of a game with you. Without one, opens or closes it")
+inspect :: (game: *Game, player: ?int) {
+    if !player.hasValue() {
+        game.inspector.isOpen = !game.inspector.isOpen;
+        if game.inspector.isOpen && !game.inspectedIsBot() { game.inspectNextBot(); }
+        return;
+    }
+    index := player.value();
+    if index < 0 || index >= game.players.count || !game.players[index].isBot() {
+        console.fail("Player % isn't a bot. status lists the players", index);
+        return;
+    }
+    game.inspector = Inspector{isOpen: true, player: index};
+}
+
+@console.command("Saves what was played so far to a file, or to recordings/<time>.json (F8)")
+writeRecording :: (game: *Game, file: ?string) {
+    if !file.hasValue() {
+        game.saveRecordingNow();
+        return;
+    }
+    err := game.saveRecording(file.value());
+    if err != null { console.fail("Couldn't save %: %", file.value(), err.message); }
+    else           { console.print("Saved the recording to %", file.value()); }
+}
+
+@console.command("Turns the music on or off (M)")
+toggleMusic :: (game: *Game) {
+    game.sounds.toggleMute("theme");
+}
+
+@console.command("The time of the game, and how each player is doing")
+status :: (game: *Game) {
+    state := "playing";
+    if game.isPaused { state = "paused"; }
+    if game.replay != null { state = fmt.sprint("replaying, frame % of %", game.replay.frame, game.replay.recording.frames.count); }
+    console.print("% s, level %, bots %, seed %, %", fmt.fixed(game.time, 1), game.level() + 1, Difficulty.names[game.difficulty],
+        game.recording.seed, state);
+    for player, i in game.players {
+        who := "bot";
+        if !player.isBot() { who = "you"; }
+        hero := player.hero;
+        console.print("    %. % (%) % at (% %), health %, % across, % run over, % kills", i, player.name, who,
+            HeroKind.names[hero.kind], fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.health as int,
+            player.stats.crossings, player.stats.deaths, player.stats.kills);
+    }
+}
+
+@console.command("The heroes there are, for setHero")
+heroes :: () {
+    for kind in HeroKind.values {
+        console.print("    %  -  %", HeroKind.names[kind], kind.definition().name);
+    }
+}
