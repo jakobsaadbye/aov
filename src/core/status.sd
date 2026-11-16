@@ -26,10 +26,14 @@ StatusKind :: enum {
     windedDown,     // After an energy drink: amount slower
     mending,        // Heals amount of its most health a second while it stands still (Ditte)
     sugarRush,      // amount times as fast, then winded down when it is over (an energy drink)
+    igloo,          // In an igloo: stands still, out of reach of cars and spells (Frosty)
+    leashed,        // Tied to the hero of source: can't get further from it than amount (Gudrun)
+    substitute,     // A log waits at point: a car that would hit the hero hits the log, and the hero is back at point (Kenji)
 }
 
 Status :: struct {
     timeLeft: f32;
+    duration: f32;              // How long it was put on for, to show how much of it is left
     amount:   f32;
     point:    Vector2;
     source:   int = -1;        // The player that did it, or -1
@@ -42,6 +46,7 @@ StatusRules :: struct {
     carsPass:     bool;     // The cars drive through it
     steers:       bool;     // Walks by itself, to or from its point
     harms:        bool;     // Done by an enemy: a car that gets it soon after gives that enemy the kill
+    good:         bool;     // Good for the hero: green in the row of what is on it, else red
 }
 
 statusRules :: (kind: StatusKind) -> StatusRules {
@@ -49,9 +54,9 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .stun       => StatusRules{stops: true, silences: true, harms: true};
         case .timeLock   => StatusRules{stops: true, silences: true, harms: true};
         case .sleep      => StatusRules{stops: true, silences: true, harms: true};
-        case .fade       => StatusRules{untargetable: true, carsPass: true};
-        case .hidden     => StatusRules{untargetable: true};
-        case .haste      => StatusRules{};
+        case .fade       => StatusRules{untargetable: true, carsPass: true, good: true};
+        case .hidden     => StatusRules{untargetable: true, good: true};
+        case .haste      => StatusRules{good: true};
         case .slow       => StatusRules{harms: true};
         case .hex        => StatusRules{silences: true, harms: true};
         case .blind      => StatusRules{harms: true};
@@ -60,8 +65,42 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .puppet     => StatusRules{silences: true, steers: true, harms: true};
         case .tangled    => StatusRules{harms: true};
         case .windedDown => StatusRules{};
-        case .mending    => StatusRules{};
-        case .sugarRush  => StatusRules{};
+        case .mending    => StatusRules{good: true};
+        case .sugarRush  => StatusRules{good: true};
+        case .igloo      => StatusRules{stops: true, untargetable: true, carsPass: true, good: true};
+        case .leashed    => StatusRules{harms: true};
+        case .substitute => StatusRules{good: true};
+    };
+}
+
+// How a status is shown in the row of what is on a hero, and its tooltip
+StatusLook :: struct {
+    name:        string;
+    description: string;
+    icon:        string;
+}
+
+statusLook :: (kind: StatusKind) -> StatusLook {
+    return switch kind {
+        case .stun       => StatusLook{"Stunned", "Can't move or cast", "status_stun"};
+        case .timeLock   => StatusLook{"Time Locked", "Frozen in time: can't move or cast", "time_lock"};
+        case .sleep      => StatusLook{"Asleep", "Can't move or cast, until shoved or hit", "sleep"};
+        case .fade       => StatusLook{"Faded", "The cars drive through, and enemies can't target", "fade"};
+        case .hidden     => StatusLook{"Hidden", "Enemies can't target", "smoke_bomb"};
+        case .haste      => StatusLook{"Haste", "Runs faster", "sprint"};
+        case .slow       => StatusLook{"Slowed", "Walks slower", "status_slow"};
+        case .hex        => StatusLook{"Hexed", "A toad: slow, and can't cast", "hex"};
+        case .blind      => StatusLook{"Blinded", "Can't see", "flash_photo"};
+        case .fear       => StatusLook{"Afraid", "Runs away, and can't cast", "battle_cry"};
+        case .taunt      => StatusLook{"Taunted", "Walks towards what taunts it", "item_rubber_chicken"};
+        case .puppet     => StatusLook{"Puppet", "Walks where the puppeteer says, and can't cast", "puppet"};
+        case .tangled    => StatusLook{"Tangled", "Walks slower", "knitting"};
+        case .windedDown => StatusLook{"Winded", "Walks slower, after a sugar rush", "status_winded"};
+        case .mending    => StatusLook{"Mending", "Heals while standing still", "bandage"};
+        case .sugarRush  => StatusLook{"Sugar Rush", "Runs much faster, for now", "item_energy_drink"};
+        case .igloo      => StatusLook{"Igloo", "Safe inside: no car or spell gets in", "igloo"};
+        case .leashed    => StatusLook{"Leashed", "Tied to an enemy: can't get far from it", "yarn_leash"};
+        case .substitute => StatusLook{"Substitute", "A car that would hit takes a log instead, and back to the mark", "substitution"};
     };
 }
 
@@ -90,6 +129,7 @@ addStatus :: method (hero: *Hero, kind: StatusKind, duration: f32, amount: f32 =
     slot := &hero.statuses.slots[kind];
     if slot.timeLeft <= 0 || duration >= slot.timeLeft {
         slot.timeLeft = duration;
+        slot.duration = duration;
         slot.amount = amount;
         slot.point = point;
         slot.source = source;

@@ -25,6 +25,7 @@ CAR_WIDTH = 5.2
 CAR_LENGTH = 8.0
 VAN_LENGTH = 9.0
 TRUCK_LENGTH = 16.0
+BUS_LENGTH = 18.0
 WALL_WIDTH = 3.0
 WALL_HEIGHT = 4.0
 WALL_SEGMENT = 5.0
@@ -318,6 +319,26 @@ def make_truck():
     m.box("trim", (0, 0.9, -l / 2 + 0.05), (w, 0.3, 0.2))
     wheels(m, (front - 1.3, front - cab - 1.4, -l / 2 + 2.6, -l / 2 + 1.2), radius=0.6, width=0.6)
     lights(m, front + 0.02, -l / 2 - 0.02, 0.95)
+    m.write()
+
+
+def make_bus():
+    m = Model("bus")
+    vehicle_parts(m)
+    m.material("stripe", (0.15, 0.15, 0.17))
+    w, l = CAR_WIDTH, BUS_LENGTH
+    m.box("body", (0, 2.1, 0), (w, 3.0, l))                                          # The long body
+    m.box("body", (0, 3.75, 0), (w * 0.96, 0.3, l * 0.98))                           # The roof
+    m.box("glass", (0, 2.6, l / 2 + 0.01), (w * 0.9, 1.4, 0.04))                     # Windscreen
+    for side in (-1, 1):
+        for k in range(6):                                                            # A row of windows each side
+            z = l / 2 - 3.2 - k * 2.6
+            m.box("glass", (side * (w / 2 + 0.01), 2.75, z), (0.04, 1.1, 2.0))
+        m.box("stripe", (side * (w / 2 + 0.01), 1.55, 0), (0.04, 0.25, l * 0.96))    # A dark stripe under them
+    m.box("trim", (0, 0.6, l / 2), (w, 0.45, 0.3))
+    m.box("trim", (0, 0.6, -l / 2), (w, 0.45, 0.3))
+    wheels(m, (l / 2 - 2.4, -l / 2 + 3.2), radius=0.65, width=0.6)
+    lights(m, l / 2 + 0.02, -l / 2 - 0.02, 1.0)
     m.write()
 
 
@@ -779,6 +800,7 @@ if __name__ == "__main__":
     make_car()
     make_van()
     make_truck()
+    make_bus()
     make_allan()
     make_ghosty()
     make_butcher()

@@ -86,21 +86,30 @@ weight :: method (hero: *Hero) -> f32 {
 shove :: method (game: *Game, from: int, to: int) -> bool {
     attacker := &game.players[from].hero;
     victim := &game.players[to].hero;
-    if !attacker.isMoving || attacker.shoveLeft > 0 || victim.displacement.hasValue() || victim.isFaded() || attacker.isFaded() || victim.stats.unshovable { return false; }
+    if !attacker.isMoving || attacker.shoveLeft > 0 || victim.displacement.hasValue() || victim.isFaded() || attacker.isFaded() { return false; }
+    if attacker.possess.hasValue() || victim.possess.hasValue() { return false; }
     offset := victim.ground() - attacker.ground();
     heading := attacker.target.xz() - attacker.ground();
     if offset.length() < 0.001 || heading.length() < 0.001 { return false; }
     direction := offset.normalize();
     if direction.dot(heading.normalize()) < 0.5 { return false; }     // Not walking into it
 
+    // Gudrun's cane: who walks into her trips
+    if victim.stats.tripsShovers && !attacker.has(.stun) {
+        attacker.shoveLeft = ShoveCooldown;
+        game.tripOverCane(from, to, CaneTripTime);
+        return true;
+    }
+    if victim.stats.unshovable { return false; }
+
     ratio := math.clamp(math.sqrtf(attacker.weight() / victim.weight()), 0.6, 2.0);
-    victim.displacement = Displacement{to: (victim.ground() + direction * ShoveDistance * ratio).at(), speed: ShoveSpeed};
+    distance := ShoveDistance * ratio * attacker.stats.shoveTaken * victim.stats.knockTaken;
+    victim.displacement = Displacement{to: (victim.ground() + direction * distance).at(), speed: ShoveSpeed};
     victim.isMoving = false;
     victim.clearStatus(.sleep);
     victim.harmedBy = from;
     victim.harmedAt = game.time;
     attacker.shoveLeft = ShoveCooldown;
-    if victim.stats.secondWind { victim.addStatus(.haste, SecondWindTime, 1.3); }
     if attacker.stats.hotPotato { game.swapItems(from, to); }
     game.effects.addRing(victim.ground(), 0.3, 2.5, {255, 255, 255, 255}, 0.25);
     game.effects.particles.emit(.shove, (attacker.position + victim.position) * 0.5 + Vector3{0, 1.2, 0}, 10);

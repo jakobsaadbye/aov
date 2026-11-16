@@ -1,7 +1,7 @@
 namespace core;
 
-// Tobias the Tourist: lost in the big city with his camera. The flash blinds drivers and heroes alike, and a selfie
-// with an enemy puts him where it stood
+// Tobias the Tourist: lost in the big city with his camera. The flash blinds drivers and heroes alike, a selfie with
+// an enemy puts him where it stood, and when he stops to look at a map nobody notices him
 
 import math;
 use raylib;
@@ -18,7 +18,7 @@ defineTobias :: () -> HeroDefinition {
         description: "A selfie with the enemy nearest the cursor, up to 15 away: they swap places",
         range: 15,
     });
-    hero.abilities.add(passive("Lost", "lost", "He doesn't know where he is going: now and then he hurries off, much faster, for a moment", .lost));
+    hero.abilities.add(passive("Blend in", "blend_in", "Once he has stood still for 1.5 seconds, enemies can't target him, until he moves", .blendIn));
     return hero;
 }
 

@@ -57,6 +57,8 @@ main :: () {
     testEveryAbility();
     testEveryItem();
     testPerks();
+    testRedesignedKits();
+    testNewItems();
     fmt.print("All simulation tests passed");
 }
 
@@ -296,10 +298,10 @@ testAbilities :: () {
         }
     }
 
-    // Allan: Q sprints, then cools down. His passive makes him faster all the time
+    // Allan: Q sprints, then cools down
     game.spawnHero(0, .allan);
     normal := game.you().hero.speed();
-    assert(near(normal, core.HeroKind.allan.definition().moveSpeed * 1.1));
+    assert(near(normal, core.HeroKind.allan.definition().moveSpeed));
     game.useAbility(0);
     assert(game.you().hero.speed() > normal * 2);
     assert(!game.you().hero.abilityReady(0));
@@ -309,13 +311,25 @@ testAbilities :: () {
     // He has no blink: only Sprint on Q
     assert(game.you().hero.abilityOnKey(0) == 0 && game.you().hero.abilityOnKey(1) == -1 && game.you().hero.keyOf(1) == -1);
 
-    // Frosty's Slide blinks to the cursor, no further than its range
+    // Adrenaline: a car that passes him by a hair makes Sprint ready again, and not again at once
+    game.useAbility(0);
+    assert(!game.you().hero.abilityReady(0));
+    clearRoad(game);
+    game.you().hero.position = Vector3{core.laneCenter(4) + core.CarWidth * 0.5 + game.you().hero.info().hitRadius + 0.4, 0, 0};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -6, speed: 12};
+    for 0..60 { game.simulate(Dt); }
+    assert(game.you().phase.kind == .playing && game.you().hero.abilityReady(0) && game.you().hero.nearMissLeft > 0);
+    clearRoad(game);
+
+    // Frosty's igloo: the cars that run into it are stuck in it, and he is safe inside until it melts
     game.spawnHero(0, .frosty);
-    game.you().hero.position = Vector3{-118, 0, 0};
-    game.mouseGround = Vector3{-118, 0, 40};
+    game.you().hero.position = Vector3{core.laneCenter(4), 0, 0};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -8, speed: 12};
     game.useAbility(1);
-    assert(game.you().hero.position.distance(Vector3{-118, 0, 9}) < 0.01);
-    assert(!game.you().hero.abilityReady(1));
+    assert(game.you().hero.has(.igloo) && !game.you().hero.isTargetable() && !game.you().hero.abilityReady(1));
+    for 0..(2 * 60) { game.simulate(Dt); }
+    assert(game.you().phase.kind == .playing && game.traffic.cars[0].frozenLeft > 0 && game.traffic.cars[0].z < -1);
+    clearRoad(game);
 
     // The keys go to the abilities that are cast, in order. Passives have none
     frosty := core.newHero(.frosty, {0, 0, 0}, 0);
@@ -374,17 +388,22 @@ testAbilities :: () {
     slowed.update(1, &game.rng, zones);
     assert(near(slowed.cars[0].z, 6) && near(slowed.cars[1].z, -30));
 
-    // Ghosty: Q fades, and the cars drive through him while he is faded
+    // Ghosty possesses the car nearest the cursor: he rides in it, a click beside it steers it a lane over, and he comes
+    // out on the side he is going when the time is up
     game.spawnHero(0, .ghosty);
-    game.traffic = core.newTraffic(5, &game.rng);
+    clearRoad(game);
+    game.you().hero.position = Vector3{-core.RoadHalfWidth - 2, 0, 0};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 2, z: -6, speed: 4};
+    game.mouseGround = Vector3{core.laneCenter(2), 0, -6};
     game.useAbility(0);
-    assert(game.you().hero.isFaded() && !game.you().hero.abilityReady(0));
-    for 0..60 {
-        game.you().hero.position = Vector3{core.laneCenter(4), 0, 0};
-        game.simulate(Dt);
-        if !game.you().hero.isFaded() { break; }
-        assert(game.you().phase.kind == .playing);
-    }
+    ghost := &game.you().hero;
+    assert(ghost.possess.hasValue() && game.traffic.cars[0].hauntedBy == 0 && !ghost.isTargetable() && ghost.carsPass());
+    ghost.moveTo(Vector3{core.laneCenter(6), 0, 0});
+    for 0..30 { game.simulate(Dt); }
+    assert(game.traffic.cars[0].lane == 3);
+    for 0..(5 * 60) { game.simulate(Dt); }
+    assert(!ghost.possess.hasValue() && game.traffic.cars[0].hauntedBy == -1 && game.you().phase.kind == .playing);
+    assert(ghost.position.x > game.traffic.cars[0].x() + core.CarWidth * 0.5);
 }
 
 testNewHeroes :: () {
@@ -434,17 +453,30 @@ testNewHeroes :: () {
         assert(near(gap, core.QueueGap, 0.05));
     }
     assert(near(game.traffic.cars[3].z, -20 + 15 * 2.5, 0.1));         // Drove on as if nothing happened
+    // Lollipop lady: while she stands by it, the sign stays up. When she walks off, it comes down
     for 0..120 { game.simulate(Dt); }
-    assert(game.traffic.cars[0].z > line);
+    assert(game.stopSigns.count == 1 && near(game.traffic.cars[0].z + first.length() * 0.5, line, 0.05));
+    game.you().hero.moveTo(Vector3{core.laneCenter(lane) + 12, 0, 20});
+    for 0..120 { game.simulate(Dt); }
+    assert(game.stopSigns.count == 0 && game.traffic.cars[0].z > line);
 
-    // Mira's time warp slows every car on the road
+    // Her wave makes the lanes at the cursor drive two and a half times as fast for a while
+    waved: core.Traffic;
+    for *l in waved.lanes { l.spawnTimer = 100000; }
+    waved.cars[0] = core.Car{isActive: true, lane: 3, z: 0, speed: 10};
+    waved.setPace(2, 4, 2.5, 2.5);
+    waved.update(1, &game.rng, noZones);
+    assert(near(waved.cars[0].z, 25));
+
+    // Mira's reverse sends the cars of some lanes backwards, the others drive on
     game.spawnHero(0, .mira);
-    warped: core.Traffic;
-    warped.lanes[0].spawnTimer = 100000;
-    warped.cars[0] = core.Car{isActive: true, lane: 0, z: 0, speed: 10};
-    warped.warpTime(0.7, 3);
-    warped.update(1, &game.rng, noZones);
-    assert(near(warped.cars[0].z, 3) && warped.isWarped());
+    reversed: core.Traffic;
+    for *lane in reversed.lanes { lane.spawnTimer = 100000; }
+    reversed.cars[0] = core.Car{isActive: true, lane: 0, z: 0, speed: 10};
+    reversed.cars[1] = core.Car{isActive: true, lane: 5, z: 0, speed: 10};
+    reversed.setPace(0, 1, -0.8, 3);
+    reversed.update(1, &game.rng, noZones);
+    assert(near(reversed.cars[0].z, -8) && near(reversed.cars[1].z, 10));
 
     // Her rewind takes her back to where she was, with the health she had then
     clearRoad(game);
@@ -762,9 +794,8 @@ testItems :: () {
     assert(near(you.hero.health, you.hero.maxHealth()));
 
     // Speed and damage
-    speed := you.hero.speed();
-    game.pickUp(game.local, .sneakers);
-    assert(near(you.hero.speed(), speed * 1.15));
+    game.pickUp(game.local, .spyglass);
+    assert(near(you.hero.reach(10), 13));
     assert(you.backpack.isFull());
 
     // In a full backpack a new item takes the place of the oldest, unless it is locked (a command, so it is recorded)
@@ -787,11 +818,11 @@ testItems :: () {
     // Unlocked, the oldest goes first
     you.order(core.Command{lockItem: 0});
     game.simulate(Dt);
-    game.pickUp(game.local, .sneakers);
-    assert(you.backpack.items[0] == .hardHat && you.backpack.locked[0] && you.backpack.items[1] == .sneakers);
+    game.pickUp(game.local, .spyglass);
+    assert(you.backpack.items[0] == .hardHat && you.backpack.locked[0] && you.backpack.items[1] == .spyglass);
     you.backpack = core.Backpack{};
     game.pickUp(game.local, .firstAid);
-    game.pickUp(game.local, .sneakers);
+    game.pickUp(game.local, .spyglass);
 
     // The next hero has the boost too
     game.spawnHero(game.local, .butcher);
@@ -885,8 +916,8 @@ testHazards :: () {
     assert(ambulance.hasValue() && lanes.count == 3 && lanes.contains(8) && lanes.contains(10));
     assert(near(ambulance.value().speed, traffic.emergencySpeed()));
     for lane in traffic.lanes { assert(ambulance.value().speed > lane.speed * core.MaxSpawnSpeed); }
-    // Nothing slows an ambulance down: a freeze, a stop sign in its lane or a time warp
-    traffic.warpTime(0.5, 5);
+    // Nothing slows an ambulance down: a freeze, a stop sign in its lane or a reverse
+    traffic.setPace(0, core.LaneCount - 1, -0.8, 5);
     traffic.halt(8, 10, 0, 5);
     for car in traffic.cars {
         if car.isActive && car.kind == .ambulance { _ := traffic.freezeAround(car.rect().center(), 3, 5); }
@@ -897,7 +928,7 @@ testHazards :: () {
     for car, i in traffic.cars {
         if car.isActive && car.kind == .ambulance { assert(near(car.z - before[i], car.speed * 0.5, 0.01)); }
     }
-    traffic.warpLeft = 0;
+    for *lane in traffic.lanes { lane.paceLeft = 0; lane.pace = 1; }
     for *lane in traffic.lanes { lane.haltLeft = 0; }
     fmt.print("An ambulance in lane 9 drives % m/s, at the middle % s after its siren", fmt.fixed(ambulance.value().speed, 1),
         fmt.fixed(core.EmergencyWarning + (core.RoadEnd + core.VanLength * 0.5) / ambulance.value().speed, 1));
@@ -966,11 +997,6 @@ testItemAuras :: () {
     enemy.brain = null;
     game.spawnHero(0, .allan);
     game.spawnHero(1, .allan);
-
-    // Frost Charm: an aura that slows the cars, which the bots' forecast knows of too
-    assert(!you.hero.chillAura().hasValue());
-    game.pickUp(0, .frostCharm);
-    assert(you.hero.chillAura().hasValue() && near(you.hero.chillAura().value().radius, core.FrostRadius));
 
     // Garlic: an enemy near the hero walks slower, one further away doesn't
     game.pickUp(1, .garlic);
@@ -1116,7 +1142,7 @@ testEveryItem :: () {
             for 0..(2 * 60) { game.simulate(Dt); }
         }
         // One with charges is gone once they are used
-        if definition.charges > 0 && you.isPlaying() && kind != .busTicket && kind != .trafficCone { assert(you.backpack.count == 0); }
+        if definition.charges > 0 && you.isPlaying() && kind != .trafficCone { assert(you.backpack.count == 0); }
     }
 }
 
@@ -1147,4 +1173,211 @@ testPerks :: () {
     game.offerPerks();
     for 0..(13 * 60) { game.simulate(Dt); }
     assert(!you.perkOffer.hasValue() && you.perks.count == 3);
+}
+
+// The heroes whose kits play with the cars as things: thrown, steered, reversed, magnetized, struck
+testRedesignedKits :: () {
+    game := bots.newGame(41, bots: 1);
+    defer game.free();
+    clearRoad(game);
+    you := game.you();
+    enemy := &game.players[1];
+    enemy.brain = null;
+    grass := -core.RoadHalfWidth - core.WallWidth - 6;
+
+    // The butcher heaves a car two lanes away from him
+    game.spawnHero(0, .butcher);
+    game.spawnHero(1, .allan);
+    you.hero.position = Vector3{core.laneCenter(2), 0, 0};
+    enemy.hero.position = Vector3{grass, 0, 40};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 3, z: 2, speed: 1};
+    game.cast(0, 1, {core.laneCenter(3), 2});
+    assert(game.traffic.cars[0].lane == 5 && game.traffic.cars[0].fromLane == 3);
+    for 0..60 { game.simulate(Dt); }
+    assert(near(game.traffic.cars[0].x(), core.laneCenter(5)));
+    clearRoad(game);
+
+    // Birgit's trampoline bounces whoever walks onto it, the way it walks, over the cars
+    game.spawnHero(0, .birgit);
+    you.hero.position = Vector3{grass + 20, 0, 0};
+    game.cast(0, 1, {grass + 24, 0});
+    assert(game.trampolines.count == 1);
+    you.hero.moveTo(Vector3{grass + 40, 0, 0});
+    for 0..30 {
+        game.simulate(Dt);
+        if you.hero.isAirborne() { break; }
+    }
+    assert(you.hero.leap.hasValue());
+
+    // Bent's night bus: slow, and the cars behind it in its lane queue up behind it
+    game.spawnHero(0, .bent);
+    you.hero.position = Vector3{grass, 0, 0};
+    game.cast(0, 1, {core.laneCenter(7), 0});
+    bus := game.traffic.cars.findIndex(car => car.isActive && car.kind == .bus);
+    assert(bus >= 0 && game.traffic.cars[bus].lane == 7);
+    game.traffic.cars[bus].z = 0;
+    game.traffic.cars[60] = core.Car{isActive: true, lane: 7, z: -30, speed: 15};
+    for 0..(4 * 60) { game.simulate(Dt); }
+    behind := game.traffic.cars[60];
+    gap := (game.traffic.cars[bus].z - core.BusLength * 0.5) - (behind.z + behind.length() * 0.5);
+    assert(near(gap, core.QueueGap, 0.1));
+    clearRoad(game);
+
+    // Tobias blends in once he has stood still a moment
+    game.spawnHero(0, .tobias);
+    you.hero.position = Vector3{grass, 0, 0};
+    game.simulate(Dt);
+    assert(you.hero.isTargetable());
+    for 0..(2 * 60) { game.simulate(Dt); }
+    assert(!you.hero.isTargetable());
+    walkTo(game, Vector3{grass, 0, 4});
+    assert(you.hero.isTargetable());
+
+    // Gudrun ties an enemy to her: it can't get further away than it was
+    game.spawnHero(0, .gudrun);
+    game.spawnHero(1, .allan);
+    you.hero.position = Vector3{grass, 0, 0};
+    enemy.hero.position = Vector3{grass, 0, 6};
+    game.cast(0, 1, {grass, 6});
+    assert(enemy.hero.has(.leashed));
+    enemy.hero.moveTo(Vector3{grass, 0, 30});
+    for 0..60 { game.simulate(Dt); }
+    assert(enemy.hero.ground().distance(you.hero.ground()) <= 6.05);
+    enemy.hero.clearStatus(.leashed);
+
+    // and who walks into her trips over her cane
+    enemy.hero.clearStatus(.stun);
+    enemy.hero.position = Vector3{grass, 0, 3};
+    enemy.hero.moveTo(Vector3{grass, 0, -10});
+    for 0..30 {
+        game.simulate(Dt);
+        if enemy.hero.has(.stun) { break; }
+    }
+    assert(enemy.hero.has(.stun) && you.hero.ground().distance({grass, 0}) < 0.5);
+    enemy.hero.clearStatus(.stun);
+
+    // Magnus magnetizes a car: it pulls his enemies near it in
+    game.spawnHero(0, .magnus);
+    game.spawnHero(1, .allan);
+    you.hero.position = Vector3{-core.RoadHalfWidth - 1, 0, 0};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 0, z: 0, speed: 0.001};
+    enemy.hero.position = Vector3{core.laneCenter(0), 0, 6};
+    game.cast(0, 0, {core.laneCenter(0), 0});
+    assert(game.traffic.cars[0].magnetLeft > 0 && game.traffic.cars[0].magnetOwner == 0);
+    distance := enemy.hero.ground().distance(game.traffic.cars[0].position().xz());
+    for 0..30 { game.simulate(Dt); }
+    assert(enemy.hero.ground().distance(game.traffic.cars[0].position().xz()) < distance - 1 && enemy.hero.harmedBy == 0);
+    clearRoad(game);
+
+    // Stormy's rod strikes the enemy near it, else a car; her gust blows enemies away and cars a lane over
+    game.spawnHero(0, .stormy);
+    game.spawnHero(1, .allan);
+    you.hero.position = Vector3{grass, 0, 0};
+    enemy.hero.position = Vector3{grass + 8, 0, 0};
+    game.cast(0, 0, {grass + 6, 0});
+    assert(game.rods.count == 1);
+    for 0..45 { game.simulate(Dt); }
+    assert(enemy.hero.has(.stun));
+    enemy.hero.clearStatus(.stun);
+    game.rods.clear();
+    enemy.hero.position = Vector3{grass, 0, 5};
+    game.cast(0, 1, {grass, 10});
+    for 0..30 { game.simulate(Dt); }
+    assert(enemy.hero.position.z > 10);
+
+    // Static charge: her third spell doesn't cool down
+    you.hero.cooldowns[0] = 0;
+    you.hero.cooldowns[1] = 0;
+    you.hero.castCount = 2;
+    game.cast(0, 0, {grass + 4, 4});
+    assert(you.hero.abilityReady(0));
+    game.rods.clear();
+
+    // Kenji's log takes the car for him, and he is back by it
+    game.spawnHero(0, .kenji);
+    you.hero.position = Vector3{grass, 0, 0};
+    game.cast(0, 0, {grass, 0});
+    assert(you.hero.has(.substitute));
+    you.hero.position = Vector3{core.laneCenter(4), 0, 0};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -4, speed: 15};
+    for 0..30 { game.simulate(Dt); }
+    assert(you.phase.kind == .playing && !you.hero.has(.substitute) && you.hero.ground().distance({grass, 0}) < 0.5);
+    clearRoad(game);
+
+    // He can't be targeted right next to a car
+    you.hero.position = Vector3{core.laneCenter(4) + core.CarWidth * 0.5 + 1.5, 0, 0};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: 0, speed: 0.001};
+    game.simulate(Dt);
+    assert(you.hero.inShadow && !you.hero.isTargetable());
+    clearRoad(game);
+
+    // Ivar: an enemy run over near him makes his abilities ready again
+    game.spawnHero(0, .ivar);
+    game.spawnHero(1, .allan);
+    you.hero.position = Vector3{-core.RoadHalfWidth - 2, 0, 0};
+    you.hero.cooldowns[0] = 5;
+    you.hero.cooldowns[1] = 5;
+    enemy.hero.position = Vector3{core.laneCenter(1), 0, 0};
+    enemy.hero.health = 0.01;
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 1, z: -3, speed: 15};
+    for 0..30 { game.simulate(Dt); }
+    assert(enemy.phase.kind == .runOver && you.hero.abilityReady(0) && you.hero.abilityReady(1));
+}
+
+testNewItems :: () {
+    game := bots.newGame(42, bots: 1);
+    defer game.free();
+    clearRoad(game);
+    you := game.you();
+    enemy := &game.players[1];
+    enemy.brain = null;
+    game.spawnHero(0, .allan);
+    game.spawnHero(1, .allan);
+    grass := -core.RoadHalfWidth - core.WallWidth - 6;
+
+    // A traffic cone: the cars that come to it swerve into the lane beside it
+    you.hero.position = Vector3{-core.RoadHalfWidth - 1, 0, 0};
+    game.pickUp(0, .trafficCone);
+    game.useItem(0, 0, {core.laneCenter(1), 4});
+    assert(game.cones.count == 1);
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 1, z: -10, speed: 10};
+    for 0..60 { game.simulate(Dt); }
+    assert(game.traffic.cars[0].lane != 1);
+    clearRoad(game);
+    game.cones.clear();
+    you.backpack = core.Backpack{};
+
+    // The remote control steers a car two lanes away from the hero
+    game.pickUp(0, .remoteControl);
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 3, z: 0, speed: 1};
+    game.useItem(0, 0, {core.laneCenter(3), 0});
+    assert(game.traffic.cars[0].lane == 5);
+    clearRoad(game);
+    you.backpack = core.Backpack{};
+
+    // The stopwatch makes every ability ready
+    game.pickUp(0, .stopwatch);
+    you.hero.cooldowns[0] = 5;
+    game.useItem(0, 0, {0, 0});
+    assert(you.hero.abilityReady(0));
+    you.backpack = core.Backpack{};
+
+    // The snow globe stops every car and locks the enemies in time, once
+    game.pickUp(0, .snowGlobe);
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 8, z: 0, speed: 10};
+    enemy.hero.position = Vector3{grass, 0, 20};
+    game.useItem(0, 0, {0, 0});
+    assert(game.traffic.cars[0].frozenLeft > 1 && enemy.hero.has(.timeLock) && you.backpack.count == 0);
+    clearRoad(game);
+    enemy.hero.clearStatus(.timeLock);
+
+    // The portal gun: walking into one end comes out of the other
+    game.pickUp(0, .portalGun);
+    you.hero.position = Vector3{grass, 0, 0};
+    game.useItem(0, 0, {grass, 20});
+    assert(game.portals.count == 1);
+    for 0..90 { game.simulate(Dt); }           // Off the portal it opened under itself
+    you.hero.position = Vector3{grass + 3, 0, 0};
+    walkTo(game, Vector3{grass, 0, 0});
+    assert(you.hero.ground().distance({grass, 20}) < 2);
 }

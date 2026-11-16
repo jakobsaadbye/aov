@@ -89,18 +89,6 @@ def icon_footbridge():
     finish(image, "footbridge")
 
 
-def icon_barricade():
-    image, draw = icon_base((230, 150, 60), (110, 50, 20))
-    for y in (90, 150):
-        for k in range(6):
-            color = (220, 40, 35) if k % 2 == 0 else (245, 245, 245)
-            poly(draw, [(30 + k * 33, y), (63 + k * 33, y), (63 + k * 33, y + 40), (30 + k * 33, y + 40)], color, width=4)
-    for x in (50, 206):
-        draw.rectangle([x - 8, 90, x + 8, 230], fill=(60, 60, 64), outline=INK, width=4)
-    circle(draw, 50, 70, 16, (255, 170, 40))
-    finish(image, "barricade")
-
-
 def icon_overtime():
     image, draw = icon_base((200, 140, 60), (80, 50, 20))
     circle(draw, 128, 128, 90, (245, 240, 225))
@@ -119,14 +107,6 @@ def icon_hop_on():
     circle(draw, 128, 70, 22, (235, 190, 150))
     poly(draw, [(108, 92), (148, 92), (156, 130), (100, 130)], (40, 140, 90))
     finish(image, "hop_on")
-
-
-def icon_honk():
-    image, draw = icon_base((240, 200, 80), (130, 90, 20))
-    poly(draw, [(40, 100), (100, 100), (170, 50), (170, 206), (100, 156), (40, 156)], (60, 60, 64))
-    for r in (40, 70):
-        draw.arc([170 - r, 128 - r, 170 + r, 128 + r], start=-50, end=50, fill=(255, 250, 220), width=12)
-    finish(image, "honk")
 
 
 def icon_timetable():
@@ -193,16 +173,6 @@ def icon_selfie():
     poly(draw, [(148, 30), (168, 44), (148, 54)], (255, 255, 255))
     line(draw, [(148, 196), (108, 216)], (255, 255, 255), 8)
     finish(image, "selfie")
-
-
-def icon_lost():
-    image, draw = icon_base((230, 200, 150), (130, 100, 60))
-    draw.rectangle([40, 50, 216, 206], fill=(240, 230, 200), outline=INK, width=6)
-    draw.line([(40, 128), (216, 110)], fill=(180, 160, 120), width=6)
-    draw.line([(120, 50), (100, 206)], fill=(180, 160, 120), width=6)
-    draw.text((112, 100), "?", fill=(200, 40, 40))
-    circle(draw, 128, 128, 34, None, outline=(200, 40, 40), width=10)
-    finish(image, "lost")
 
 
 # Mads
@@ -290,15 +260,6 @@ def icon_knitting():
     finish(image, "knitting")
 
 
-def icon_respect():
-    image, draw = icon_base((200, 200, 220), (90, 90, 110))
-    car_shape(draw, 90, 200, 120, (200, 60, 50))
-    circle(draw, 190, 110, 30, (240, 230, 225))
-    poly(draw, [(160, 140), (220, 140), (230, 220), (150, 220)], (170, 110, 170))
-    star(draw, 70, 80, 30, (255, 80, 60), points=8, inner=0.6)
-    finish(image, "respect")
-
-
 # Magnus
 
 
@@ -309,15 +270,6 @@ def magnet(draw, x, y, s, flip=False):
     for side in (-1, 1):
         draw.rectangle([x + side * s * 0.75 - s * 0.25, y + dy * s * 0.45 - s * 0.3, x + side * s * 0.75 + s * 0.25, y],
                        fill=(230, 230, 235), outline=INK, width=5)
-
-
-def icon_repel():
-    image, draw = icon_base((150, 160, 190), (50, 55, 80))
-    magnet(draw, 128, 90, 60)
-    for x in (60, 128, 196):
-        line(draw, [(x, 180), (x, 236)], (255, 250, 200), 10)
-        poly(draw, [(x - 16, 220), (x + 16, 220), (x, 246)], (255, 250, 200))
-    finish(image, "repel")
 
 
 def icon_attract():
@@ -340,33 +292,6 @@ def icon_steel_frame():
 
 
 # Stormy
-
-
-def icon_lightning():
-    image, draw = icon_base((90, 100, 140), (20, 25, 50))
-    for x, y, r in ((90, 70, 40), (140, 60, 50), (180, 80, 36)):
-        circle(draw, x, y, r, (110, 115, 135), width=0)
-    poly(draw, [(140, 100), (100, 170), (130, 170), (110, 236), (170, 150), (138, 150), (160, 100)], (255, 220, 60))
-    finish(image, "lightning")
-
-
-def icon_downpour():
-    image, draw = icon_base((100, 130, 180), (30, 50, 90))
-    for x, y, r in ((80, 70, 40), (130, 60, 50), (180, 75, 38)):
-        circle(draw, x, y, r, (150, 155, 175), width=0)
-    for k in range(9):
-        x = 50 + k * 20
-        y = 130 + (k % 3) * 25
-        line(draw, [(x, y), (x - 10, y + 35)], (150, 200, 255), 6, outline=False)
-    finish(image, "downpour")
-
-
-def icon_tailwind():
-    image, draw = icon_base((140, 200, 230), (40, 90, 140))
-    for y, w in ((80, 160), (128, 190), (176, 140)):
-        draw.line([(40, y), (40 + w, y)], fill=(255, 255, 255), width=12)
-        draw.arc([20 + w, y - 30, 80 + w, y + 10], start=90, end=330, fill=(255, 255, 255), width=10)
-    finish(image, "tailwind")
 
 
 # Hugo
@@ -456,14 +381,6 @@ def icon_shadow_step():
     finish(image, "shadow_step")
 
 
-def icon_roll():
-    image, draw = icon_base((80, 80, 90), (20, 20, 25))
-    draw.arc([50, 50, 206, 206], start=0, end=300, fill=(200, 30, 30), width=20)
-    poly(draw, [(196, 70), (230, 110), (186, 116)], (200, 30, 30))
-    circle(draw, 128, 128, 30, (20, 20, 24), outline=(200, 30, 30))
-    finish(image, "roll")
-
-
 # Ivar
 
 
@@ -484,17 +401,6 @@ def icon_axe_throw():
     finish(image, "axe_throw")
 
 
-def icon_berserk():
-    image, draw = icon_base((220, 50, 40), (70, 0, 0))
-    circle(draw, 128, 128, 80, (240, 200, 180))
-    for x in (95, 161):
-        poly(draw, [(x - 22, 100), (x + 22, 110), (x - 22, 120)] if x < 128 else [(x + 22, 100), (x - 22, 110), (x + 22, 120)], (200, 0, 0))
-    draw.rectangle([90, 150, 166, 180], fill=(255, 255, 255), outline=INK, width=5)
-    for x in range(100, 166, 14):
-        draw.line([(x, 150), (x, 180)], fill=INK, width=3)
-    finish(image, "berserk")
-
-
 # Items
 
 
@@ -504,15 +410,6 @@ def icon_item_banana_peel():
         poly(draw, [(128, 110), (128 + dx * 0.4, 120), (128 + dx, 128 + dy), (128 + dx * 0.7, 140 + dy), (128, 140)], (250, 225, 60))
     circle(draw, 128, 100, 22, (130, 95, 30))
     finish(image, "item_banana_peel")
-
-
-def icon_item_bubble_wrap():
-    image, draw = icon_base((200, 230, 250), (90, 140, 190))
-    for y in range(50, 220, 42):
-        for x in range(50, 220, 42):
-            circle(draw, x, y, 17, (240, 250, 255), outline=(120, 160, 200), width=4)
-            circle(draw, x - 5, y - 5, 4, (255, 255, 255), width=0)
-    finish(image, "item_bubble_wrap")
 
 
 def icon_item_mirror():
@@ -569,37 +466,12 @@ def icon_item_balloon():
     finish(image, "item_balloon")
 
 
-def icon_item_bus_ticket():
-    image, draw = icon_base((110, 210, 140), (30, 100, 60))
-    draw.rounded_rectangle([30, 70, 226, 186], radius=10, fill=(245, 240, 220), outline=INK, width=6)
-    for y in (100, 128, 156):
-        draw.line([(50, y), (150, y)], fill=(60, 60, 60), width=6)
-    circle(draw, 190, 128, 22, None, outline=(40, 140, 90), width=6)
-    finish(image, "item_bus_ticket")
-
-
 def icon_item_lucky_dice():
     image, draw = icon_base((200, 200, 210), (70, 70, 90))
     draw.rounded_rectangle([50, 50, 206, 206], radius=24, fill=(250, 250, 250), outline=INK, width=6)
     for x, y in ((90, 90), (128, 128), (166, 166), (166, 90), (90, 166)):
         circle(draw, x, y, 13, (200, 30, 30), width=0)
     finish(image, "item_lucky_dice")
-
-
-def icon_item_rollerblades():
-    image, draw = icon_base((255, 120, 180), (130, 30, 80))
-    poly(draw, [(70, 40), (140, 40), (150, 140), (210, 150), (210, 185), (70, 185)], (240, 80, 150))
-    for x in (85, 125, 165, 200):
-        circle(draw, x, 205, 16, (250, 230, 120))
-    finish(image, "item_rollerblades")
-
-
-def icon_item_reflective_vest():
-    image, draw = icon_base((210, 255, 90), (90, 130, 20))
-    poly(draw, [(70, 40), (110, 40), (128, 90), (146, 40), (186, 40), (206, 220), (50, 220)], (200, 250, 50))
-    for y in (130, 175):
-        draw.rectangle([52, y, 204, y + 16], fill=(230, 230, 235))
-    finish(image, "item_reflective_vest")
 
 
 def icon_item_umbrella():
@@ -619,13 +491,6 @@ def medallion(top, bottom):
     return image, draw
 
 
-def icon_perk_second_wind():
-    image, draw = medallion((120, 190, 230), (30, 70, 110))
-    for y, w in ((100, 90), (128, 110), (156, 80)):
-        draw.line([(78, y), (78 + w, y)], fill=(230, 245, 255), width=10)
-    finish(image, "perk_second_wind")
-
-
 def icon_perk_thick_skin():
     image, draw = medallion((200, 150, 120), (100, 60, 40))
     poly(draw, [(128, 70), (175, 90), (170, 150), (128, 185), (86, 150), (81, 90)], (230, 180, 140))
@@ -643,14 +508,6 @@ def icon_perk_revenge():
     image, draw = medallion((200, 60, 60), (80, 10, 10))
     poly(draw, [(85, 90), (150, 90), (150, 70), (180, 110), (150, 150), (150, 130), (85, 130)], (250, 200, 180))
     finish(image, "perk_revenge")
-
-
-def icon_perk_jaywalker():
-    image, draw = medallion((120, 120, 130), (40, 40, 50))
-    for x in range(78, 180, 26):
-        draw.rectangle([x, 100, x + 14, 156], fill=(240, 240, 240))
-    circle(draw, 150, 85, 12, (235, 190, 150))
-    finish(image, "perk_jaywalker")
 
 
 def icon_perk_pocket():
@@ -682,12 +539,6 @@ def icon_perk_hot_potato():
     finish(image, "perk_hot_potato")
 
 
-def icon_perk_fleet_foot():
-    image, draw = medallion((240, 210, 120), (120, 90, 20))
-    poly(draw, [(85, 140), (95, 90), (125, 90), (135, 120), (175, 130), (175, 150), (85, 150)], (240, 240, 245))
-    finish(image, "perk_fleet_foot")
-
-
 def icon_perk_focus():
     image, draw = medallion((170, 140, 220), (60, 30, 100))
     for r in (55, 35, 15):
@@ -700,6 +551,280 @@ def icon_perk_long_arms():
     line(draw, [(80, 160), (176, 96)], (235, 190, 150), 14)
     poly(draw, [(170, 80), (195, 92), (180, 115)], (235, 190, 150))
     finish(image, "perk_long_arms")
+
+
+# The redesigned kits
+
+
+def bus_shape(draw, x, y, w, color):
+    """A bus from the side: a long box with windows and three wheels"""
+    h = w * 0.36
+    poly(draw, [(x - w / 2, y), (x + w / 2, y), (x + w / 2, y - h), (x - w / 2, y - h)], color)
+    for k in range(4):
+        wx = x - w / 2 + 14 + k * (w - 28) / 4
+        draw.rectangle([wx, y - h + 10, wx + (w - 28) / 4 - 8, y - h * 0.5], fill=(170, 210, 240), outline=INK, width=3)
+    for wx in (x - w * 0.32, x + w * 0.05, x + w * 0.32):
+        circle(draw, wx, y, w * 0.07, (40, 40, 44))
+
+
+def icon_possess():
+    image, draw = icon_base((120, 140, 200), (30, 30, 70))
+    car_shape(draw, 128, 200, 190, (200, 60, 50))
+    poly(draw, [(90, 150), (90, 70), (110, 45), (146, 45), (166, 70), (166, 150), (150, 135), (128, 150), (106, 135)], (225, 235, 255))
+    circle(draw, 115, 80, 8, INK, width=2)
+    circle(draw, 141, 80, 8, INK, width=2)
+    finish(image, "possess")
+
+
+def icon_adrenaline():
+    image, draw = icon_base((230, 90, 70), (90, 10, 10))
+    poly(draw, [(128, 210), (50, 130), (50, 85), (85, 60), (128, 90), (171, 60), (206, 85), (206, 130)], (230, 40, 50))
+    line(draw, [(40, 135), (85, 135), (105, 95), (130, 175), (150, 115), (170, 135), (216, 135)], (255, 245, 200), 10, outline=False)
+    finish(image, "adrenaline")
+
+
+def icon_heave():
+    image, draw = icon_base((170, 90, 70), (60, 20, 20))
+    for x in (60, 128, 196):
+        draw.line([(x, 20), (x, 236)], fill=(240, 240, 230), width=6)
+    car_shape(draw, 150, 120, 120, (60, 120, 200), lifted=0)
+    line(draw, [(40, 210), (90, 170), (150, 150)], (235, 190, 150), 16)
+    poly(draw, [(200, 70), (240, 100), (200, 130)], (255, 210, 60))
+    finish(image, "heave")
+
+
+def icon_igloo():
+    image, draw = icon_base((150, 200, 240), (40, 80, 140))
+    draw.pieslice([40, 70, 216, 246], start=180, end=360, fill=(240, 248, 255), outline=INK, width=6)
+    for y in (125, 158):
+        draw.line([(52, y), (204, y)], fill=(160, 190, 220), width=4)
+    draw.pieslice([102, 120, 154, 210], start=180, end=360, fill=(50, 60, 80), outline=INK, width=5)
+    draw.rectangle([40, 158, 216, 168], fill=(240, 248, 255))
+    finish(image, "igloo")
+
+
+def icon_wave_through():
+    image, draw = icon_base((250, 210, 90), (150, 90, 20))
+    poly(draw, [(70, 200), (70, 110), (90, 70), (110, 110), (110, 60), (130, 100), (135, 55), (155, 100), (165, 70), (180, 120), (175, 200)], (235, 190, 150))
+    for y, w in ((80, 40), (120, 55), (160, 40)):
+        draw.line([(190, y), (190 + w * 0.8, y)], fill=(255, 255, 255), width=8)
+    finish(image, "wave_through")
+
+
+def icon_lollipop():
+    image, draw = icon_base((250, 220, 80), (150, 110, 20))
+    draw.rectangle([120, 120, 136, 240], fill=(230, 230, 235), outline=INK, width=4)
+    circle(draw, 128, 90, 64, (230, 40, 40))
+    circle(draw, 128, 90, 46, (250, 250, 250), outline=None, width=0)
+    draw.text((101, 78), "STOP", fill=(200, 30, 30))
+    finish(image, "lollipop")
+
+
+def icon_reverse():
+    image, draw = icon_base((180, 140, 240), (50, 30, 100))
+    draw.arc([50, 50, 206, 206], start=210, end=500, fill=INK, width=30)
+    draw.arc([54, 54, 202, 202], start=212, end=498, fill=(240, 220, 255), width=20)
+    poly(draw, [(40, 110), (90, 120), (60, 160)], (240, 220, 255))
+    finish(image, "reverse")
+
+
+def icon_trampoline():
+    image, draw = icon_base((250, 180, 80), (120, 60, 20))
+    draw.ellipse([30, 150, 226, 200], fill=(60, 140, 230), outline=INK, width=6)
+    for x in (50, 128, 206):
+        draw.rectangle([x - 6, 178, x + 6, 236], fill=(80, 80, 90), outline=INK, width=3)
+    circle(draw, 128, 70, 20, (235, 190, 150))
+    poly(draw, [(110, 92), (146, 92), (150, 128), (106, 128)], (245, 160, 40))
+    line(draw, [(60, 130), (90, 110)], (255, 255, 255), 6, outline=False)
+    line(draw, [(196, 130), (166, 110)], (255, 255, 255), 6, outline=False)
+    finish(image, "trampoline")
+
+
+def icon_night_bus():
+    image, draw = icon_base((40, 50, 100), (10, 10, 30))
+    circle(draw, 200, 55, 26, (250, 240, 190))
+    circle(draw, 212, 48, 22, (35, 45, 95), outline=None, width=0)
+    bus_shape(draw, 120, 210, 210, (250, 190, 30))
+    finish(image, "night_bus")
+
+
+def icon_blend_in():
+    image, draw = icon_base((150, 170, 150), (60, 80, 60))
+    draw.rectangle([60, 70, 196, 200], fill=(240, 230, 190), outline=INK, width=6)
+    draw.line([(105, 70), (105, 200)], fill=(180, 160, 120), width=4)
+    draw.line([(151, 70), (151, 200)], fill=(180, 160, 120), width=4)
+    line(draw, [(75, 170), (120, 120), (170, 150)], (220, 60, 60), 6, outline=False)
+    circle(draw, 128, 55, 18, (235, 190, 150))
+    finish(image, "blend_in")
+
+
+def icon_yarn_leash():
+    image, draw = icon_base((230, 120, 180), (100, 30, 70))
+    circle(draw, 90, 150, 50, (230, 90, 160))
+    for k in range(3):
+        draw.arc([50 + k * 8, 110 + k * 6, 130 - k * 8, 190 - k * 6], start=200 + k * 30, end=340 + k * 30, fill=(250, 170, 210), width=5)
+    line(draw, [(130, 130), (170, 90), (200, 110), (220, 60)], (230, 90, 160), 8)
+    finish(image, "yarn_leash")
+
+
+def icon_mind_the_cane():
+    image, draw = icon_base((190, 140, 200), (70, 40, 80))
+    line(draw, [(160, 230), (160, 80)], (140, 90, 50), 16)
+    draw.arc([100, 40, 170, 110], start=180, end=360, fill=INK, width=24)
+    draw.arc([104, 44, 166, 106], start=180, end=360, fill=(140, 90, 50), width=14)
+    star(draw, 70, 170, 26, (255, 230, 90))
+    star(draw, 50, 110, 16, (255, 230, 90))
+    finish(image, "mind_the_cane")
+
+
+def icon_magnetize():
+    image, draw = icon_base((170, 180, 200), (50, 60, 80))
+    car_shape(draw, 128, 220, 150, (60, 120, 200))
+    draw.arc([70, 40, 186, 156], start=180, end=360, fill=INK, width=44)
+    draw.arc([74, 44, 182, 152], start=180, end=360, fill=(220, 40, 40), width=34)
+    draw.rectangle([70, 96, 108, 130], fill=(220, 220, 230), outline=INK, width=5)
+    draw.rectangle([148, 96, 186, 130], fill=(220, 220, 230), outline=INK, width=5)
+    finish(image, "magnetize")
+
+
+def icon_lightning_rod():
+    image, draw = icon_base((70, 90, 160), (20, 20, 50))
+    draw.rectangle([120, 90, 136, 236], fill=(170, 175, 190), outline=INK, width=4)
+    poly(draw, [(128, 40), (140, 90), (116, 90)], (170, 175, 190))
+    poly(draw, [(200, 20), (160, 80), (185, 80), (140, 130), (205, 70), (178, 70)], (255, 240, 120))
+    finish(image, "lightning_rod")
+
+
+def icon_gust():
+    image, draw = icon_base((140, 190, 240), (40, 80, 140))
+    for y, x0, x1 in ((80, 40, 190), (128, 60, 220), (176, 30, 170)):
+        draw.line([(x0, y), (x1, y)], fill=INK, width=20)
+        draw.line([(x0, y), (x1, y)], fill=(240, 250, 255), width=12)
+        draw.arc([x1 - 30, y - 30, x1 + 10, y + 2], start=270, end=90 + 180, fill=(240, 250, 255), width=10)
+    finish(image, "gust")
+
+
+def icon_static_charge():
+    image, draw = icon_base((120, 140, 230), (30, 30, 90))
+    for k, x in enumerate((70, 128, 186)):
+        poly(draw, [(x + 10, 50), (x - 18, 130), (x, 130), (x - 12, 206), (x + 22, 110), (x + 4, 110)],
+             (255, 240, 120) if k == 2 else (150, 160, 200))
+    finish(image, "static_charge")
+
+
+def icon_substitution():
+    image, draw = icon_base((120, 120, 140), (40, 40, 50))
+    for cx, cy, r in ((90, 120, 45), (140, 100, 40), (170, 140, 40), (110, 160, 35)):
+        circle(draw, cx, cy, r, (200, 200, 210), outline=(120, 120, 130), width=4)
+    draw.ellipse([60, 170, 200, 220], fill=(140, 95, 50), outline=INK, width=6)
+    draw.ellipse([170, 170, 210, 220], fill=(210, 170, 110), outline=INK, width=5)
+    finish(image, "substitution")
+
+
+def icon_shadowed():
+    image, draw = icon_base((90, 80, 110), (20, 15, 30))
+    car_shape(draw, 110, 170, 170, (120, 120, 140))
+    draw.polygon([(195, 170), (240, 170), (240, 236), (170, 236)], fill=(10, 10, 15))
+    circle(draw, 210, 140, 18, (30, 30, 36))
+    poly(draw, [(196, 160), (224, 160), (228, 220), (192, 220)], (30, 30, 36))
+    draw.line([(200, 140), (220, 140)], fill=(230, 230, 240), width=4)
+    finish(image, "shadowed")
+
+
+def icon_bloodlust():
+    image, draw = icon_base((200, 50, 40), (60, 5, 5))
+    poly(draw, [(128, 40), (180, 140), (170, 185), (128, 215), (86, 185), (76, 140)], (190, 20, 25))
+    draw.ellipse([100, 140, 125, 170], fill=(240, 120, 110))
+    finish(image, "bloodlust")
+
+
+def icon_status_stun():
+    image, draw = icon_base((240, 210, 90), (140, 90, 20))
+    draw.ellipse([50, 140, 206, 200], fill=None, outline=INK, width=8)
+    for x, y in ((70, 150), (128, 195), (186, 150)):
+        star(draw, x, y, 30, (255, 240, 120))
+    circle(draw, 128, 100, 45, (235, 190, 150))
+    finish(image, "status_stun")
+
+
+def icon_status_slow():
+    image, draw = icon_base((120, 170, 120), (30, 60, 30))
+    draw.ellipse([60, 120, 190, 200], fill=(200, 160, 90), outline=INK, width=6)
+    draw.arc([90, 90, 170, 180], start=180, end=360, fill=INK, width=24)
+    poly(draw, [(60, 200), (40, 180), (60, 175)], (180, 210, 130))
+    circle(draw, 205, 170, 20, (180, 210, 130))
+    finish(image, "status_slow")
+
+
+def icon_status_winded():
+    image, draw = icon_base((130, 160, 220), (40, 50, 90))
+    circle(draw, 128, 110, 60, (235, 190, 150))
+    draw.line([(98, 100), (118, 100)], fill=INK, width=6)
+    draw.line([(138, 100), (158, 100)], fill=INK, width=6)
+    draw.ellipse([113, 125, 143, 155], fill=(60, 20, 20), outline=INK, width=3)
+    for x in (70, 186):
+        poly(draw, [(x, 170), (x + 10, 195), (x, 215), (x - 10, 195)], (150, 200, 255))
+    finish(image, "status_winded")
+
+
+def icon_item_remote_control():
+    image, draw = icon_base((90, 90, 100), (30, 30, 36))
+    poly(draw, [(80, 90), (176, 90), (186, 220), (70, 220)], (60, 60, 70))
+    line(draw, [(160, 90), (190, 30)], (180, 180, 190), 8)
+    circle(draw, 128, 140, 26, (220, 40, 40))
+    for x in (98, 158):
+        circle(draw, x, 190, 12, (240, 240, 240))
+    finish(image, "item_remote_control")
+
+
+def icon_item_stopwatch():
+    image, draw = icon_base((200, 200, 210), (80, 80, 90))
+    circle(draw, 128, 140, 80, (245, 245, 240))
+    draw.rectangle([115, 40, 141, 62], fill=(180, 180, 190), outline=INK, width=5)
+    line(draw, [(128, 140), (128, 80)], (200, 30, 30), 10, outline=False)
+    line(draw, [(128, 140), (165, 160)], (40, 40, 40), 8, outline=False)
+    circle(draw, 128, 140, 8, INK, width=2)
+    finish(image, "item_stopwatch")
+
+
+def icon_item_snow_globe():
+    image, draw = icon_base((150, 200, 240), (40, 70, 120))
+    poly(draw, [(70, 190), (186, 190), (200, 230), (56, 230)], (140, 90, 50))
+    circle(draw, 128, 120, 80, (210, 235, 255))
+    poly(draw, [(100, 180), (128, 110), (156, 180)], (40, 140, 70))
+    for x, y in ((80, 90), (110, 70), (150, 85), (175, 120), (90, 140), (160, 160), (128, 60)):
+        circle(draw, x, y, 6, (255, 255, 255), outline=None, width=0)
+    finish(image, "item_snow_globe")
+
+
+def icon_item_portal_gun():
+    image, draw = icon_base((60, 80, 110), (20, 25, 40))
+    draw.ellipse([20, 60, 90, 200], fill=(90, 200, 255), outline=INK, width=6)
+    draw.ellipse([166, 60, 236, 200], fill=(255, 160, 60), outline=INK, width=6)
+    draw.ellipse([38, 85, 72, 175], fill=(20, 40, 70))
+    draw.ellipse([184, 85, 218, 175], fill=(70, 35, 10))
+    poly(draw, [(95, 140), (150, 120), (160, 150), (110, 175)], (230, 230, 235))
+    finish(image, "item_portal_gun")
+
+
+def icon_perk_thick_soles():
+    image, draw = medallion((200, 160, 110), (90, 60, 30))
+    poly(draw, [(80, 120), (95, 80), (130, 80), (140, 110), (180, 120), (180, 140), (80, 140)], (240, 240, 245))
+    draw.rectangle([78, 140, 182, 165], fill=(60, 50, 40), outline=INK, width=5)
+    finish(image, "perk_thick_soles")
+
+
+def icon_perk_hit_and_run():
+    image, draw = medallion((230, 90, 70), (100, 20, 20))
+    car_shape(draw, 128, 160, 110, (60, 120, 200))
+    star(draw, 175, 100, 22, (255, 230, 90))
+    finish(image, "perk_hit_and_run")
+
+
+def icon_perk_scrapper():
+    image, draw = medallion((220, 150, 90), (100, 50, 20))
+    poly(draw, [(85, 140), (85, 100), (150, 100), (150, 85), (185, 120), (150, 155), (150, 140)], (235, 190, 150))
+    finish(image, "perk_scrapper")
 
 
 ICONS = {name[5:]: f for name, f in dict(globals()).items() if name.startswith("icon_") and callable(f) and f.__module__ == __name__ and name != "icon_base"}

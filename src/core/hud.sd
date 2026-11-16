@@ -13,7 +13,7 @@ BorderColor :: Color{255, 255, 255, 40};
 TextColor   :: Color{235, 235, 235, 255};
 DimColor    :: Color{160, 165, 170, 255};
 
-// The fonts: Cinzel for titles and names, in the style of the titles of Dota 2, and Fira Sans for the rest. Both are
+// The fonts: Cinzel for titles and names, and Fira Sans for the rest. Both are
 // in data/fonts, under the SIL Open Font License
 Fonts :: struct {
     text:  Font;
@@ -141,7 +141,7 @@ drawFeed :: (game: *Game) {
     }
 }
 
-// The health of a hero over its head, like in Warcraft 3, and the name of its player
+// The health of a hero over its head, and the name of its player
 drawHealthOverHero :: (game: *Game, index: int) {
     player := &game.players[index];
     hero := &player.hero;
@@ -181,7 +181,7 @@ drawHealthBar :: (bar: Rectangle, hero: *Hero) {
     }
 }
 
-// The bottom of the screen, like in Dota 2: the portrait of the hero, its health, and a button for each ability with
+// The bottom of the screen: the portrait of the hero, its health, and a button for each ability with
 // its icon, its key and its cooldown. The passives come last, set back, without a key. The mouse on a button shows
 // what the ability does
 AbilityButtonSize :: 64;
@@ -265,6 +265,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     drawText(healthText, textX, top + PortraitBox + 14, 16, White);
 
     drawBackpack(game, assets, backpackX, buttonY);
+    drawBuffs(game, assets, panel);
     if game.hoveredAbility >= 0 {
         drawAbilityTooltip(hero, abilities[game.hoveredAbility], hoveredButton, panel);
     }
@@ -342,7 +343,7 @@ drawLock :: (box: Rectangle, alpha: f32) {
     DrawRectangle(x + 1, y + 5, 10, 7, ColorAlpha({230, 200, 90, 255}, alpha));
 }
 
-// The dark part of a cooldown that shrinks clockwise from the top, like in Warcraft 3 and Dota 2, with the seconds left
+// The dark part of a cooldown that shrinks clockwise from the top, with the seconds left
 drawCooldown :: (box: Rectangle, left: f32, seconds: f32, textSize: int) {
     if left <= 0 { return; }
     x := box.x as int;
@@ -430,7 +431,7 @@ drawBanner :: (game: *Game) {
     x := (GetScreenWidth() - width) / 2;
     y := 90;
 
-    // On a plaque, like the titles of Warcraft 3
+    // On a plaque
     plaque := Rectangle{(x - size * 2) as f32, (y - 10) as f32, (width + size * 4) as f32, (size + 22) as f32};
     if !drawPart(.plaque, plaque, ColorAlpha(White, alpha)) { DrawRectangleRec(plaque, ColorAlpha(PanelColor, 0.8 * alpha)); }
     drawTitle(banner.text, x + 2, y + 3, size, ColorAlpha(Black, 0.6 * alpha));
@@ -496,7 +497,7 @@ drawPaused :: (game: *Game) {
     centerX := GetScreenWidth() / 2;
     centerY := GetScreenHeight() / 2;
 
-    // A menu like the ones of Warcraft 3: a panel with the title on a plaque, and the settings of the next game in it
+    // A menu: a panel with the title on a plaque, and the settings of the next game in it
     width := 620;
     height := 290;
     panel := Rectangle{(centerX - width / 2) as f32, (centerY - height / 2) as f32, width as f32, height as f32};

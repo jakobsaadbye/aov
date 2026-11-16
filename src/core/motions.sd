@@ -32,7 +32,7 @@ rideCar :: method (game: *Game, index: int, dt: f32) {
         game.hopOff(index);
         return;
     }
-    hero.position = Vector3{laneCenter(car.lane), 0, car.z + ride.offset};
+    hero.position = Vector3{car.x(), 0, car.z + ride.offset};
     hero.walkCycle += dt * 2;
     hero.ride = ride;
 }
@@ -78,8 +78,8 @@ moveDash :: method (game: *Game, index: int, dt: f32) {
 // What some traits do over time
 //
 
-LostEveryLow  :: 5.0;       // Seconds between Tobias's bursts of speed, at random between these
-LostEveryHigh :: 10.0;
+NearMissReach :: 1.0;      // How near a car must pass to be a near miss (the trait adrenaline)
+NearMissEvery :: 8.0;
 
 updateTraitsOverTime :: method (game: *Game, index: int, dt: f32) {
     hero := &game.players[index].hero;
@@ -89,15 +89,27 @@ updateTraitsOverTime :: method (game: *Game, index: int, dt: f32) {
         if hero.isMoving { hero.clearStatus(.mending); }
         else { hero.health = math.min(hero.maxHealth(), hero.health + hero.maxHealth() * hero.status(.mending).amount * dt); }
     }
+}
 
-    // Tobias gets lost: now and then he hurries off for no reason
-    if hero.stats.lost {
-        hero.lostIn -= dt;
-        if hero.lostIn <= 0 {
-            hero.lostIn = game.rng.uniform(LostEveryLow, LostEveryHigh) as f32;
-            hero.addStatus(.haste, 1.2, 1.6);
-            game.effects.particles.emit(.dust, hero.position, 8);
-        }
+// A car only just missed a hero with Adrenaline: its abilities are ready again
+nearMiss :: method (game: *Game, index: int) {
+    hero := &game.players[index].hero;
+    if !hero.stats.adrenaline || hero.nearMissLeft > 0 || hero.carsPass() { return; }
+    car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius + NearMissReach);
+    if !car.hasValue() || car.value().speed < 2 { return; }
+    hero.nearMissLeft = NearMissEvery;
+    game.readyAbilities(index);
+    game.announce(index, {255, 120, 90, 255}, "That was close! % is ready again", game.players[index].name);
+}
+
+// An enemy was run over: the heroes with Bloodlust near it are ready again, and heal
+feedBloodlust :: method (game: *Game, victim: int) {
+    where := game.players[victim].hero.ground();
+    for *player, i in game.players {
+        if i as int == victim || !player.isPlaying() || !player.hero.stats.bloodlust { continue; }
+        if player.hero.ground().distance(where) > BloodlustReach { continue; }
+        player.hero.health = math.min(player.hero.maxHealth(), player.hero.health + player.hero.maxHealth() * 0.2);
+        game.readyAbilities(i as int);
     }
 }
 
@@ -105,7 +117,6 @@ updateTraitsOverTime :: method (game: *Game, index: int, dt: f32) {
 // Out of the way of a car, by itself
 //
 
-RollKnock :: 3.5;           // How far Kenji rolls out of the way
 NimbleCooldown :: 20.0;
 
 // A car is on the hero: true when something got it out of the way instead of being hit
@@ -116,17 +127,10 @@ dodgedCar :: method (game: *Game, index: int, car: *Car) -> bool {
 
     // Out of the lane, to the nearer side of it
     side: f32 = 1;
-    if hero.position.x < laneCenter(car.lane) { side = -1; }
-    out := Vector2{laneCenter(car.lane) + side * (CarWidth * 0.5 + hero.info().hitRadius + 1.2), hero.position.z};
+    if hero.position.x < car.x() { side = -1; }
+    out := Vector2{car.x() + side * (CarWidth * 0.5 + hero.info().hitRadius + 1.2), hero.position.z};
 
-    if hero.stats.roll && !hero.rolledOnce {
-        hero.rolledOnce = true;
-        hero.displacement = Displacement{to: out.at(), speed: KnockbackSpeed};
-        hero.addStatus(.stun, 0.6);
-        game.effects.particles.emit(.dust, hero.position, 14);
-        game.announce(index, {200, 200, 210, 255}, "% rolled out of the way", game.players[index].name);
-        return true;
-    }
+    if game.substitute(index) { return true; }
     if hero.stats.nimble && hero.nimbleLeft <= 0 {
         hero.nimbleLeft = NimbleCooldown;
         hero.startLeap(out, 0.3, 1.5);

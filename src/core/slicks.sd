@@ -59,7 +59,7 @@ updateSlicks :: method (game: *Game, dt: f32) {
         car.leakTimer -= dt;
         if car.leakTimer > 0 { continue; }
         car.leakTimer = LeakDrop;
-        back := Vector2{laneCenter(car.lane) + slicks.rng.uniform(-0.6, 0.6) as f32, car.z - car.length() * 0.5};
+        back := Vector2{car.x() + slicks.rng.uniform(-0.6, 0.6) as f32, car.z - car.length() * 0.5};
         if math.fabsf(back.y) < MapHalfLength { game.addSlick(back, slicks.rng.uniform(1.4, 2.1) as f32); }
     }
 

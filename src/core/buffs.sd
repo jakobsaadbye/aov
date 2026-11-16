@@ -1,0 +1,138 @@
+namespace core;
+
+// What is on a hero right now, as a row of small icons over the hero card: its statuses, its passives and perks, and what
+// else holds it or helps it for a while. A green border is good for it, a red one bad. The mouse on one says what it is
+
+import fmt;
+import math;
+use raylib;
+
+Buff :: struct {
+    icon:        string;
+    name:        string;
+    description: string;
+    good:        bool;
+    timeLeft:    f32;           // Seconds left, or 0 for one that lasts
+    duration:    f32;
+    count:       int;           // A number in the corner, e.g charges, or 0
+}
+
+BuffSize :: 34;
+BuffGap  :: 5;
+GoodBuffColor :: Color{80, 220, 90, 255};
+BadBuffColor  :: Color{230, 60, 50, 255};
+
+buffsOf :: (game: *Game, index: int) -> [..]Buff {
+    buffs: [..]Buff;
+    player := &game.players[index];
+    hero := &player.hero;
+
+    for kind in StatusKind.values {
+        if !hero.has(kind) { continue; }
+        look := statusLook(kind);
+        status := hero.status(kind);
+        buffs.add(Buff{look.icon, look.name, look.description, statusRules(kind).good, status.timeLeft, math.max(status.duration, status.timeLeft)});
+    }
+    if hero.possess.hasValue() {
+        buffs.add(Buff{"possess", "Possessing", "In a car, steering it", true, hero.possess.value().timeLeft, 4});
+    }
+    if hero.isBlended() { buffs.add(Buff{"blend_in", "Blended In", "Enemies can't target him until he moves", true}); }
+    if hero.inShadow    { buffs.add(Buff{"shadowed", "In the Shadows", "Enemies can't target him next to the car", true}); }
+    if hero.slowedBy > 0 {
+        buffs.add(Buff{"item_garlic", "Stench", tprint("The garlic of an enemy near: %% slower", (hero.slowedBy * 100) as int, "%"), false});
+    }
+    if game.isMagnetized(index) { buffs.add(Buff{"magnetize", "Magnetized", "Pulled towards a car", false}); }
+
+    // What it always has: the passives of the hero, and the perks of its player
+    for ability in hero.abilities() {
+        if !ability.isPassive() { continue; }
+        buff := Buff{ability.icon, ability.name, ability.description, true};
+        kind := ability.trait.kind;
+        if (kind == .blendIn && hero.isBlended()) || (kind == .shadowed && hero.inShadow) { continue; }      // Shown as on
+        if kind == .adrenaline {
+            buff.timeLeft = hero.nearMissLeft;
+            buff.duration = NearMissEvery;
+        }
+        if kind == .staticCharge { buff.count = hero.castCount % 3; }
+        buffs.add(buff);
+    }
+    for perk in player.perks {
+        definition := perk.perkDefinition();
+        buffs.add(Buff{definition.icon, definition.name, definition.description, true});
+    }
+    return buffs;
+}
+
+// Near a car that an enemy magnetized
+isMagnetized :: method (game: *Game, index: int) -> bool {
+    hero := &game.players[index].hero;
+    if hero.stats.unshovable { return false; }
+    for car in game.traffic.cars {
+        if !car.isActive || car.magnetLeft <= 0 || car.magnetOwner < 0 || car.magnetOwner == index { continue; }
+        if car.position().xz().distance(hero.ground()) <= MagnetRadius { return true; }
+    }
+    return false;
+}
+
+// Over the hero card: the good ones from its left, the bad ones from its right
+drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
+    buffs := buffsOf(game, game.watched);
+    defer buffs.free();
+    y := panel.y as int - BuffSize - 12;
+    left := panel.x as int + 16;
+    right := (panel.x + panel.width) as int - 16 - BuffSize;
+    mouse := GetMousePosition();
+    hovered := -1;
+    hoveredBox: Rectangle;
+    for buff, i in buffs {
+        x := right;
+        if buff.good {
+            x = left;
+            left += BuffSize + BuffGap;
+        } else {
+            right -= BuffSize + BuffGap;
+        }
+        box := Rectangle{x as f32, y as f32, BuffSize, BuffSize};
+        drawBuff(assets, buff, box);
+        if CheckCollisionPointRec(mouse, box) {
+            hovered = i as int;
+            hoveredBox = box;
+        }
+    }
+    if hovered >= 0 {
+        buff := buffs[hovered];
+        lines := wrapText(buff.description, 16, 300);
+        defer lines.free();
+        sub := "";
+        if buff.timeLeft > 0 { sub = tprint("% s left", fmt.fixed(buff.timeLeft, 1)); }
+        color := GoodBuffColor;
+        if !buff.good { color = BadBuffColor; }
+        uiTooltip(hoveredBox, buff.name, color, lines, sub);
+    }
+}
+
+drawBuff :: (assets: *Assets, buff: Buff, box: Rectangle) {
+    border := GoodBuffColor;
+    if !buff.good { border = BadBuffColor; }
+    DrawRectangleRec(box, {0, 0, 0, 200});
+    if assets.icons.has(buff.icon) {
+        icon := assets.icons[buff.icon];
+        DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, {box.x + 2, box.y + 2, box.width - 4, box.height - 4}, {0, 0}, 0, White);
+    }
+    // How much of it has gone: dark from the top, clockwise
+    if buff.timeLeft > 0 && buff.duration > 0 {
+        inner := Rectangle{box.x + 2, box.y + 2, box.width - 4, box.height - 4};
+        BeginScissorMode(inner.x as int, inner.y as int, inner.width as int, inner.height as int);
+        gone := 1 - math.clamp(buff.timeLeft / buff.duration, 0, 1);
+        if gone > 0 { DrawCircleSector({inner.x + inner.width * 0.5, inner.y + inner.height * 0.5}, inner.width, -90, -90 + gone * 360, 32, {0, 0, 0, 150}); }
+        EndScissorMode();
+    }
+    DrawRectangleLinesEx(box, 2, border);
+    if buff.count > 0 {
+        text := tprint("%", buff.count);
+        x := (box.x + box.width) as int - textWidth(text, 14) - 3;
+        y := (box.y + box.height) as int - 16;
+        drawText(text, x + 1, y + 1, 14, Black);
+        drawText(text, x, y, 14, White);
+    }
+}

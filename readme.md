@@ -28,7 +28,7 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | | |
 | --- | --- |
 | `data/textures/` | The pavement (`pavement/pavement.png`), the road (`road/asphalt.png`), the particles and the frames of the UI, the Warcraft cursor |
-| `data/models/` | The vehicles (car, van, truck), the heroes and a segment of the wall, as OBJ with a MTL of their colors |
+| `data/models/` | The vehicles (car, van, truck, bus), the heroes and a segment of the wall, as OBJ with a MTL of their colors |
 | `data/icons/` | A 64x64 icon for each ability, by the name in `heroes.sd` |
 | `data/sounds/` | The sound effects, by group: `hero/`, `car/`, `ability/`, `ui/` |
 | `data/music/` | The music (`theme.ogg`) and the hum of the traffic (`traffic.ogg`), looped |
@@ -142,27 +142,27 @@ hero is run over, the player gets another at random.
 
 | Hero | Abilities |
 | --- | --- |
-| Allan, the Runner | **Sprint** (Q): twice as fast for a moment. **Quick feet** (passive): 10% faster |
-| Ghosty, the Restless | **Fade** (Q): the cars drive through him for 1.5 seconds. **Phase walk** (passive): floats through the walls |
-| The Butcher | **Meat hook** (Q): bites into the first car it meets, up to 34 away, and he is pulled to the side of the car as it drives on. He can walk while it flies. **Charge** (W): very fast for a moment |
-| Frosty, the Snowman | **Cold snap** (Q): freezes the cars around him. **Slide** (W): to the cursor. **Chill aura** (passive): cars near him drive 40% slower |
+| Allan, the Runner | **Sprint** (Q): twice as fast for a moment. **Adrenaline** (passive): a car that misses him by a hair makes his abilities ready again |
+| Ghosty, the Restless | **Possess** (Q): slips into a car for 4 seconds; a click beside it steers it a lane over, and it still hits whoever is in its way. He comes out on the side he is going. **Phase walk** (passive): floats through the walls |
+| The Butcher | **Meat hook** (Q): bites into the first car it meets, up to 34 away, and he is pulled to the side of the car as it drives on. He can walk while it flies. **Heave** (W): throws a car next to him two lanes over |
+| Frosty, the Snowman | **Cold snap** (Q): freezes the cars around him. **Igloo** (W): safe inside an igloo for 3 seconds; the cars that run into it are stuck until it melts. **Chill aura** (passive): cars near him drive 40% slower |
 | Bjørn, the Shieldbearer | **Leap** (Q): high over cars and walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away. **Iron hide** (passive): half the damage |
-| Hilda, the Crossing Guard | **Stop!** (Q): the five lanes around her stop for 3 seconds. **Brisk walker** (passive): 15% faster |
-| Mira, the Timekeeper | **Time warp** (Q): every car 70% slower for 3 seconds. **Rewind** (W): back to where she was 3 seconds ago. **Time lock** (E): an enemy can't move or cast for 2 seconds |
+| Hilda, the Crossing Guard | **Stop!** (Q): the five lanes around her stop for 3 seconds. **Wave through** (W): the lanes at the cursor drive two and a half times as fast for a moment. **Lollipop lady** (passive): her sign stays up as long as she stands by it, up to 8 seconds |
+| Mira, the Timekeeper | **Reverse** (Q): the cars of five lanes back up the road for 2 seconds. **Rewind** (W): back to where she was 3 seconds ago. **Time lock** (E): an enemy can't move or cast for 2 seconds |
 | Karl, the Mechanic | **Jack** (Q): jacks up a car for 3 seconds; anyone can walk under it. **Oil change** (W): a puddle of oil at the cursor. **Grease monkey** (passive): doesn't slide on oil |
-| Birgit, the Builder | **Footbridge** (Q): a bridge over three lanes for 5 seconds, safe for anyone on it, enemies too. **Barricade** (W): two lanes stop before it for 4 seconds. **Overtime** (passive): 15% shorter cooldowns |
-| Bent, the Bus Driver | **Hop on** (Q): rides on the roof of a car for up to 2.5 seconds, then jumps off towards the far side. **Honk** (W): the enemies near him jump away. **Timetable** (passive): the lanes light up before a car comes |
+| Birgit, the Builder | **Footbridge** (Q): a bridge over three lanes for 5 seconds, safe for anyone on it, enemies too. **Trampoline** (W): bounces anyone who walks onto it 12 on, over the cars. **Overtime** (passive): what she builds stays 50% longer |
+| Bent, the Bus Driver | **Hop on** (Q): rides on the roof of a car for up to 2.5 seconds, then jumps off towards the far side. **Night bus** (W): a slow bus down the lane at the cursor; nothing gets past it, so the lane behind it is empty. **Timetable** (passive): the lanes light up before a car comes |
 | Sigrid, the Witch | **Broom** (Q): flies to the cursor over the cars, without turning. **Hex** (W): turns an enemy into a toad: slow, and it can't cast. **Nine lives** (passive): once a life, a car leaves her alive |
-| Tobias, the Tourist | **Flash photo** (Q): the cars in a cone brake, and the enemies in it are blinded (their screen goes white; a bot walks on blind). **Selfie** (W): swaps places with an enemy. **Lost** (passive): bursts of speed, for no reason |
+| Tobias, the Tourist | **Flash photo** (Q): the cars in a cone brake, and the enemies in it are blinded (their screen goes white; a bot walks on blind). **Selfie** (W): swaps places with an enemy. **Blend in** (passive): standing still for 1.5 seconds, enemies can't target him |
 | Mads, the Skater | **Ollie** (Q): jumps over a car. **Grind** (W): grinds the lane lines towards the cursor, very fast, untouchable. **Rolling** (passive): up to 35% faster going straight on, slower when he turns |
 | Ditte, the Paramedic | **Call it in** (Q): an ambulance down the lane at the cursor. **Bandage** (W): heals 36% over 3 seconds while she stands still. **Colleague** (passive): the ambulances never hit her |
-| Gudrun, the Grandmother | **Cane trip** (Q): an enemy next to her falls over. **Knitting** (W): an enemy is tangled in yarn, half as fast. **Respect your elders** (passive): the cars slow right down behind her. Slow, but 80 health |
-| Magnus, the Magnet | **Repel** (Q): the cars coming at him are pushed 7 back. **Attract** (W): an enemy is pulled right up to him. **Steel frame** (passive): nobody shoves him or knocks him away |
-| Stormy, the Weather Girl | **Lightning** (Q): a car stops dead, and the ones behind it queue up. **Downpour** (W): rain around her slows the cars and the enemies. **Tailwind** (passive): faster towards the far side |
+| Gudrun, the Grandmother | **Cane trip** (Q): an enemy next to her falls over. **Yarn leash** (W): an enemy is tied to her for 5 seconds and can't get further away; where she walks, it comes along. **Mind the cane** (passive): who walks into her trips. Slow, but 80 health |
+| Magnus, the Magnet | **Magnetize** (Q): a car pulls his enemies near it in, for 5 seconds. **Attract** (W): an enemy is pulled right up to him. **Steel frame** (passive): nobody shoves him or knocks him away |
+| Stormy, the Weather Girl | **Lightning rod** (Q): for 6 seconds, lightning strikes the nearest enemy near it every second, or else a car. **Gust** (W): blows the enemies in a cone away, and the cars in it a lane over. **Static charge** (passive): every third spell doesn't cool down |
 | Hugo, the Hypnotist | **Puppet** (Q): an enemy walks back the way it came. **Sleep** (W): an enemy sleeps until it is shoved or hit. **Calm mind** (passive): stuns hold him half as long |
 | Tim & Tom, the Twins | **Split up** (Q): the other twin walks on ahead. **Swap** (W): they swap places. **Double take** (passive): spells cast on them hit the other twin first |
-| Kenji, the Ninja | **Smoke bomb** (Q): can't be targeted, and faster, for 3 seconds. **Shadow step** (W): into the shadow right behind a car. **Roll** (passive): the first car only knocks him down |
-| Ivar, the Berserker | **Battle cry** (Q): the enemies near him run away from him, wherever that takes them. **Axe throw** (W): stuns the first enemy it hits. **Berserk** (passive): 30% faster below half his health |
+| Kenji, the Ninja | **Substitution** (Q): leaves a log for 5 seconds; a car that would hit him hits the log, and he is back by it. **Shadow step** (W): into the shadow right behind a car. **Shadowed** (passive): can't be targeted right next to a car |
+| Ivar, the Berserker | **Battle cry** (Q): the enemies near him run away from him, wherever that takes them. **Axe throw** (W): stuns the first enemy it hits. **Bloodlust** (passive): an enemy run over near him makes his abilities ready, and heals him |
 
 A car on a hero takes 100 health a second (vans and trucks more), so a fragile hero (Ghosty, 15) dies at once and a
 tough one (the Butcher, 100) survives a car driving over it.
@@ -175,7 +175,7 @@ own. A new hero is a value of `HeroKind`, its file, its line in `defineHero()` (
 (`tools/make_hero_sounds.py`).
 
 * **An ability** is an `Ability` (`abilities.sd`) with the function that casts it, and numbers whose meaning its cast says
-  (range, duration, radius, power, count). Abilities that several heroes share (sprint, blink, fade, leap, freeze) are in
+  (range, duration, radius, power, count). Abilities that several heroes share (sprint, blink, leap, freeze) are in
   `abilities.sd`. A cast that fails, e.g with no enemy in range, returns false and doesn't cool down.
 * **A passive** is a `Trait` (`traits.sd`). Passives, items and perks are all traits, which add up to the `HeroStats` of the
   hero: its speed, the damage it takes, its auras, what it is immune to. A new kind of trait is a case of `Trait`, what it
@@ -183,10 +183,20 @@ own. A new hero is a value of `HeroKind`, its file, its line in `defineHero()` (
 * **What happens to a hero for a while** (stunned, faded, hexed, asleep, scared, a puppet, blinded, ...) is a status
   (`status.sd`): what each kind does is said once, in `statusRules`, and the game asks the hero `canAct()`, `canCast()`,
   `isTargetable()` and `carsPass()`.
-* **What an ability leaves in the world** is in `motions.sd` (riding cars, dashes, footbridges) and `world_effects.sd`
-  (thrown things, rain, decoys, banana peels).
+* **What an ability leaves in the world** is in `motions.sd` (riding cars, dashes, footbridges), `world_effects.sd`
+  (thrown things, traffic cones, decoys, banana peels), and the file of the hero for what is its own (Birgit's trampolines,
+  Stormy's lightning rods). Cars can be moved to another lane (`Traffic.moveToLane`, they slide over), and each lane has a
+  pace (`Traffic.setPace`): faster, or backwards.
 * **The bots** know an ability by its `BotUse` (speed up, stop the cars, escape, disable an enemy, ...), so they play a new
-  ability of a kind they know without new code. The forecast knows the bridges, lifted cars and the immunities.
+  ability of a kind they know without new code. The forecast knows the bridges, lifted cars, the pace of each lane, the
+  cars that slide over to another lane, the queue behind a bus and the immunities.
+
+### What is on a hero
+
+Over the hero card is a row of small icons of everything on the hero: its statuses (stunned, hasted, leashed, ...), its
+passives and perks, and what holds it or helps it for a while (in a car, blended in, magnetized, a stench). The good ones
+have a green border and start from the left, the bad ones a red border and start from the right. One that runs out
+darkens as it goes, and the mouse on one says what it is (`core/buffs.sd`).
 
 ## A game
 
@@ -216,7 +226,7 @@ The road doesn't stay the same, so a crossing is never quite the one before:
 | --- | --- |
 | No healing | Nothing heals a hero but a First Aid Kit, so every scrape counts for as long as the hero lives |
 | Rush hour | After 35 to 55 calm seconds, a warning, then for 9 to 13 seconds the cars of every lane come much closer after each other. Wait it out, or get across before it comes |
-| Ambulances | Every 30 to 55 seconds a siren, arrows flash down three lanes next to each other, and 2.5 seconds later three ambulances come down them, much faster than any car, with their lights flashing; the middle one a bit ahead. They are in a hurry: nothing slows them down, not a freeze, a chill aura, a stop sign or a time warp |
+| Ambulances | Every 30 to 55 seconds a siren, arrows flash down three lanes next to each other, and 2.5 seconds later three ambulances come down them, much faster than any car, with their lights flashing; the middle one a bit ahead. They are in a hurry: nothing slows them down, not a freeze, a chill aura, a stop sign or a lane driving backwards |
 | Oil | Now and then a car leaks for a moment and leaves a trail of tar on its lane, which dries up after a minute or so. A hero that walks onto it slides on the way it went, a bit faster, and can't turn until it is off the oil |
 
 Rush hour and the ambulances are in `core/traffic_events.sd`, the oil in `core/slicks.sd`. They follow the random numbers
@@ -234,28 +244,26 @@ click on them; the number in their corner is how many uses they have left.
 
 | Item | |
 | --- | --- |
-| Sneakers | Walks 15% faster |
 | Hard Hat | The cars do 35% less damage |
 | Hourglass | The abilities cool down 30% faster |
 | Spyglass | The abilities reach 30% further |
 | First Aid Kit | 40% more health, and heals 10% of it a second, 1.5 seconds after a car. The only thing that heals, besides Ditte |
 | Four-Leaf Clover | Once each hero: a car that would run it over leaves it with a bit of health |
-| Frost Charm | An aura of cold: the cars near the hero drive 30% slower |
 | Garlic | A stench: enemy heroes near the hero walk 30% slower |
 | Spring Shoes | A car that hits the hero bounces it over the car. Every 12 seconds |
-| Bubble Wrap | The first car that hits each hero only knocks it out of the way |
 | Mirror | The next spell cast on the hero goes back to whoever cast it. Every 15 seconds |
-| Rollerblades | 30% faster, but the cars do 15% more damage |
-| Reflective Vest | The cars slow down for the hero when it is on the road in front of them |
 | Umbrella | Leaps and flights stay up 40% longer, and the hero is knocked half as far |
 | Banana Peel (used, 3) | Thrown at the cursor: the first enemy that steps on it slips |
 | Energy Drink (used, 2) | 70% faster for 3 seconds, then 35% slower for 2 |
-| Traffic Cone (used, 3) | On the road at the cursor: the cars near it crawl for 5 seconds |
+| Traffic Cone (used, 3) | In the lane at the cursor for 8 seconds: the cars that come to it swerve into the lane beside it |
 | Megaphone (used) | 3 seconds more on every cooldown of every enemy |
 | Rubber Chicken (used) | The enemies near the hero walk towards it for a moment |
 | Decoy Balloon (used) | A balloon like the hero walks on ahead; spells cast on the hero hit it first |
-| Bus Ticket (used, 2) | Rides the nearest car for 2.5 seconds |
 | Lucky Dice (used) | Casts a random ability of a random hero |
+| Remote Control (used) | Steers the car at the cursor two lanes over, away from the hero |
+| Stopwatch (used) | All the abilities are ready at once. Every 40 seconds |
+| Snow Globe (used, 1) | Every car but the ambulances stops dead, and every enemy is frozen in time, for 1.5 seconds |
+| Portal Gun (used) | A portal where the hero stands and one at the cursor, for 6 seconds: anyone who walks into one comes out of the other |
 
 An item is a value of `ItemKind` and its definition (`core/items.sd`): its traits, and for one that is used, an `Ability`
 with its charges (`core/item_abilities.sd`). The bots go for an item when the way past it isn't much longer than the way
@@ -270,16 +278,16 @@ They are traits, like the items, so two players with the same hero play it diffe
 
 | Perk | |
 | --- | --- |
-| Second Wind | 30% faster for 2 seconds after being shoved or knocked away |
+| Thick Soles | Doesn't slip on banana peels, nor slide on oil |
 | Thick Skin | 20% more health |
 | Scavenger | Picks items up from 3 further away |
 | Revenge | Whoever got it run over has 3 seconds more on all cooldowns |
-| Jaywalker | 15% faster on the road, 15% slower off it |
+| Hit and Run | Getting an enemy run over makes all the abilities ready again |
 | Deep Pockets | One more slot in the backpack |
 | Nimble | Steps aside by itself when a car is about to hit it. Every 20 seconds |
 | Cold Blooded | Cars it freezes, stops or slows stay so 1 second longer |
 | Hot Potato | Shoving an enemy swaps an item with it |
-| Fleet Foot | 6% faster |
+| Scrapper | Shoves enemies twice as far |
 | Focus | 12% shorter cooldowns |
 | Long Arms | The abilities reach 15% further |
 
@@ -348,7 +356,7 @@ the ones the inspector draws with. The game knows nothing else of the bots, whic
 thinks in three parts, which can each be changed on its own:
 
 1. **Forecast** (`forecast.sd`): when each cell of a grid on the ground is free of cars, for the next 12 seconds. A car
-   only drives along its lane, so where it will be is a few straight pieces (frozen, slowed by a time warp, held at a stop
+   only drives along its lane, so where it will be is a few straight pieces (frozen, sped up or backing up with its lane, held at a stop
    sign, at its own speed), and when it covers a cell is solved from them exactly. The next car of each lane is in it too.
    The intervals of a cell are only worked out when the search asks for them.
 2. **Plan** (`planner.sd`): the fastest way across through those free times, with *Safe Interval Path Planning* (SIPP).

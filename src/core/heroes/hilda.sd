@@ -1,6 +1,7 @@
 namespace core;
 
-// Hilda: forty years as a crossing guard. When she raises her sign, the cars stop
+// Hilda: forty years as a crossing guard. When she raises her sign, the cars stop, and they stay stopped as long as she
+// stands her ground. When she waves them on, they hurry past
 
 import math;
 use raylib;
@@ -12,9 +13,16 @@ defineHilda :: () -> HeroDefinition {
         description: "Raises her stop sign: the five lanes around her stop for 3 seconds, and their cars queue up",
         count: 2, duration: 3,
     });
-    hero.abilities.add(passive("Brisk walker", "quick_feet", "Forty years of crossing duty: walks 15% faster", Trait{speed: 1.15}));
+    hero.abilities.add(Ability{
+        name: "Wave through", icon: "wave_through", sound: "ability.honk", cooldown: 10, targeting: .point, cast: castWaveThrough,
+        description: "Waves the cars of the three lanes at the cursor, up to 16 away, on: they drive two and a half times as fast for 2.5 seconds. What is in their way has less time to get out of it, and the lane is soon empty behind them",
+        range: 16, count: 1, power: 2.5, duration: 2.5,
+    });
+    hero.abilities.add(passive("Lollipop lady", "lollipop", "Her stop sign stays up as long as she stands still by it, up to 8 seconds", .lollipop));
     return hero;
 }
+
+LollipopLongest :: 8.0;
 
 // The lanes within count of hers stop for duration, before a line just behind her
 castStopSign :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
@@ -24,7 +32,32 @@ castStopSign :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -
     last := math.min(lane + ability.count, LaneCount - 1);
     line := hero.position.z - 5;
     game.traffic.halt(first, last, line, ability.duration);
-    game.stopSigns.add(StopSign{position: hero.position, timeLeft: ability.duration, lanes: [first, last], line: line});
+    game.stopSigns.add(StopSign{position: hero.position, timeLeft: ability.duration, lanes: [first, last], line: line, owner: caster});
     game.effects.addRing(hero.ground(), 1, 9, {255, 70, 60, 255}, 0.5);
     return true;
+}
+
+// The cars of the lanes within count of the one at the point drive power times as fast for duration
+castWaveThrough :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    if math.fabsf(point.x) > RoadHalfWidth { return false; }
+    lane := laneAt(point.x);
+    game.traffic.setPace(lane - ability.count, lane + ability.count, ability.power, ability.duration);
+    hero.facing = math.atan2f(point.x - hero.position.x, point.y - hero.position.z);
+    game.effects.addRing(point, 0.5, LaneWidth * (ability.count as f32 + 0.5), {255, 220, 80, 255}, 0.35);
+    return true;
+}
+
+// A stop sign of a hero with Lollipop lady stays up while she stands still by it
+holdStopSigns :: method (game: *Game, dt: f32) {
+    for *sign in game.stopSigns {
+        sign.age += dt;
+        if sign.owner < 0 { continue; }
+        owner := &game.players[sign.owner];
+        if !owner.isPlaying() || !owner.hero.stats.lollipop || owner.hero.isMoving || sign.age >= LollipopLongest { continue; }
+        if owner.hero.ground().distance(sign.position.xz()) > 1 { continue; }
+        sign.timeLeft = math.max(sign.timeLeft, 0.2);
+        game.traffic.halt(sign.lanes[0], sign.lanes[1], sign.line, sign.timeLeft);
+    }
 }

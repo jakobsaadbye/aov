@@ -29,7 +29,7 @@ Gene :: enum {
     castBar,
     dangerTime,             // A car closer than this, in seconds, is danger
     escape,                 // Blink, leap, a hook out, fade, rewind: away from a car
-    stopCars,               // Freeze, a stop sign, a time warp: in danger
+    stopCars,               // Freeze, a stop sign, a snow globe: in danger
     stopCarsWaiting,        // and while it waits on the road for a gap
     speedUp,                // Sprint, charge: near the road
     speedUpDanger,          // and in danger

@@ -3,9 +3,9 @@ namespace core;
 import math;
 use raylib;
 
-// Every time a hero is run over, the player gets a new one at random. A hero has any number of abilities, like in
-// Dota 2. The abilities that are cast are on the keys in order: the first on Q, the second on W, and so on
-// (AbilityKeys). Then they cool down. A passive is always on, and has no key.
+// Every time a hero is run over, the player gets a new one at random. A hero has any number of abilities. The abilities
+// that are cast are on the keys in order: the first on Q, the second on W, and so on (AbilityKeys). Then they cool down.
+// A passive is always on, and has no key.
 //
 // Each hero is a file in core/heroes/: its definition, and the abilities that are its own. A new hero is a value of
 // HeroKind, its file, its line in defineHero, a model (tools/make_models.py) and the icons of its abilities
@@ -118,6 +118,7 @@ Displacement :: struct {
 }
 
 LeapHeight :: 7.0;
+BlendInAfter :: 1.5;       // Seconds it stands still before it blends in (the trait blendIn)
 MomentumBonus :: 0.35;     // How much faster the trait momentum makes it, at the most
 
 // A jump through the air, over cars and walls, e.g Bjørn's leap
@@ -166,11 +167,15 @@ Hero :: struct {
     ride:             ?RideState;
     dash:             ?DashState;
     momentum:         f32;          // 0 to 1, how long it has walked straight on (the trait momentum)
-    lostIn:           f32;          // Seconds to its next burst of speed (the trait lost)
+    possess:          ?PossessState;    // In a car, steering it (Ghosty)
     goalSign:         f32 = 1;      // Which way across is the way to the goal: 1 is +x
-    rolledOnce:       bool;         // A car only knocked it down, once (the trait roll)
+    stillFor:         f32;          // Seconds it has stood still (the trait blendIn)
+    inShadow:         bool;         // Right next to a car (the trait shadowed)
+    nearMissLeft:     f32;          // Seconds until a near miss makes its abilities ready again (the trait adrenaline)
+    castCount:        int;          // Spells it has cast (the trait staticCharge)
     nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
     mirrorLeft:       f32;          // Seconds until its mirror sends a spell back again
+    portalLeft:       f32;          // Seconds until it can go through a portal again
 
     // What the enemies did to the hero
     harmedBy:     int = -1;             // The player that last hooked, bashed or locked it, who gets the kill if a car
@@ -199,12 +204,6 @@ Hero :: struct {
         speed := self.info().moveSpeed * self.stats.speed * self.statusSpeed() * (1 - self.slowedBy);
         stats := self.stats;
         if stats.momentum { speed *= 1 + MomentumBonus * self.momentum; }
-        if stats.tailwind != 1 && self.isMoving && (self.target.x - self.position.x) * self.goalSign > 0 { speed *= stats.tailwind; }
-        if stats.berserk != 1 && self.health < self.maxHealth() * 0.5 { speed *= stats.berserk; }
-        if stats.jaywalker != 1 {
-            if math.fabsf(self.position.x) < RoadHalfWidth { speed *= stats.jaywalker; }
-            else                                           { speed /= stats.jaywalker; }
-        }
         return speed;
     }
 
@@ -233,13 +232,19 @@ Hero :: struct {
 
     // Enemies' spells can find it
     isTargetable :: method () -> bool {
+        if self.possess.hasValue() || self.inShadow || self.isBlended() { return false; }
         return !self.isAirborne() && !self.anyStatus(rules => rules.untargetable);
     }
 
     // The cars drive through it
     carsPass :: method () -> bool {
         if self.dash.hasValue() && self.dash.value().untouchable { return true; }
-        return self.isAirborne() || self.anyStatus(rules => rules.carsPass);
+        return self.isAirborne() || self.possess.hasValue() || self.anyStatus(rules => rules.carsPass);
+    }
+
+    // Has stood still long enough that enemies don't notice it (the trait blendIn)
+    isBlended :: method () -> bool {
+        return self.stats.blendIn && self.stillFor >= BlendInAfter;
     }
 
     // If it can be given orders: not stunned, dragged, or in the middle of a hook or a leap
@@ -250,7 +255,7 @@ Hero :: struct {
 
     // If it can cast: it can act, and isn't silenced, e.g a toad or scared
     canCast :: method () -> bool {
-        return self.canAct() && !self.isSilenced();
+        return self.canAct() && !self.isSilenced() && !self.possess.hasValue();
     }
 
     // Pulled to a car by his hook. While the hook flies he can still walk

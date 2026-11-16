@@ -15,28 +15,26 @@ import random;
 use raylib;
 
 ItemKind :: enum {
-    sneakers,
     hardHat,
     hourglass,
     spyglass,
     firstAid,
     clover,
-    frostCharm,
     garlic,
     springShoes,
     bananaPeel,
-    bubbleWrap,
     mirror,
     energyDrink,
     trafficCone,
     megaphone,
     rubberChicken,
     balloon,
-    busTicket,
     luckyDice,
-    rollerblades,
-    reflectiveVest,
     umbrella,
+    remoteControl,
+    stopwatch,
+    snowGlobe,
+    portalGun,
 }
 
 ItemDefinition :: struct {
@@ -55,8 +53,7 @@ ItemDefinition :: struct {
     }
 }
 
-ItemAuraSlow   :: 0.3;      // How much slower the Frost Charm makes the cars, and Garlic the enemies
-FrostRadius    :: 7.0;
+ItemAuraSlow   :: 0.3;      // How much slower Garlic makes the enemies
 StenchRadius   :: 6.0;
 BounceCooldown :: 12.0;
 BounceDistance :: 7.0;      // How far towards the far side a bounce takes the hero
@@ -64,19 +61,14 @@ BounceTime     :: 0.55;
 
 itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
     return switch kind {
-        case .sneakers  => ItemDefinition{"Sneakers", "Walks 15% faster", "item_sneakers", {240, 240, 245, 255}, Trait{speed: 1.15}};
         case .hardHat   => ItemDefinition{"Hard Hat", "The cars do 35% less damage", "item_hard_hat", {255, 200, 30, 255}, Trait{damageTaken: 0.65}};
         case .hourglass => ItemDefinition{"Hourglass", "The abilities cool down 30% faster", "item_hourglass", {230, 190, 120, 255}, Trait{cooldown: 0.7}};
         case .spyglass  => ItemDefinition{"Spyglass", "The abilities reach 30% further", "item_spyglass", {120, 170, 255, 255}, Trait{reach: 1.3}};
         case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals 10% of it a second when no car is on it. Nothing else heals", "item_first_aid", {235, 60, 60, 255}, Trait{regen: 0.1}, Trait{maxHealth: 1.4}};
-        case .frostCharm  => ItemDefinition{"Frost Charm", "An aura of cold: the cars near the hero drive 30% slower", "item_frost_charm", {150, 220, 255, 255}, Trait{chillAura: {radius: FrostRadius, slow: ItemAuraSlow}}};
         case .garlic      => ItemDefinition{"Garlic", "A stench: enemy heroes near the hero walk 30% slower", "item_garlic", {200, 230, 120, 255}, Trait{stench: StenchRadius}};
         case .springShoes => ItemDefinition{"Spring Shoes", "A car that hits the hero bounces it over the car, towards the far side. Every 12 seconds", "item_spring_shoes", {255, 150, 60, 255}, .bounce};
         case .clover    => ItemDefinition{"Four-Leaf Clover", "Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment", "item_clover", {80, 220, 90, 255}, Trait{saves: 1}};
-        case .bubbleWrap => ItemDefinition{"Bubble Wrap", "The first car that hits each hero only knocks it out of the way", "item_bubble_wrap", {200, 230, 250, 255}, .roll};
         case .mirror     => ItemDefinition{"Mirror", "The next spell cast on the hero goes back to whoever cast it. Every 15 seconds", "item_mirror", {210, 230, 255, 255}, .mirror};
-        case .rollerblades => ItemDefinition{"Rollerblades", "Skates 30% faster, but the cars do 15% more damage", "item_rollerblades", {255, 90, 160, 255}, Trait{speed: 1.3}, Trait{damageTaken: 1.15}};
-        case .reflectiveVest => ItemDefinition{"Reflective Vest", "The cars see the hero coming and slow down when it is on the road in front of them", "item_reflective_vest", {200, 255, 60, 255}, Trait{carsBrake: 6}};
         case .umbrella   => ItemDefinition{"Umbrella", "Floats: leaps, flights and bounces stay up 40% longer, and the hero is knocked half as far", "item_umbrella", {230, 60, 80, 255}, Trait{airTime: 1.4}, Trait{knockTaken: 0.5}};
         case .bananaPeel => ItemDefinition{name: "Banana Peel", description: "Throws a banana peel at the cursor, up to 14 away. The first enemy that steps on it slips. 3 of them",
             icon: "item_banana_peel", color: {250, 220, 60, 255}, action: Ability{name: "Banana Peel", icon: "item_banana_peel", sound: "item.banana", cooldown: 2,
@@ -84,9 +76,9 @@ itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
         case .energyDrink => ItemDefinition{name: "Energy Drink", description: "70% faster for 3 seconds, then 35% slower for 2. Two cans",
             icon: "item_energy_drink", color: {60, 140, 255, 255}, action: Ability{name: "Energy Drink", icon: "item_energy_drink", sound: "item.drink", cooldown: 1,
             cast: castEnergyDrink, bot: .speedUp, duration: 3, power: 1.7}, charges: 2};
-        case .trafficCone => ItemDefinition{name: "Traffic Cone", description: "Puts a cone on the road at the cursor, up to 10 away: the cars near it crawl for 5 seconds. 3 of them",
+        case .trafficCone => ItemDefinition{name: "Traffic Cone", description: "Puts a cone in the lane at the cursor, up to 10 away, for 8 seconds: the cars that come to it swerve into the lane beside it. A bus runs it over. 3 of them",
             icon: "item_traffic_cone", color: {255, 120, 30, 255}, action: Ability{name: "Traffic Cone", icon: "item_traffic_cone", sound: "item.cone", cooldown: 3,
-            targeting: .point, cast: castTrafficCone, bot: .stopCarsAhead, range: 10, duration: 5, radius: 4}, charges: 3};
+            targeting: .point, cast: castTrafficCone, bot: .stopCarsAhead, range: 10, duration: 8}, charges: 3};
         case .megaphone => ItemDefinition{name: "Megaphone", description: "Shouts at every enemy: 3 seconds more on all of their cooldowns. Every 25 seconds",
             icon: "item_megaphone", color: {240, 240, 240, 255}, action: Ability{name: "Megaphone", icon: "item_megaphone", sound: "item.megaphone", cooldown: 25,
             cast: castMegaphone, bot: .disableEnemy, range: 200, power: 3}};
@@ -96,12 +88,21 @@ itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
         case .balloon => ItemDefinition{name: "Decoy Balloon", description: "A balloon that looks just like the hero walks on ahead for 4 seconds. Spells cast on the hero hit it first. Every 20 seconds",
             icon: "item_balloon", color: {255, 80, 120, 255}, trait: .decoysFirst, action: Ability{name: "Decoy Balloon", icon: "item_balloon", sound: "item.balloon", cooldown: 20,
             cast: castSplit, bot: .speedUp, duration: 4}};
-        case .busTicket => ItemDefinition{name: "Bus Ticket", description: "Climbs onto the nearest car within 6 and rides it for 2.5 seconds. Two rides",
-            icon: "item_bus_ticket", color: {80, 200, 120, 255}, action: Ability{name: "Bus Ticket", icon: "item_bus_ticket", sound: "ability.hop_on", cooldown: 2,
-            cast: castHopOn, bot: .untouchable, range: 6, duration: 2.5}, charges: 2};
         case .luckyDice => ItemDefinition{name: "Lucky Dice", description: "Casts a random ability of a random hero, at the cursor. Every 15 seconds",
             icon: "item_lucky_dice", color: {245, 245, 245, 255}, action: Ability{name: "Lucky Dice", icon: "item_lucky_dice", sound: "item.dice", cooldown: 15,
             targeting: .point, cast: castLuckyDice, bot: .speedUp, range: 20}};
+        case .remoteControl => ItemDefinition{name: "Remote Control", description: "Steers the car nearest the cursor, up to 20 away, two lanes over, away from the hero. Every 9 seconds",
+            icon: "item_remote_control", color: {70, 70, 80, 255}, action: Ability{name: "Remote Control", icon: "item_remote_control", sound: "ability.honk", cooldown: 9,
+            targeting: .point, cast: castRemoteControl, bot: .stopCarsAhead, range: 20, count: 2}};
+        case .stopwatch => ItemDefinition{name: "Stopwatch", description: "All the abilities of the hero are ready at once. Every 40 seconds",
+            icon: "item_stopwatch", color: {220, 220, 230, 255}, action: Ability{name: "Stopwatch", icon: "item_stopwatch", sound: "ability.rewind", cooldown: 40,
+            cast: castStopwatch, bot: .none}};
+        case .snowGlobe => ItemDefinition{name: "Snow Globe", description: "Shakes the snow globe: every car but the ambulances stops dead, and every enemy is frozen in time, for 1.5 seconds. Once",
+            icon: "item_snow_globe", color: {170, 220, 255, 255}, action: Ability{name: "Snow Globe", icon: "item_snow_globe", sound: "ability.freeze", cooldown: 1,
+            cast: castSnowGlobe, bot: .stopCars, duration: 1.5}, charges: 1};
+        case .portalGun => ItemDefinition{name: "Portal Gun", description: "Opens a portal where the hero stands and another at the cursor, up to 25 away, for 6 seconds. Anyone who walks into one comes out of the other. Every 22 seconds",
+            icon: "item_portal_gun", color: {90, 200, 255, 255}, action: Ability{name: "Portal Gun", icon: "item_portal_gun", sound: "ability.blink", cooldown: 22,
+            targeting: .point, cast: castPortalGun, bot: .escape, range: 25, duration: 6}};
     };
 }
 
@@ -264,7 +265,6 @@ itemCooldown :: (player: *Player, slot: int) -> f32, f32 {
     if kind == .springShoes { return hero.bounceLeft / BounceCooldown, hero.bounceLeft; }
     if kind == .mirror      { return hero.mirrorLeft / MirrorCooldown, hero.mirrorLeft; }
     if kind == .clover && hero.savesLeft <= 0 { return 1, 0; }
-    if kind == .bubbleWrap && hero.rolledOnce { return 1, 0; }
     return 0, 0;
 }
 

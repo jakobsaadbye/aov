@@ -1,34 +1,57 @@
 namespace core;
 
-// Kenji the Ninja: he vanishes in smoke, steps out of the shadow of a passing car, and rolls away from the one that
-// gets him first
+// Kenji the Ninja: he leaves a log behind to take a hit for him, steps out of the shadow of a passing car, and in the
+// shadows nobody can find him
 
 import math;
 use raylib;
 
 defineKenji :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Kenji", title: "the Ninja", color: {40, 40, 48, 255}, width: 2.2, height: 4.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 24};
+    hero := HeroDefinition{name: "Kenji", title: "the Ninja", color: {40, 40, 48, 255}, width: 2.2, height: 4.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 24, drawExtras: drawSubstitute};
     hero.abilities.add(Ability{
-        name: "Smoke bomb", icon: "smoke_bomb", sound: "ability.smoke", cooldown: 12, cast: castSmokeBomb, bot: .speedUp,
-        description: "Vanishes in smoke for 3 seconds: enemies can't target him, and he runs 25% faster",
-        duration: 3, power: 1.25,
+        name: "Substitution", icon: "substitution", sound: "ability.smoke", cooldown: 14, cast: castSubstitution, bot: .untouchable,
+        description: "Leaves a log where he stands for 5 seconds. If a car hits him in that time, it hits the log instead, and he is back where he left it",
+        duration: 5,
     });
     hero.abilities.add(Ability{
         name: "Shadow step", icon: "shadow_step", sound: "ability.shadow_step", cooldown: 9, targeting: .point, cast: castShadowStep, bot: .escape,
         description: "Steps into the shadow right behind the car nearest the cursor, up to 12 away",
         range: 12,
     });
-    hero.abilities.add(passive("Roll", "roll", "The first car that gets each of him only knocks him down: he rolls out of the way", .roll));
+    hero.abilities.add(passive("Shadowed", "shadowed", "Enemies can't target him while he is right next to a car", .shadowed));
     return hero;
 }
 
-castSmokeBomb :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+ShadowReach :: 2.5;     // How near a car he must be to be in its shadow
+
+castSubstitution :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
-    hero.addStatus(.hidden, ability.duration);
-    hero.addStatus(.haste, ability.duration, ability.power);
-    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 30, tint: {170, 170, 180, 255});
-    game.effects.particles.emit(.dust, hero.position, 30);
+    hero.addStatus(.substitute, ability.duration, point: hero.ground());
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 16, tint: {170, 170, 180, 255});
     return true;
+}
+
+// A car was about to hit him: the log takes it, and he is back at the log
+substitute :: method (game: *Game, index: int) -> bool {
+    hero := &game.players[index].hero;
+    if !hero.has(.substitute) { return false; }
+    log := hero.status(.substitute);
+    hero.clearStatus(.substitute);
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 24, tint: {170, 170, 180, 255});
+    game.effects.particles.emit(.bits, hero.position + Vector3{0, 1, 0}, 16, tint: {140, 95, 50, 255});
+    hero.position = game.world.resolveCollisions(log.point, hero.info().hitRadius, false).at();
+    hero.stop();
+    hero.forgetTrail();
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 16, tint: {170, 170, 180, 255});
+    game.announce(index, {170, 170, 190, 255}, "% left a log behind!", game.players[index].name);
+    return true;
+}
+
+// Right next to a car, in its shadow
+isInShadow :: method (game: *Game, index: int) -> bool {
+    hero := &game.players[index].hero;
+    if !hero.stats.shadowed { return false; }
+    return game.traffic.carNear(hero.ground(), ShadowReach + hero.info().hitRadius) >= 0;
 }
 
 castShadowStep :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
@@ -37,7 +60,7 @@ castShadowStep :: (game: *Game, caster: int, ability: *Ability, target: Vector2)
     index := game.traffic.carNear(aim, 6);
     if index < 0 { return false; }
     car := &game.traffic.cars[index];
-    behind := Vector2{laneCenter(car.lane), car.z - car.length() * 0.5 - hero.info().hitRadius - 0.8};
+    behind := Vector2{car.x(), car.z - car.length() * 0.5 - hero.info().hitRadius - 0.8};
     if behind.distance(hero.ground()) > hero.reach(ability.range) + 6 { return false; }
     game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 14, tint: {60, 40, 80, 255});
     hero.position = game.world.resolveCollisions(behind, hero.info().hitRadius, false).at();
@@ -45,4 +68,13 @@ castShadowStep :: (game: *Game, caster: int, ability: *Ability, target: Vector2)
     hero.stop();
     game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 14, tint: {60, 40, 80, 255});
     return true;
+}
+
+// The log he left behind
+drawSubstitute :: (game: *Game, index: int, bob: f32) {
+    hero := &game.players[index].hero;
+    if !hero.has(.substitute) { return; }
+    base := hero.status(.substitute).point.at(0.4);
+    DrawCylinderEx(base - Vector3{0.8, 0, 0}, base + Vector3{0.8, 0, 0}, 0.4, 0.4, 8, {140, 95, 50, 255});
+    DrawCylinderEx(base + Vector3{0.8, 0, 0}, base + Vector3{0.82, 0, 0}, 0.36, 0.36, 8, {210, 170, 110, 255});
 }

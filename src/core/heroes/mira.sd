@@ -1,6 +1,6 @@
 namespace core;
 
-// Mira: a witch of time. She slows it down for everyone, turns it back for herself, and stops it for her enemies
+// Mira: a witch of time. She turns it back for the cars, and for herself, and stops it for her enemies
 
 import math;
 use raylib;
@@ -8,9 +8,9 @@ use raylib;
 defineMira :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Mira", title: "the Timekeeper", color: {130, 90, 210, 255}, width: 2.4, height: 5.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 20};
     hero.abilities.add(Ability{
-        name: "Time warp", icon: "time_warp", sound: "ability.time_warp", cooldown: 13, cast: castTimeWarp, bot: .stopCars,
-        description: "Bends time over the whole road: every car drives 70% slower for 3 seconds",
-        power: 0.7, duration: 3,
+        name: "Reverse", icon: "reverse", sound: "ability.time_warp", cooldown: 12, targeting: .point, cast: castReverse, bot: .stopCarsAhead,
+        description: "Turns time back for the cars of the five lanes at the cursor, up to 20 away: they back up the road for 2 seconds",
+        range: 20, count: 2, power: -0.8, duration: 2,
     });
     hero.abilities.add(Ability{
         name: "Rewind", icon: "rewind", sound: "ability.rewind", cooldown: 10, cast: castRewind, bot: .rewind,
@@ -25,14 +25,15 @@ defineMira :: () -> HeroDefinition {
     return hero;
 }
 
-// Every car drives power slower for duration
-castTimeWarp :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+// The cars of the lanes within count of the one at the point drive backwards, at power times their speed
+castReverse :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
-    ground := hero.ground();
-    game.traffic.warpTime(ability.power, ability.duration + hero.stats.coldBlooded);
-    game.effects.addRing(ground, 1, 70, {190, 140, 255, 255}, 1.1);
-    game.effects.addRing(ground, 0.5, 40, {190, 140, 255, 255}, 0.8);
-    game.announce(caster, {200, 160, 255, 255}, "% slows down time", hero.info().name);
+    point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    if math.fabsf(point.x) > RoadHalfWidth { return false; }
+    lane := laneAt(point.x);
+    game.traffic.setPace(lane - ability.count, lane + ability.count, ability.power, ability.duration + hero.stats.coldBlooded);
+    game.effects.addRing(point, 1, LaneWidth * (ability.count as f32 + 0.5), {190, 140, 255, 255}, 0.6);
+    game.effects.addRing(point, 0.5, LaneWidth * ability.count as f32, {190, 140, 255, 255}, 0.4);
     return true;
 }
 

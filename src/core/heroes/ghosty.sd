@@ -1,14 +1,78 @@
 namespace core;
 
-// Ghosty: frail, but the walls don't stop him, and for a moment the cars don't either
+// Ghosty: the walls don't stop him, and he can slip into a passing car and steer it from lane to lane
+
+import math;
+use raylib;
 
 defineGhosty :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Ghosty", title: "the Restless", color: {190, 210, 255, 255}, width: 2.2, height: 3.2, moveSpeed: 7.5, hitRadius: 0.7, maxHealth: 15};
     hero.abilities.add(Ability{
-        name: "Fade", icon: "fade", sound: "ability.fade", cooldown: 14, cast: castFade, bot: .untouchable,
-        description: "Fades away for 1.5 seconds: the cars drive straight through him",
-        duration: 1.5,
+        name: "Possess", icon: "possess", sound: "ability.fade", cooldown: 12, targeting: .point, cast: castPossess, bot: .untouchable,
+        description: "Slips into the car nearest the cursor, up to 10 away, and haunts it for 4 seconds: a click to its left or right steers it a lane over. The car still hits whoever is in its way. He comes out on the side he is going",
+        range: 10, duration: 4,
     });
     hero.abilities.add(passive("Phase walk", "phase_walk", "Floats straight through the walls", .throughWalls));
     return hero;
+}
+
+// In a car, steering it (Ghosty's possess)
+PossessState :: struct {
+    car:        int;
+    timeLeft:   f32;
+    steerLeft:  f32;        // Seconds until it can be steered another lane over
+}
+
+PossessSteerEvery :: 0.35;
+
+castPossess :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    index := game.traffic.carNear(aim, 5);
+    if index < 0 { return false; }
+    car := &game.traffic.cars[index];
+    if car.hauntedBy >= 0 || car.kind == .bus { return false; }
+    car.hauntedBy = caster;
+    hero.possess = PossessState{car: index, timeLeft: ability.duration};
+    hero.stop();
+    hero.hook = null;
+    game.effects.particles.emit(.wisps, hero.position + Vector3{0, 1.5, 0}, 24, tint: {200, 215, 255, 255});
+    return true;
+}
+
+// While in a car: it goes where the car goes, and a click beside the car steers it a lane that way
+haunt :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
+    possess := hero.possess.value();
+    car := &game.traffic.cars[possess.car];
+    possess.timeLeft -= dt;
+    possess.steerLeft -= dt;
+    if !car.isActive || possess.timeLeft <= 0 || math.fabsf(car.z) > MapHalfLength - 2 {
+        game.leaveCar(index);
+        return;
+    }
+    // Each click beside the car steers it one lane that way
+    if hero.isMoving && possess.steerLeft <= 0 {
+        across := hero.target.x - car.x();
+        if math.fabsf(across) > LaneWidth * 0.5 {
+            game.traffic.moveToLane(possess.car, car.lane + math.sign(across) as int);
+            possess.steerLeft = PossessSteerEvery;
+        }
+        hero.isMoving = false;
+    }
+    hero.position = car.position();
+    hero.possess = possess;
+}
+
+// Out of the car, beside it on the side it is going
+leaveCar :: method (game: *Game, index: int) {
+    hero := &game.players[index].hero;
+    if !hero.possess.hasValue() { return; }
+    car := &game.traffic.cars[hero.possess.value().car];
+    car.hauntedBy = -1;
+    hero.possess = null;
+    out := Vector2{car.x() + hero.goalSign * (CarWidth * 0.5 + hero.info().hitRadius + 0.6), car.z};
+    hero.position = game.world.resolveCollisions(out, hero.info().hitRadius, true).at();
+    hero.stop();
+    game.effects.particles.emit(.wisps, hero.position + Vector3{0, 1.5, 0}, 20, tint: {200, 215, 255, 255});
 }

@@ -1,6 +1,6 @@
 namespace core;
 
-// Birgit the Builder: she puts a footbridge over the road, that anyone can use, and barricades across the lanes
+// Birgit the Builder: she puts a footbridge over the road and trampolines by it, that anyone can use
 
 import math;
 use raylib;
@@ -13,11 +13,11 @@ defineBirgit :: () -> HeroDefinition {
         range: 10, duration: 5, count: 3,
     });
     hero.abilities.add(Ability{
-        name: "Barricade", icon: "barricade", sound: "ability.barricade", cooldown: 7, targeting: .point, cast: castBarricade, bot: .stopCarsAhead,
-        description: "Puts a barricade across two lanes at the cursor, up to 16 away: their cars stop before it for 4 seconds",
-        range: 16, duration: 4, count: 2,
+        name: "Trampoline", icon: "trampoline", sound: "ability.build", cooldown: 9, targeting: .point, cast: castTrampoline, bot: .none,
+        description: "Puts a trampoline at the cursor, up to 12 away, for 8 seconds. Anyone that walks onto it is bounced 12 on the way it walks, high over the cars. Enemies too",
+        range: 12, duration: 8, power: 12,
     });
-    hero.abilities.add(passive("Overtime", "overtime", "Always one more job: her abilities cool down 15% faster", Trait{cooldown: 0.85}));
+    hero.abilities.add(passive("Overtime", "overtime", "She builds to last: what she builds stays up 50% longer", Trait{buildTime: 1.5}));
     return hero;
 }
 
@@ -29,21 +29,60 @@ castFootbridge :: (game: *Game, caster: int, ability: *Ability, target: Vector2)
     halfWidth := LaneWidth * ability.count as f32 * 0.5 + RampLength;
     // On the road, not over the walls
     center := Vector2{math.clamp(laneCenter(lane), -RoadHalfWidth + halfWidth, RoadHalfWidth - halfWidth), point.y};
-    game.bridges.add(Bridge{center: center, halfWidth: halfWidth, halfLength: 2.2, timeLeft: ability.duration, owner: caster});
+    game.bridges.add(Bridge{center: center, halfWidth: halfWidth, halfLength: 2.2, timeLeft: ability.duration * hero.stats.buildTime, owner: caster});
     game.effects.particles.emit(.dust, center.at(0.5), 30);
     return true;
 }
 
-castBarricade :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+castTrampoline :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
     point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
-    if math.fabsf(point.x) > RoadHalfWidth { return false; }
-    first := laneAt(point.x);
-    last := math.min(first + ability.count - 1, LaneCount - 1);
-    line := point.y - 1;
-    duration := ability.duration + hero.stats.coldBlooded;
-    game.traffic.halt(first, last, line, duration);
-    game.stopSigns.add(StopSign{kind: .barricade, position: point.at(), timeLeft: duration, lanes: [first, last], line: line});
+    point = game.world.resolveCollisions(point, TrampolineRadius, false);
+    game.trampolines.add(Trampoline{position: point, timeLeft: ability.duration * hero.stats.buildTime, power: ability.power});
     game.effects.particles.emit(.dust, point.at(0.5), 16);
     return true;
+}
+
+// A trampoline: anyone that walks onto it is bounced on, the way it walks
+Trampoline :: struct {
+    position: Vector2;
+    timeLeft: f32;
+    power:    f32;              // How far it bounces
+}
+
+TrampolineRadius :: 1.4;
+TrampolineAir    :: 0.7;        // Seconds a bounce takes
+TrampolineHeight :: 6.0;
+
+updateTrampolines :: method (game: *Game, dt: f32) {
+    for *trampoline in game.trampolines { trampoline.timeLeft -= dt; }
+    game.trampolines.removeWhere(trampoline => trampoline.timeLeft <= 0);
+}
+
+bounceOnTrampoline :: method (game: *Game, index: int) {
+    hero := &game.players[index].hero;
+    if !hero.isMoving || hero.isAirborne() { return; }
+    for trampoline in game.trampolines {
+        if hero.ground().distance(trampoline.position) > TrampolineRadius + hero.info().hitRadius * 0.5 { continue; }
+        heading := hero.target.xz() - hero.ground();
+        if heading.length() < 0.1 { return; }
+        to := hero.ground() + heading.normalize() * trampoline.power;
+        hero.startLeap(to, TrampolineAir, TrampolineHeight);
+        game.effects.particles.emit(.dust, trampoline.position.at(0.5), 10);
+        game.sounds.playAt("ability.leap", hero.position, 0.9, 0.1);
+        return;
+    }
+}
+
+drawTrampolines :: (game: *Game) {
+    for trampoline in game.trampolines {
+        base := trampoline.position.at(0);
+        fade := math.min(trampoline.timeLeft * 2, 1);
+        DrawCylinder(base + Vector3{0, 0.6, 0}, TrampolineRadius, TrampolineRadius, 0.12, 20, ColorAlpha({40, 40, 50, 255}, fade));
+        DrawCylinder(base + Vector3{0, 0.65, 0}, TrampolineRadius * 0.85, TrampolineRadius * 0.85, 0.1, 20, ColorAlpha({60, 140, 230, 255}, fade));
+        for k in 0..4 {
+            angle := k as f32 * Pi * 0.5 + 0.4;
+            DrawCylinder(base + Vector3{math.sinf(angle) * TrampolineRadius * 0.9, 0, math.cosf(angle) * TrampolineRadius * 0.9}, 0.08, 0.08, 0.6, 6, ColorAlpha({90, 90, 100, 255}, fade));
+        }
+    }
 }
