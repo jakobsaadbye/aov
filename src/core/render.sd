@@ -94,7 +94,7 @@ drawGoalStrip :: (side: Side) {
 drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
     color := car.color;
     if car.frozenLeft > 0 { color = ColorLerp(color, FrozenColor, 0.75); }
-    if warped             { color = ColorLerp(color, WarpColor, 0.35); }
+    if warped && car.kind != .ambulance { color = ColorLerp(color, WarpColor, 0.35); }
     // Cars that drive through each other are drawn at slightly different sizes, so their faces don't fight
     scale := 1 + car.layer as f32 * 0.012;
     assets.drawVehicle(car.kind, car.position(), color, scale);
@@ -184,9 +184,59 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
         hand := hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45;
         head := hook.from.lerp(hook.point, hook.flight) + Vector3{0, 1.2, 0};
         if hook.victim >= 0 { head = game.players[hook.victim].hero.position + Vector3{0, 1.5, 0}; }
-        DrawCylinderEx(hand, head, 0.08, 0.08, 6, {90, 90, 95, 255});
-        assets.drawBox(head, {0.6, 0.6, 0.6}, {60, 60, 65, 255});
+        drawMeatHook(hand, head, hook.victim >= 0);
     }
+}
+
+HookSteel :: Color{165, 165, 175, 255};
+HookDark  :: Color{70, 70, 78, 255};
+
+// The meat hook on its chain: links from the butcher's hand, then a shank, a curve and a barb that points back along the
+// chain, with blood on the tip once it has caught someone
+drawMeatHook :: (hand: Vector3, head: Vector3, caught: bool) {
+    along := head - hand;
+    length := along.length();
+    if length < 0.01 { return; }
+    forward := along / length;
+    up := Vector3{0, 1, 0};
+
+    // The chain: short links with a knuckle between each, until the ring of the hook
+    LinkLength :: 0.5;
+    links := math.max(1, (length / LinkLength) as int);
+    for k in 0..links {
+        a := hand + forward * (k as f32 * length / links as f32);
+        b := hand + forward * ((k as f32 + 0.8) * length / links as f32);
+        DrawCylinderEx(a, b, 0.07, 0.07, 6, HookDark);
+        DrawSphere(a, 0.11, HookSteel);
+    }
+
+    // The ring the chain is tied to, the shank on from it, and the curve that bends round to the side and back into a
+    // point: a J lying flat, so it reads as a hook from the camera above. Big enough to be seen from there
+    S :: 2.0;
+    side := Vector3{forward.z, 0, -forward.x};
+    DrawSphere(head, 0.2 * S, HookSteel);
+    DrawCylinderEx(head, head + forward * 0.25 * S, 0.06 * S, 0.06 * S, 8, HookDark);
+    shankStart := head + forward * 0.25 * S;
+    bottom := shankStart + forward * 0.9 * S;
+    DrawCylinderEx(shankStart, bottom, 0.12 * S, 0.13 * S, 8, HookSteel);
+    radius: f32 = 0.45 * S;
+    center := bottom + side * radius;
+    Segments :: 10;
+    previous := bottom;
+    for i in 1...Segments {
+        // From the end of the shank, round the far end of the curve, and back towards the chain
+        angle := Pi * i as f32 / Segments;
+        point := center - side * (math.cosf(angle) * radius) + forward * (math.sinf(angle) * radius);
+        thickness := (0.13 - 0.06 * i as f32 / Segments) * S;
+        DrawCylinderEx(previous, point, thickness + 0.01, thickness, 8, HookSteel);
+        previous = point;
+    }
+    // The point, back along the shank, and its barb that sticks out from it
+    tip := previous - forward * 0.45 * S;
+    DrawCylinderEx(previous, tip, 0.07 * S, 0.01, 8, HookSteel);
+    barb := previous - forward * 0.2 * S;
+    DrawCylinderEx(barb, barb + (side * 0.22 + forward * 0.12) * S, 0.05 * S, 0.01, 6, HookSteel);
+    if caught { DrawSphere(tip - up * 0.1, 0.18, {150, 15, 20, 255}); }
 }
 
 

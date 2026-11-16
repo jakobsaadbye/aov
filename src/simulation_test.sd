@@ -285,20 +285,22 @@ testAbilities :: () {
     assert(near(normal, core.HeroKind.allan.definition().moveSpeed * 1.1));
     game.useAbility(0);
     assert(game.you().hero.speed() > normal * 2);
-    assert(!game.you().hero.abilityReady(0) && game.you().hero.abilityReady(1));
+    assert(!game.you().hero.abilityReady(0));
     for 0..(7 * 60) { game.simulate(Dt); }
     assert(near(game.you().hero.speed(), normal) && game.you().hero.abilityReady(0));
 
-    // W blinks to the cursor, no further than its range
+    // He has no blink: only Sprint on Q
+    assert(game.you().hero.abilityOnKey(0) == 0 && game.you().hero.abilityOnKey(1) == -1 && game.you().hero.keyOf(1) == -1);
+
+    // Frosty's Slide blinks to the cursor, no further than its range
+    game.spawnHero(0, .frosty);
     game.you().hero.position = Vector3{-70, 0, 0};
     game.mouseGround = Vector3{-70, 0, 40};
     game.useAbility(1);
-    assert(game.you().hero.position.distance(Vector3{-70, 0, 12}) < 0.01);
+    assert(game.you().hero.position.distance(Vector3{-70, 0, 9}) < 0.01);
     assert(!game.you().hero.abilityReady(1));
 
     // The keys go to the abilities that are cast, in order. Passives have none
-    assert(game.you().hero.abilityOnKey(0) == 0 && game.you().hero.abilityOnKey(1) == 1 && game.you().hero.abilityOnKey(2) == -1);
-    assert(game.you().hero.keyOf(1) == 1 && game.you().hero.keyOf(2) == -1);
     frosty := core.newHero(.frosty, {0, 0, 0}, 0);
     assert(frosty.abilityOnKey(1) == 1 && frosty.abilityOnKey(2) == -1 && frosty.keyOf(2) == -1);
 
@@ -321,14 +323,14 @@ testAbilities :: () {
     game.you().hero.cooldowns[0] = 0;
     game.mouseGround = Vector3{-55, 0, -190};
     game.useAbility(0);
-    for 0..120 { game.simulate(Dt); }
-    assert(game.you().hero.position.distance(Vector3{-55, 0, 10 - 26}) < 0.5);
+    for 0..150 { game.simulate(Dt); }
+    assert(game.you().hero.position.distance(Vector3{-55, 0, 10 - 34}) < 0.5);
 
     // A wall in the way stops the pull at the wall
     game.you().hero.cooldowns[0] = 0;
     game.mouseGround = Vector3{0, 0, -16};
     game.useAbility(0);
-    for 0..120 { game.simulate(Dt); }
+    for 0..150 { game.simulate(Dt); }
     assert(!game.you().hero.hook.hasValue());
     assert(near(game.you().hero.position.x, -core.RoadHalfWidth - core.WallWidth - game.you().hero.info().hitRadius, 0.05));
 
@@ -859,6 +861,20 @@ testHazards :: () {
     assert(ambulance.hasValue() && lanes.count == 3 && lanes.contains(8) && lanes.contains(10));
     assert(near(ambulance.value().speed, traffic.emergencySpeed()));
     for lane in traffic.lanes { assert(ambulance.value().speed > lane.speed * core.MaxSpawnSpeed); }
+    // Nothing slows an ambulance down: a freeze, a stop sign in its lane or a time warp
+    traffic.warpTime(0.5, 5);
+    traffic.halt(8, 10, 0, 5);
+    for car in traffic.cars {
+        if car.isActive && car.kind == .ambulance { _ := traffic.freezeAround(car.rect().center(), 3, 5); }
+    }
+    before: [core.MaxCars]f32;
+    for car, i in traffic.cars { before[i] = car.z; }
+    traffic.update(0.5, &game.rng, []);
+    for car, i in traffic.cars {
+        if car.isActive && car.kind == .ambulance { assert(near(car.z - before[i], car.speed * 0.5, 0.01)); }
+    }
+    traffic.warpLeft = 0;
+    for *lane in traffic.lanes { lane.haltLeft = 0; }
     fmt.print("An ambulance in lane 9 drives % m/s, at the middle % s after its siren", fmt.fixed(ambulance.value().speed, 1),
         fmt.fixed(core.EmergencyWarning + (core.RoadEnd + core.VanLength * 0.5) / ambulance.value().speed, 1));
 

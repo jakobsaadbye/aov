@@ -111,11 +111,6 @@ defineHeroes :: () {
         effect: {sprint: {speedMultiplier: 2.1, duration: 1.4}},
     });
     allan.abilities.add(Ability{
-        name: "Blink", icon: "blink", sound: "ability.blink", cooldown: 12,
-        description: "Jumps to the cursor, up to 12 away",
-        effect: {blink: {range: 12}},
-    });
-    allan.abilities.add(Ability{
         name: "Quick feet", icon: "quick_feet",
         description: "Walks 10% faster than he looks",
         effect: {quickFeet: {speedBonus: 0.1}},
@@ -136,8 +131,8 @@ defineHeroes :: () {
     butcher := HeroDefinition{name: "Butcher", color: {150, 90, 70, 255}, width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15, maxHealth: 100};
     butcher.abilities.add(Ability{
         name: "Meat hook", icon: "hook", sound: "ability.hook_throw", cooldown: 7,
-        description: "Throws the hook at the cursor. An enemy it hits is dragged back to him, else he pulls himself to where it bites",
-        effect: {hook: {range: 26, pullSpeed: 48}},
+        description: "Throws the hook at the cursor, up to 34 away. An enemy it hits is dragged back to him, else he pulls himself to where it bites",
+        effect: {hook: {range: 34, pullSpeed: 40}},
     });
     butcher.abilities.add(Ability{
         name: "Charge", icon: "charge", sound: "ability.charge", cooldown: 10,
@@ -227,7 +222,7 @@ HookState :: struct {
     victim:   int = -1;     // The player whose hero it caught, while it is dragged back
 }
 
-HookSpeed :: 90.0;          // How fast the hook flies
+HookSpeed :: 55.0;          // How fast the hook flies: slow enough to see it coming
 
 // Moved by something else, e.g knocked away or dragged by a hook. The hero can't act until it is over
 Displacement :: struct {

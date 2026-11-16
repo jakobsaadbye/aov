@@ -135,9 +135,9 @@ The mouse on the icon of an ability shows what it does, and how far it reaches.
 
 | Hero | Abilities |
 | --- | --- |
-| Allan | **Sprint** (Q): runs twice as fast for a moment. **Blink** (W): jumps to the cursor. **Quick feet** (passive): 10% faster |
+| Allan | **Sprint** (Q): runs twice as fast for a moment. **Quick feet** (passive): 10% faster |
 | Ghosty | **Fade** (Q): the cars drive through him for 1.5 seconds. **Phase walk** (passive): floats through the walls |
-| Butcher | **Meat hook** (Q): an enemy the hook hits is dragged back to him; else he pulls himself to where it bites. **Charge** (W): very fast for a short moment |
+| Butcher | **Meat hook** (Q): a hook on a chain, up to 34 away and slow enough to see coming. An enemy it hits is dragged back to him; else he pulls himself to where it bites. **Charge** (W): very fast for a short moment |
 | Frosty | **Cold snap** (Q): freezes the cars around him. **Slide** (W): slides to the cursor. **Chill aura** (passive): cars near him drive 40% slower |
 | Bjørn | A viking. **Leap** (Q): jumps to the cursor, high over the cars and the walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away, e.g into the traffic. **Iron hide** (passive): half the damage from the cars |
 | Hilda | A crossing guard. **Stop!** (Q): raises her stop sign, and the five lanes around her stop for 3 seconds while their cars queue up. **Brisk walker** (passive): 15% faster |
@@ -172,7 +172,7 @@ The road doesn't stay the same, so a crossing is never quite the one before:
 | --- | --- |
 | No healing | Nothing heals a hero but a First Aid Kit, so every scrape counts for as long as the hero lives |
 | Rush hour | After 35 to 55 calm seconds, a warning, then for 9 to 13 seconds the cars of every lane come much closer after each other. Wait it out, or get across before it comes |
-| Ambulances | Every 30 to 55 seconds a siren, arrows flash down three lanes next to each other, and 2.5 seconds later three ambulances come down them, much faster than any car, with their lights flashing; the middle one a bit ahead |
+| Ambulances | Every 30 to 55 seconds a siren, arrows flash down three lanes next to each other, and 2.5 seconds later three ambulances come down them, much faster than any car, with their lights flashing; the middle one a bit ahead. They are in a hurry: nothing slows them down, not a freeze, a chill aura, a stop sign or a time warp |
 | Oil | Now and then a car leaks for a moment and leaves a trail of tar on its lane, which dries up after a minute or so. A hero that walks onto it slides on the way it went, a bit faster, and can't turn until it is off the oil |
 
 Rush hour and the ambulances are in `core/traffic_events.sd`, the oil in `core/slicks.sd`. They follow the random numbers

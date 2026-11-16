@@ -176,6 +176,12 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZones: []
         if !car.isActive { continue; }
 
         car.age += dt;
+        // An ambulance is in a hurry: nothing slows it or stops it
+        if car.kind == .ambulance {
+            car.z += car.speed * dt;
+            if car.z > RoadEnd + car.length() { car.isActive = false; }
+            continue;
+        }
         if car.frozenLeft > 0 {
             car.frozenLeft -= dt;
             continue;
@@ -266,7 +272,7 @@ queueUp :: method (traffic: *Traffic, lane: int, limits: *[MaxCars]f32) {
     queue: [MaxCars]int;
     count := 0;
     for car, i in traffic.cars {
-        if !car.isActive || car.lane != lane || car.z + car.length() * 0.5 > line + 0.5 { continue; }
+        if !car.isActive || car.kind == .ambulance || car.lane != lane || car.z + car.length() * 0.5 > line + 0.5 { continue; }
         // Sorted by z, the front of the queue first
         at := count;
         while at > 0 && traffic.cars[queue[at - 1]].z < car.z {
@@ -307,7 +313,7 @@ isWarped :: method (traffic: *Traffic) -> bool {
 freezeAround :: method (traffic: *Traffic, point: Vector2, radius: f32, duration: f32) -> int {
     frozen := 0;
     for *car in traffic.cars {
-        if !car.isActive { continue; }
+        if !car.isActive || car.kind == .ambulance { continue; }
         if CheckCollisionCircleRec(point, radius, car.rect()) {
             car.frozenLeft = duration;
             frozen += 1;
