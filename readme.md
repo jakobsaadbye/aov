@@ -149,6 +149,22 @@ name, a description, an icon, a cooldown and an effect. A new kind of effect is 
 is in `cast()` in `game.sd` (or, for a passive, where it has its effect), and when the bots use it is its case in
 `scoreAbility()` in `bot.sd`. Both are switches over every effect, so the compiler says where a new one is missing.
 
+## Hazards
+
+The road doesn't stay the same, so a crossing is never quite the one before:
+
+| | |
+| --- | --- |
+| No healing on the road | A hero only heals off the road, so the scrapes of a crossing add up until it is across or back |
+| Rush hour | After 35 to 55 calm seconds, a warning, then for 9 to 13 seconds the cars of every lane come much closer after each other. Wait it out, or get across before it comes |
+| Ambulances | Every 30 to 55 seconds a siren, arrows flash down a lane, and 2.5 seconds later an ambulance comes down it, much faster than any car, with its lights flashing |
+| Oil slicks | Dark patches come and go on the lanes. A hero that walks onto one slides on the way it went, a bit faster, and can't turn until it is off the oil |
+
+Rush hour and the ambulances are in `core/traffic_events.sd`, the oil in `core/slicks.sd`. They follow the random numbers
+of the game, so a replay has them at the same times. The bots hear the siren too (the forecast has the ambulance from
+then on), and see the oil as never safe, so they walk around it. To try them: `rushHour`, `ambulance [lane]` and
+`spawnSlick [x] [z]` in the console.
+
 ## Items
 
 Now and then an item lies in the middle of the road, with a beam over it that is seen from far. The first hero that
@@ -296,6 +312,7 @@ window and runs the loop.
 | `render.sd`, `hud.sd` | The 3D scene and the 2D overlay, with the hero drawn in 3D in its portrait |
 | `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
 | `items.sd` | The items on the road and in the backpacks, and what they boost |
+| `traffic_events.sd`, `slicks.sd` | Rush hour and the ambulances, and the oil slicks |
 | `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
 | `commands.sd`, `console_view.sd` | The console commands of the game, and the console on the screen (F1) |
 

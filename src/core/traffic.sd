@@ -11,6 +11,7 @@ CarKind :: enum {
     car,
     van,
     truck,
+    ambulance,      // Now and then, much faster than the rest, with a siren a moment before it comes (traffic_events.sd)
 }
 
 Car :: struct {
@@ -32,6 +33,7 @@ Car :: struct {
             case .car   => CarDamagePerSecond;
             case .van   => CarDamagePerSecond * 1.2;
             case .truck => CarDamagePerSecond * 1.6;
+            case .ambulance => CarDamagePerSecond * 2;
         };
     }
 
@@ -42,7 +44,8 @@ Car :: struct {
     height :: method () -> f32 {
         return switch self.kind {
             case .car   => CarHeight;
-            case .van   => VanHeight;
+            case .van       => VanHeight;
+            case .ambulance => VanHeight;
             case .truck => TruckHeight;
         };
     }
@@ -62,7 +65,8 @@ Car :: struct {
 length :: method (kind: CarKind) -> f32 {
     return switch kind {
         case .car   => CarLength;
-        case .van   => VanLength;
+        case .van       => VanLength;
+        case .ambulance => VanLength;
         case .truck => TruckLength;
     };
 }
@@ -81,6 +85,14 @@ Traffic :: struct {
     level: int;
     warpLeft: f32;          // Seconds left of Mira's time warp, which slows every car by warpSlow
     warpSlow: f32;
+
+    // Rush hour and ambulances (traffic_events.sd)
+    hasEvents:     bool;        // Not while the road is filled at the start
+    rush:          RushPhase;
+    rushLeft:      f32;         // Seconds left of the phase
+    nextEmergency: f32;         // Seconds to the next siren
+    emergencyLane: int = -1;    // The lane an ambulance is coming in, after its siren
+    emergencyIn:   f32;         // and the seconds until it is on the road
 }
 
 // The room a car in a queue leaves to the car in front of it
@@ -113,6 +125,7 @@ newTraffic :: (level: int, rng: *random.Random) -> Traffic {
     for 0..400 {
         traffic.update(0.1, rng, noZones);
     }
+    traffic.startEvents(rng);
     return traffic;
 }
 
@@ -181,14 +194,16 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZones: []
         }
     }
 
+    traffic.updateEvents(dt, rng);
+
     for *lane, i in traffic.lanes {
         lane.spawnTimer -= dt;
         if lane.spawnTimer > 0 { continue; }
 
         traffic.spawn(i as int, rng);
 
-        // The time to the next car shrinks as the levels go up
-        gap := rng.uniform(MinSpawnGap, MaxSpawnGap) as f32 * gapShrink(traffic.level);
+        // The time to the next car shrinks as the levels go up, and in rush hour
+        gap := rng.uniform(MinSpawnGap, MaxSpawnGap) as f32 * gapShrink(traffic.level) * traffic.rushGap();
         lane.spawnTimer = (gap + CarLength) / lane.speed;
     }
 }
@@ -205,9 +220,11 @@ gapShrink :: (level: int) -> f32 {
     return 1 - 0.03 * level as f32;
 }
 
-// The shortest time between two cars of a lane, for the forecast of the bots
-minSpawnGap :: (level: int, laneSpeed: f32) -> f32 {
-    return (MinSpawnGap * gapShrink(level) + CarLength) / laneSpeed;
+// The shortest time between two cars of a lane, for the forecast of the bots: as in rush hour when it is coming
+minSpawnGap :: (traffic: *Traffic, laneSpeed: f32) -> f32 {
+    rush: f32 = 1;
+    if traffic.rush != .calm { rush = RushGap; }
+    return (MinSpawnGap * gapShrink(traffic.level) * rush + CarLength) / laneSpeed;
 }
 
 // Puts a new car at the start of a lane, at the far end of the road

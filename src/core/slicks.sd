@@ -1,0 +1,146 @@
+namespace core;
+
+// Oil slicks: dark patches that come and go on the lanes. A hero that walks onto one slides: it keeps the way and the
+// speed it had, a bit faster, and can't turn until it is off the oil again. Walk around them, or cross one on purpose, in
+// a straight line. The cars drive over them.
+
+import console;
+import math;
+import random;
+use raylib;
+
+Slick :: struct {
+    center:     Vector2;
+    halfWidth:  f32;        // Across the road
+    halfLength: f32;        // Along it
+    timeLeft:   f32;
+    age:        f32;
+
+    contains :: method (point: Vector2) -> bool {
+        dx := (point.x - self.center.x) / self.halfWidth;
+        dz := (point.y - self.center.y) / self.halfLength;
+        return dx * dx + dz * dz <= 1;
+    }
+}
+
+MaxSlicks       :: 3;
+SlickEveryLow   :: 15.0;    // Seconds between two new slicks, at random between these
+SlickEveryHigh  :: 30.0;
+SlickLifeLow    :: 45.0;    // Seconds a slick lies on the road
+SlickLifeHigh   :: 70.0;
+SlideTime       :: 0.6;     // Seconds a hero slides each time, again and again while it is on the oil
+SlideSpeedUp    :: 1.15;    // Times the speed it had
+
+Slicks :: struct {
+    list:   [..]Slick;
+    nextIn: f32 = 6;
+    rng:    random.Random;
+}
+
+newSlicks :: (seed: u64) -> Slicks {
+    return Slicks{rng: random.newRandom(seed ^ 0x5117c)};
+}
+
+updateSlicks :: method (game: *Game, dt: f32) {
+    slicks := &game.slicks;
+    for *slick in slicks.list {
+        slick.age += dt;
+        slick.timeLeft -= dt;
+    }
+    slicks.list.removeWhere(slick => slick.timeLeft <= 0);
+
+    slicks.nextIn -= dt;
+    if slicks.nextIn > 0 { return; }
+    slicks.nextIn = slicks.rng.uniform(SlickEveryLow, SlickEveryHigh) as f32;
+    if slicks.list.count >= MaxSlicks { return; }
+    lane := slicks.rng.between(0, LaneCount - 1);
+    z := slicks.rng.uniform(-MapHalfLength + 10, MapHalfLength - 10) as f32;
+    game.addSlick(Vector2{laneCenter(lane) + slicks.rng.uniform(-1, 1) as f32, z}, slicks.rng.uniform(2.5, 4.5) as f32);
+}
+
+addSlick :: method (game: *Game, center: Vector2, size: f32) {
+    slicks := &game.slicks;
+    slicks.list.add(Slick{
+        center:     center,
+        halfWidth:  size,
+        halfLength: size * slicks.rng.uniform(1.2, 1.8) as f32,
+        timeLeft:   slicks.rng.uniform(SlickLifeLow, SlickLifeHigh) as f32,
+    });
+}
+
+// The slick under a point, if any
+slickAt :: method (game: *Game, point: Vector2) -> bool {
+    for slick in game.slicks.list {
+        if slick.contains(point) { return true; }
+    }
+    return false;
+}
+
+// While a hero is on the oil: on in the way it was going, without turning. False when it isn't sliding
+slide :: method (game: *Game, hero: *Hero, dt: f32) -> bool {
+    if hero.slideLeft <= 0 {
+        if !hero.isMoving || !game.slickAt(hero.ground()) { return false; }
+        toTarget := hero.target.xz() - hero.ground();
+        if toTarget.length() < 0.5 { return false; }
+        hero.slideVelocity = toTarget.normalize() * hero.speed() * SlideSpeedUp;
+        hero.slideLeft = SlideTime;
+    }
+    hero.slideLeft -= dt;
+    hero.position += hero.slideVelocity.at() * dt;
+    hero.walkCycle += dt * 3;
+    // Still on the oil: on sliding
+    if hero.slideLeft <= 0 && game.slickAt(hero.ground()) { hero.slideLeft = SlideTime; }
+    return true;
+}
+
+// Black with a sheen that moves over it, fading in when it comes and out before it goes
+drawSlicks :: (game: *Game) {
+    Segments :: 28;
+    for slick in game.slicks.list {
+        fade := math.min(1, math.min(slick.age, slick.timeLeft) / 1.5);
+        drawEllipse(slick.center, slick.halfWidth, slick.halfLength, 0.1, ColorAlpha({18, 18, 22, 255}, 0.88 * fade));
+        // The sheen: smaller rings of color that drift
+        for k in 0..3 {
+            t := game.time * 0.4 + k as f32 * 2.1;
+            offset := Vector2{math.sinf(t) * slick.halfWidth * 0.3, math.cosf(t * 0.8) * slick.halfLength * 0.3};
+            colors := [Color{90, 40, 160, 255}, Color{30, 120, 140, 255}, Color{150, 120, 40, 255}];
+            drawEllipse(slick.center + offset, slick.halfWidth * 0.45, slick.halfLength * 0.4, 0.105 + k as f32 * 0.002,
+                ColorAlpha(colors[k], 0.35 * fade));
+        }
+    }
+}
+
+@private
+drawEllipse :: (center: Vector2, halfWidth: f32, halfLength: f32, y: f32, color: Color) {
+    Segments :: 28;
+    middle := center.at(y);
+    for i in 0..Segments {
+        a := Pi * 2 * i as f32 / Segments;
+        b := Pi * 2 * (i + 1) as f32 / Segments;
+        p := Vector3{center.x + math.cosf(a) * halfWidth, y, center.y + math.sinf(a) * halfLength};
+        q := Vector3{center.x + math.cosf(b) * halfWidth, y, center.y + math.sinf(b) * halfLength};
+        DrawTriangle3D(middle, q, p, color);
+    }
+}
+
+//
+// Console commands, to try them out
+//
+
+@console.command("Puts an oil slick on the road, at x and z, or at random")
+spawnSlick :: (game: *Game, x: ?f32, z: ?f32) {
+    rng := &game.slicks.rng;
+    center := Vector2{x ?? laneCenter(rng.between(0, LaneCount - 1)), z ?? rng.uniform(-40, 40) as f32};
+    game.addSlick(center, 3.5);
+}
+
+@console.command("Starts a rush hour now, after its warning")
+rushHour :: (game: *Game) {
+    game.traffic.rush = .calm;
+    game.traffic.rushLeft = 0;
+}
+
+@console.command("Sounds the siren of an ambulance in a lane, or a random one")
+ambulance :: (game: *Game, lane: ?int) {
+    game.traffic.sirenFor(math.clamp(lane ?? game.slicks.rng.between(0, LaneCount - 1), 0, LaneCount - 1));
+}

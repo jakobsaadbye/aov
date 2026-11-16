@@ -24,6 +24,8 @@ drawScene :: method (game: *Game, assets: *Assets) {
     DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.06, 0));
     drawLaneMarkings();
     drawGoalStrip(game.you().startSide.opposite());
+    drawSlicks(game);
+    drawEmergencyWarning(game);
 
     if game.debug.wireframes { rlEnableWireMode(); }
 
@@ -34,7 +36,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
 
     warped := game.traffic.isWarped();
     for *car in game.traffic.cars {
-        if car.isActive { drawCar(assets, car, warped); }
+        if car.isActive { drawCar(assets, car, warped, game.time); }
     }
     for sign in game.stopSigns { drawStopSign(assets, sign); }
 
@@ -88,13 +90,14 @@ drawGoalStrip :: (side: Side) {
     DrawCube(Vector3{side.sign() * GoalX, 0.1, 0}, 0.25, 0.02, MapHalfLength * 2, {255, 240, 150, 160});
 }
 
-drawCar :: (assets: *Assets, car: *Car, warped: bool) {
+drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
     color := car.color;
     if car.frozenLeft > 0 { color = ColorLerp(color, FrozenColor, 0.75); }
     if warped             { color = ColorLerp(color, WarpColor, 0.35); }
     // Cars that drive through each other are drawn at slightly different sizes, so their faces don't fight
     scale := 1 + car.layer as f32 * 0.012;
     assets.drawVehicle(car.kind, car.position(), color, scale);
+    if car.kind == .ambulance { drawEmergencyLights(assets, car, time); }
 
     if car.frozenLeft > 0 {
         // A shell of ice
