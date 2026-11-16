@@ -1,39 +1,42 @@
 namespace core;
 
-// Oil slicks: dark patches that come and go on the lanes. A hero that walks onto one slides: it keeps the way and the
-// speed it had, a bit faster, and can't turn until it is off the oil again. Walk around them, or cross one on purpose, in
-// a straight line. The cars drive over them.
+// Oil: now and then a car leaks for a moment, and leaves a trail of black, glossy blobs behind it on its lane. A hero
+// that walks onto the oil slides: it keeps the way and the speed it had, a bit faster, and can't turn until it is off
+// the oil again. Walk around it, or cross it on purpose, in a straight line. The cars drive over it. After a while it
+// dries up.
 
 import console;
 import math;
 import random;
 use raylib;
 
+// A blob of oil: round, with an edge that isn't
 Slick :: struct {
-    center:     Vector2;
-    halfWidth:  f32;        // Across the road
-    halfLength: f32;        // Along it
-    timeLeft:   f32;
-    age:        f32;
+    center:   Vector2;
+    radius:   f32;
+    seed:     f32;          // The shape of its edge
+    timeLeft: f32;
+    age:      f32;
 
     contains :: method (point: Vector2) -> bool {
-        dx := (point.x - self.center.x) / self.halfWidth;
-        dz := (point.y - self.center.y) / self.halfLength;
-        return dx * dx + dz * dz <= 1;
+        return point.distance(self.center) <= self.radius * 0.95;
     }
 }
 
-MaxSlicks       :: 3;
-SlickEveryLow   :: 15.0;    // Seconds between two new slicks, at random between these
-SlickEveryHigh  :: 30.0;
-SlickLifeLow    :: 45.0;    // Seconds a slick lies on the road
+MaxSlicks       :: 40;      // Blobs on the road at once. The oldest dries up when there are more
+LeakEveryLow    :: 12.0;    // Seconds between two cars that leak, at random between these
+LeakEveryHigh   :: 24.0;
+LeakTimeLow     :: 0.7;     // Seconds a car leaks
+LeakTimeHigh    :: 1.4;
+LeakDrop        :: 0.22;    // Seconds between two blobs of a leaking car
+SlickLifeLow    :: 45.0;    // Seconds a blob lies on the road
 SlickLifeHigh   :: 70.0;
 SlideTime       :: 0.6;     // Seconds a hero slides each time, again and again while it is on the oil
 SlideSpeedUp    :: 1.15;    // Times the speed it had
 
 Slicks :: struct {
     list:   [..]Slick;
-    nextIn: f32 = 6;
+    nextIn: f32 = 6;        // Seconds to the next car that leaks
     rng:    random.Random;
 }
 
@@ -49,26 +52,50 @@ updateSlicks :: method (game: *Game, dt: f32) {
     }
     slicks.list.removeWhere(slick => slick.timeLeft <= 0);
 
+    // The cars that leak drop a blob now and then, behind them
+    for *car in game.traffic.cars {
+        if !car.isActive || car.leakLeft <= 0 { continue; }
+        car.leakLeft -= dt;
+        car.leakTimer -= dt;
+        if car.leakTimer > 0 { continue; }
+        car.leakTimer = LeakDrop;
+        back := Vector2{laneCenter(car.lane) + slicks.rng.uniform(-0.6, 0.6) as f32, car.z - car.length() * 0.5};
+        if math.fabsf(back.y) < MapHalfLength { game.addSlick(back, slicks.rng.uniform(1.4, 2.1) as f32); }
+    }
+
+    // Now and then a car on the field starts to leak
     slicks.nextIn -= dt;
     if slicks.nextIn > 0 { return; }
-    slicks.nextIn = slicks.rng.uniform(SlickEveryLow, SlickEveryHigh) as f32;
-    if slicks.list.count >= MaxSlicks { return; }
-    lane := slicks.rng.between(0, LaneCount - 1);
-    z := slicks.rng.uniform(-MapHalfLength + 10, MapHalfLength - 10) as f32;
-    game.addSlick(Vector2{laneCenter(lane) + slicks.rng.uniform(-1, 1) as f32, z}, slicks.rng.uniform(2.5, 4.5) as f32);
+    slicks.nextIn = slicks.rng.uniform(LeakEveryLow, LeakEveryHigh) as f32;
+    game.leak(&slicks.rng);
 }
 
-addSlick :: method (game: *Game, center: Vector2, size: f32) {
+// A car that is coming onto the field starts to leak, if there is one
+leak :: method (game: *Game, rng: *random.Random) -> bool {
+    candidates: [..]int;
+    defer candidates.free();
+    for car, i in game.traffic.cars {
+        if car.isActive && car.kind != .ambulance && car.z > -MapHalfLength && car.z < 0 { candidates.add(i as int); }
+    }
+    if candidates.count == 0 { return false; }
+    car := &game.traffic.cars[rng.choice(candidates)];
+    car.leakLeft = rng.uniform(LeakTimeLow, LeakTimeHigh) as f32;
+    car.leakTimer = 0;
+    return true;
+}
+
+addSlick :: method (game: *Game, center: Vector2, radius: f32) {
     slicks := &game.slicks;
+    if slicks.list.count >= MaxSlicks { _ := slicks.list.removeAt(0); }
     slicks.list.add(Slick{
-        center:     center,
-        halfWidth:  size,
-        halfLength: size * slicks.rng.uniform(1.2, 1.8) as f32,
-        timeLeft:   slicks.rng.uniform(SlickLifeLow, SlickLifeHigh) as f32,
+        center:   center,
+        radius:   radius,
+        seed:     slicks.rng.uniform(0, 100) as f32,
+        timeLeft: slicks.rng.uniform(SlickLifeLow, SlickLifeHigh) as f32,
     });
 }
 
-// The slick under a point, if any
+// If there is oil under a point
 slickAt :: method (game: *Game, point: Vector2) -> bool {
     for slick in game.slicks.list {
         if slick.contains(point) { return true; }
@@ -93,26 +120,67 @@ slide :: method (game: *Game, hero: *Hero, dt: f32) -> bool {
     return true;
 }
 
-// Black with a sheen that moves over it, fading in when it comes and out before it goes
+//
+// Drawing
+//
+
+TarColor  :: Color{10, 9, 8, 255};
+TarEdge   :: Color{38, 32, 26, 255};     // A wet, brownish edge
+TarShine  :: Color{150, 155, 170, 255};  // Where the sky is mirrored in it
+
+// The radius of a blob in a direction: its edge goes in and out a little
+@private
+edgeAt :: (slick: Slick, angle: f32) -> f32 {
+    s := slick.seed;
+    return slick.radius * (1 + 0.16 * math.sinf(angle * 3 + s) + 0.09 * math.sinf(angle * 5 + s * 1.7) + 0.05 * math.sinf(angle * 9 + s * 2.3));
+}
+
+// Black and glossy: a wet edge, the tar, and the sky shining in it, fading in when it comes and out as it dries up
 drawSlicks :: (game: *Game) {
-    Segments :: 28;
+    // The edges first, under all the blobs, so a trail of blobs is one patch with one edge
     for slick in game.slicks.list {
-        fade := math.min(1, math.min(slick.age, slick.timeLeft) / 1.5);
-        drawEllipse(slick.center, slick.halfWidth, slick.halfLength, 0.1, ColorAlpha({18, 18, 22, 255}, 0.88 * fade));
-        // The sheen: smaller rings of color that drift
-        for k in 0..3 {
-            t := game.time * 0.4 + k as f32 * 2.1;
-            offset := Vector2{math.sinf(t) * slick.halfWidth * 0.3, math.cosf(t * 0.8) * slick.halfLength * 0.3};
-            colors := [Color{90, 40, 160, 255}, Color{30, 120, 140, 255}, Color{150, 120, 40, 255}];
-            drawEllipse(slick.center + offset, slick.halfWidth * 0.45, slick.halfLength * 0.4, 0.105 + k as f32 * 0.002,
-                ColorAlpha(colors[k], 0.35 * fade));
-        }
+        drawBlob(slick, 1.08, 0.095, ColorAlpha(TarEdge, 0.8 * fadeOf(slick)));
+    }
+    for slick in game.slicks.list {
+        drawBlob(slick, 1, 0.1, ColorAlpha(TarColor, 0.95 * fadeOf(slick)));
+    }
+    // The shine: a smear on the side towards the sun, and a small bright spot in it
+    for slick in game.slicks.list {
+        fade := fadeOf(slick);
+        side := math.sinf(slick.seed * 3.1) * 0.25;
+        shine := slick.center + Vector2{-slick.radius * (0.25 + side), -slick.radius * (0.3 - side)};
+        drawEllipse(shine, slick.radius * 0.5, slick.radius * 0.14, 0.103, ColorAlpha(TarShine, 0.16 * fade));
+        drawEllipse(shine + Vector2{slick.radius * 0.15, 0}, slick.radius * 0.2, slick.radius * 0.05, 0.104, ColorAlpha(White, 0.14 * fade));
+        // A hint of the colors of oil, drifting slowly
+        t := game.time * 0.3 + slick.seed;
+        sheen := slick.center + Vector2{math.sinf(t) * slick.radius * 0.3, math.cosf(t * 0.7) * slick.radius * 0.3};
+        drawEllipse(sheen, slick.radius * 0.35, slick.radius * 0.3, 0.102, ColorAlpha({70, 40, 120, 255}, 0.18 * fade));
+    }
+}
+
+@private
+fadeOf :: (slick: Slick) -> f32 {
+    return math.clamp(math.min(slick.age * 3, slick.timeLeft / 3), 0, 1);
+}
+
+@private
+drawBlob :: (slick: Slick, scale: f32, y: f32, color: Color) {
+    Segments :: 32;
+    middle := slick.center.at(y);
+    for i in 0..Segments {
+        a := Pi * 2 * i as f32 / Segments;
+        b := Pi * 2 * (i + 1) as f32 / Segments;
+        ra := edgeAt(slick, a) * scale;
+        rb := edgeAt(slick, b) * scale;
+        p := Vector3{slick.center.x + math.cosf(a) * ra, y, slick.center.y + math.sinf(a) * ra};
+        q := Vector3{slick.center.x + math.cosf(b) * rb, y, slick.center.y + math.sinf(b) * rb};
+        DrawTriangle3D(middle, q, p, color);
     }
 }
 
 @private
 drawEllipse :: (center: Vector2, halfWidth: f32, halfLength: f32, y: f32, color: Color) {
-    Segments :: 28;
+    Segments :: 20;
     middle := center.at(y);
     for i in 0..Segments {
         a := Pi * 2 * i as f32 / Segments;
@@ -123,15 +191,27 @@ drawEllipse :: (center: Vector2, halfWidth: f32, halfLength: f32, y: f32, color:
     }
 }
 
+// Drops falling from under the back of a car that leaks
+drawLeak :: (car: *Car, time: f32) {
+    if car.leakLeft <= 0 { return; }
+    back := car.position() + Vector3{0, 0, -car.length() * 0.5 + 0.4};
+    for k in 0..3 {
+        fall := math.fmodf(time * 3 + k as f32 * 0.33, 1);
+        DrawSphere(back + Vector3{(k as f32 - 1) * 0.5, 0.7 * (1 - fall), 0}, 0.16, TarColor);
+    }
+}
+
 //
 // Console commands, to try them out
 //
 
-@console.command("Puts an oil slick on the road, at x and z, or at random")
+@console.command("Makes a car that is coming onto the field leak oil, or drops a blob at x and z")
 spawnSlick :: (game: *Game, x: ?f32, z: ?f32) {
-    rng := &game.slicks.rng;
-    center := Vector2{x ?? laneCenter(rng.between(0, LaneCount - 1)), z ?? rng.uniform(-40, 40) as f32};
-    game.addSlick(center, 3.5);
+    if x.hasValue() && z.hasValue() {
+        game.addSlick(Vector2{x.value(), z.value()}, 2);
+        return;
+    }
+    if !game.leak(&game.slicks.rng) { console.fail("No car is coming onto the field"); }
 }
 
 @console.command("Starts a rush hour now, after its warning")
@@ -140,7 +220,7 @@ rushHour :: (game: *Game) {
     game.traffic.rushLeft = 0;
 }
 
-@console.command("Sounds the siren of an ambulance in a lane, or a random one")
+@console.command("Sounds the siren of the ambulances, around a lane or a random one")
 ambulance :: (game: *Game, lane: ?int) {
-    game.traffic.sirenFor(math.clamp(lane ?? game.slicks.rng.between(0, LaneCount - 1), 0, LaneCount - 1));
+    game.traffic.sirenFor(lane ?? game.slicks.rng.between(0, LaneCount - 1));
 }

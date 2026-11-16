@@ -262,6 +262,8 @@ Hero :: struct {
     boost:     Boost;               // Of the items in the backpack of its player (items.sd)
     savesLeft: int;                 // Of the clovers: times it still gets away from a car
     slideLeft:     f32;             // On an oil slick: seconds it slides on before it may turn (slicks.sd)
+    slowedBy:      f32;             // By the Garlic of an enemy near it: 0.3 is 30% slower
+    bounceLeft:    f32;             // Seconds until Spring Shoes bounce it again
     slideVelocity: Vector2;
 
     // What the abilities are doing right now
@@ -305,13 +307,14 @@ Hero :: struct {
             }
         }
         if self.sprintLeft > 0 { speed *= self.sprintMultiplier; }
-        return speed * self.boost.speed;
+        return speed * self.boost.speed * (1 - self.slowedBy);
     }
 
     walksThroughWalls :: method () -> bool {
         return self.abilities().some(ability => ability.effect.kind == .phaseWalk);
     }
 
+    // Frosty's own, or else the one of a Frost Charm
     chillAura :: method () -> ?ChillAura {
         for ability in self.abilities() {
             switch v in ability.effect {
@@ -319,7 +322,12 @@ Hero :: struct {
                 else            { }
             }
         }
+        if self.boost.chill > 0 { return ChillAura{radius: self.boost.chill, slow: ItemAuraSlow}; }
         return null;
+    }
+
+    hasChillAbility :: method () -> bool {
+        return self.abilities().some(ability => ability.effect.kind == .chillAura);
     }
 
     isFaded :: method () -> bool {

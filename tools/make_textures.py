@@ -405,6 +405,44 @@ def icon_item_clover():
     finish(image, "item_clover")
 
 
+def icon_item_frost_charm():
+    image, draw = icon_base((60, 110, 170), (10, 30, 70))
+    draw.line([(128, 10), (128, 70)], fill=(200, 200, 210), width=6)                           # The string
+    draw.ellipse([58, 60, 198, 200], fill=(170, 230, 255), outline=(30, 50, 80), width=7)     # The amulet
+    c, cy = 128, 130
+    for k in range(6):
+        a = math.pi / 3 * k
+        x, y = c + math.cos(a) * 50, cy + math.sin(a) * 50
+        draw.line([(c, cy), (x, y)], fill=(255, 255, 255), width=9)
+        bx, by = c + math.cos(a) * 32, cy + math.sin(a) * 32
+        for side in (-1, 1):
+            b = a + side * 0.8
+            draw.line([(bx, by), (bx + math.cos(b) * 16, by + math.sin(b) * 16)], fill=(255, 255, 255), width=6)
+    finish(image, "item_frost_charm")
+
+
+def icon_item_garlic():
+    image, draw = icon_base((120, 140, 60), (40, 50, 20))
+    for i in range(3):                                                                         # The stench
+        draw.arc([30 + i * 60, 20, 90 + i * 60, 80], start=200, end=340, fill=(200, 230, 120), width=7)
+    draw.ellipse([56, 90, 200, 226], fill=(245, 240, 225), outline=(60, 50, 40), width=6)     # The bulb
+    for x in (100, 128, 156):
+        draw.line([(x, 100), (x + (x - 128) * 0.2, 220)], fill=(200, 190, 170), width=4)       # Its cloves
+    poly(draw, [(118, 96), (128, 60), (138, 96)], (245, 240, 225), (60, 50, 40), 5)            # The top
+    finish(image, "item_garlic")
+
+
+def icon_item_spring_shoes():
+    image, draw = icon_base((240, 160, 60), (120, 60, 10))
+    poly(draw, [(40, 110), (60, 40), (110, 36), (130, 76), (210, 92), (214, 120), (40, 124)], (60, 120, 220))  # The shoe
+    draw.rectangle([36, 118, 218, 132], fill=(240, 240, 240), outline=(20, 20, 20), width=4)
+    for k in range(5):                                                                         # The spring
+        y = 140 + k * 18
+        draw.line([(80, y), (176, y + 9)], fill=(200, 200, 210), width=9)
+        draw.line([(176, y + 9), (80, y + 18)], fill=(150, 150, 160), width=9)
+    finish(image, "item_spring_shoes")
+
+
 def item_icons():
     icon_item_sneakers()
     icon_item_hard_hat()
@@ -412,6 +450,9 @@ def item_icons():
     icon_item_spyglass()
     icon_item_first_aid()
     icon_item_clover()
+    icon_item_frost_charm()
+    icon_item_garlic()
+    icon_item_spring_shoes()
 
 
 if __name__ == "__main__":

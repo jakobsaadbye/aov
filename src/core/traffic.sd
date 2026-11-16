@@ -24,6 +24,8 @@ Car :: struct {
     frozenLeft: f32;        // Seconds it is frozen by Frosty
     isBraking:  bool;       // Held up in a lane that Hilda stopped, with its brake lights on
     age:        f32;        // Seconds since it was spawned
+    leakLeft:   f32;        // Seconds it still leaks oil (slicks.sd)
+    leakTimer:  f32;        // Seconds to its next drop
     layer:      int;        // 0 to 3, different for cars after each other in a lane. Drawn a bit bigger by it, so two
                             // cars that drive through each other don't have their faces in the same place (z-fighting)
 
@@ -91,7 +93,7 @@ Traffic :: struct {
     rush:          RushPhase;
     rushLeft:      f32;         // Seconds left of the phase
     nextEmergency: f32;         // Seconds to the next siren
-    emergencyLane: int = -1;    // The lane an ambulance is coming in, after its siren
+    emergencyLane: int = -1;    // The middle lane of the ambulances that come, after their siren
     emergencyIn:   f32;         // and the seconds until it is on the road
 }
 

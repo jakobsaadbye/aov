@@ -19,6 +19,9 @@ ItemKind :: enum {
     spyglass,
     firstAid,
     clover,
+    frostCharm,
+    garlic,
+    springShoes,
 }
 
 ItemDefinition :: struct {
@@ -35,6 +38,9 @@ itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
         case .hourglass => ItemDefinition{"Hourglass", "The abilities cool down 30% faster", "item_hourglass", {230, 190, 120, 255}};
         case .spyglass  => ItemDefinition{"Spyglass", "The abilities reach 30% further", "item_spyglass", {120, 170, 255, 255}};
         case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals 10% of it a second when no car is on it. Nothing else heals", "item_first_aid", {235, 60, 60, 255}};
+        case .frostCharm  => ItemDefinition{"Frost Charm", "An aura of cold: the cars near the hero drive 30% slower", "item_frost_charm", {150, 220, 255, 255}};
+        case .garlic      => ItemDefinition{"Garlic", "A stench: enemy heroes near the hero walk 30% slower", "item_garlic", {200, 230, 120, 255}};
+        case .springShoes => ItemDefinition{"Spring Shoes", "A car that hits the hero bounces it over the car, towards the far side. Every 12 seconds", "item_spring_shoes", {255, 150, 60, 255}};
         case .clover    => ItemDefinition{"Four-Leaf Clover", "Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment", "item_clover", {80, 220, 90, 255}};
     };
 }
@@ -48,7 +54,17 @@ Boost :: struct {
     health:   f32 = 1;      // Times the most health
     regen:    f32;          // The share of its most health it heals a second. Only items heal
     saves:    int;          // Times a hero gets away when a car would run it over
+    chill:    f32;          // The radius of an aura that slows the cars around the hero
+    stench:   f32;          // The radius of an aura that slows the enemy heroes around it
+    bounces:  bool;         // A car that hits it bounces it over, now and then
 }
+
+ItemAuraSlow   :: 0.3;      // How much slower the Frost Charm makes the cars, and Garlic the enemies
+FrostRadius    :: 7.0;
+StenchRadius   :: 6.0;
+BounceCooldown :: 12.0;
+BounceDistance :: 7.0;      // How far towards the far side a bounce takes the hero
+BounceTime     :: 0.55;
 
 boostOf :: (items: []ItemKind) -> Boost {
     boost: Boost;
@@ -60,6 +76,9 @@ boostOf :: (items: []ItemKind) -> Boost {
             case .spyglass  { boost.reach *= 1.3; }
             case .firstAid  { boost.health *= 1.4; boost.regen += 0.1; }
             case .clover    { boost.saves += 1; }
+            case .frostCharm  { boost.chill += FrostRadius; }
+            case .garlic      { boost.stench += StenchRadius; }
+            case .springShoes { boost.bounces = true; }
         }
     }
     return boost;
@@ -159,6 +178,63 @@ applyBoost :: method (player: *Player) {
     hero.boost = boostOf(player.backpack.list());
     hero.health = share * hero.maxHealth();
     hero.savesLeft = math.max(0, hero.boost.saves - savesUsed);
+}
+
+// With Spring Shoes, a car that hits the hero bounces it over the car, towards the side it is going to. True when it did
+bounced :: method (game: *Game, index: int) -> bool {
+    player := &game.players[index];
+    hero := &player.hero;
+    if !hero.boost.bounces || hero.bounceLeft > 0 || hero.isAirborne() { return false; }
+    hero.bounceLeft = BounceCooldown;
+    across := player.startSide.opposite().sign();
+    to := hero.position + Vector3{across * BounceDistance, 0, 2.5};
+    hero.leap = LeapState{from: hero.position, to: to, duration: BounceTime};
+    hero.isMoving = false;
+    game.effects.addRing(hero.ground(), 0.5, 4, {255, 150, 60, 255}, 0.35);
+    game.sounds.playAt("ability.leap", hero.position, 0.9, 0.1);
+    game.announce(index, {255, 150, 60, 255}, "% bounced off a car", player.name);
+    return true;
+}
+
+// Garlic: how much slower each hero walks, by the enemies that stink near it. Once a frame
+updateStench :: method (game: *Game) {
+    for *player, i in game.players {
+        player.hero.slowedBy = 0;
+        if !player.isPlaying() { continue; }
+        for other, k in game.players {
+            if k == i || !other.isPlaying() || other.hero.boost.stench <= 0 { continue; }
+            if other.hero.ground().distance(player.hero.ground()) <= other.hero.boost.stench {
+                player.hero.slowedBy = ItemAuraSlow;
+            }
+        }
+    }
+}
+
+// The auras of the items, around the heroes that have them: cold blue, and a green stench that wafts
+drawItemAuras :: (game: *Game) {
+    for player in game.players {
+        if !player.isPlaying() { continue; }
+        hero := player.hero;
+        ground := hero.ground();
+        if hero.boost.chill > 0 && !hero.hasChillAbility() {
+            DrawCircle3D(ground.at(0.14), hero.boost.chill, {1, 0, 0}, 90, {170, 230, 255, 110});
+            DrawCylinder(ground.at(0.12), hero.boost.chill, hero.boost.chill, 0.02, 40, {170, 230, 255, 25});
+        }
+        if hero.boost.stench > 0 {
+            pulse := 0.5 + 0.5 * math.sinf(game.time * 3);
+            DrawCircle3D(ground.at(0.15), hero.boost.stench * (0.95 + pulse * 0.05), {1, 0, 0}, 90, {215, 185, 60, 170});
+            DrawCylinder(ground.at(0.12), hero.boost.stench, hero.boost.stench, 0.02, 40, {200, 170, 50, 45 + (pulse * 20) as u8});
+            for k in 0..6 {
+                a := game.time * 0.8 + k as f32 * Pi / 3;
+                r := hero.boost.stench * (0.4 + 0.4 * math.fmodf(game.time * 0.3 + k as f32 * 0.17, 1));
+                rise := math.fmodf(game.time * 0.6 + k as f32 * 0.37, 1);
+                DrawSphere(Vector3{ground.x + math.cosf(a) * r, 0.5 + rise * 2.5, ground.y + math.sinf(a) * r}, 0.45 * (1 - rise), {215, 185, 60, 120});
+            }
+        }
+        if hero.boost.bounces && hero.bounceLeft <= 0 {
+            DrawCircle3D(ground.at(0.16), hero.info().hitRadius + 0.9, {1, 0, 0}, 90, {255, 150, 60, 140});
+        }
+    }
 }
 
 // A car would run the hero over: with a clover it gets away, with a little health, and is out of the way of the cars for
