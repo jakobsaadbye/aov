@@ -89,6 +89,7 @@ ensureGame :: method (session: *Session) {
         old.free();
     }
     game.effects.particles.isOn = true;      // Only shown in a window: headless games (tests, training) skip them
+    game.asyncBots = game.replay == null;
     session.game = game;
     session.replayClock = 0;
 }
@@ -246,9 +247,14 @@ main :: () {
         BeginDrawing();
         ClearBackground(core.SkyColor);
         game.drawScene(&assets);
+        core.profileBegin(.hud);
         game.drawHud(&assets);
         core.drawConsole(view);
+        core.profileEnd(.hud);
         EndDrawing();
+        core.profileEnd(.frame);
+        core.profileFrame();
+        core.profileBegin(.frame);
 
         if session.screenshot.hasValue() {
             TakeScreenshot(core.tempCString(session.screenshot.value()));

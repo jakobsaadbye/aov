@@ -10,6 +10,8 @@ ShadowColor :: Color{0, 0, 0, 70};
 FrozenColor :: Color{170, 230, 255, 255};
 
 drawScene :: method (game: *Game, assets: *Assets) {
+    profileBegin(.scene);
+    defer profileEnd(.scene);
     assets.lighting.setCamera(game.camera.view);
 
     // raylib's near plane of 0.01 leaves the depth buffer too little precision at the distance of the camera, and the
@@ -22,7 +24,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     DrawMesh(assets.outside, assets.outsideMaterial, MatrixTranslate(0, -0.4, 0));
     DrawMesh(assets.ground, assets.groundMaterial, MatrixIdentity());
     DrawMesh(assets.road, assets.roadMaterial, MatrixTranslate(0, 0.06, 0));
-    drawLaneMarkings();
+    DrawMesh(assets.laneMarkings, assets.laneMarkingsMaterial, MatrixIdentity());
     drawGoalStrip(game.you().startSide.opposite());
     drawSlicks(game);
     drawEmergencyWarning(game);
@@ -32,17 +34,22 @@ drawScene :: method (game: *Game, assets: *Assets) {
     for wall in game.world.walls {
         assets.drawWall(wall);
     }
-    assets.drawScenery(game.camera.focus, game.camera.distance * 1.3 + 20);
+    frustum := game.camera.frustum();
+    profileBegin(.scenery);
+    assets.drawScenery(&frustum);
+    profileEnd(.scenery);
 
     warped := game.traffic.isWarped();
+    profileBegin(.cars);
     for *car in game.traffic.cars {
-        if car.isActive { drawCar(assets, car, warped, game.time); }
+        if car.isActive && frustum.sees(car.position(), car.length() * 0.5 + 1) { drawCar(assets, car, warped, game.time); }
     }
+    profileEnd(.cars);
     for sign in game.stopSigns { drawStopSign(assets, sign); }
 
     // Shadows, stains and rings lie on the ground, above the road
     for *car in game.traffic.cars {
-        if car.isActive {
+        if car.isActive && frustum.sees(car.position(), car.length() * 0.5 + 1) {
             rect := car.rect();
             DrawCube(rect.center().at(0.12 + car.layer as f32 * 0.006), rect.width + 0.4, 0.02, rect.height + 0.4, ShadowColor);
         }
@@ -57,31 +64,64 @@ drawScene :: method (game: *Game, assets: *Assets) {
         drawHero(assets, game, i as int);
     }
     drawInspection3D(game);
+    profileBegin(.particles);
     game.effects.particles.draw(assets, game.camera.view);
+    profileEnd(.particles);
 
     if game.debug.wireframes { rlDisableWireMode(); }
     if game.debug.hitboxes { drawHitboxes(game); }
 }
 
-// The lines along the edges of the road, and dashed lines between the lanes
-drawLaneMarkings :: () {
-    LineColor  :: Color{235, 235, 225, 255};
-    LineY      :: 0.09;
+// The lines along the edges of the road, and dashed lines between the lanes: flat quads, made into one mesh once
+// (laneMarkingsMesh), so they are drawn at once
+LaneLineColor :: Color{235, 235, 225, 255};
+
+laneMarkingRects :: () -> [..]Rectangle {
     DashLength :: 3.0;
     DashPeriod :: 9.0;
-
+    rects: [..]Rectangle;
     for side in [-1.0, 1.0] {
-        DrawCube({side * (RoadHalfWidth - 0.4), LineY, 0}, 0.3, 0.02, RoadEnd * 2, LineColor);
+        rects.add(Rectangle{side * (RoadHalfWidth - 0.4) - 0.15, -RoadEnd, 0.3, RoadEnd * 2});
     }
-
     dashes := (RoadEnd * 2 / DashPeriod) as int;
     for lane in 1..LaneCount {
         x := -RoadHalfWidth + LaneWidth * lane as f32;
         for i in 0..dashes {
             z := -RoadEnd + (i as f32 + 0.5) * DashPeriod;
-            DrawCube({x, LineY, z}, 0.2, 0.02, DashLength, LineColor);
+            rects.add(Rectangle{x - 0.1, z - DashLength * 0.5, 0.2, DashLength});
         }
     }
+    return rects;
+}
+
+// Flat rectangles of the ground at a height, facing up, as one mesh
+flatMesh :: (rects: []Rectangle, y: f32) -> Mesh {
+    mesh: Mesh;
+    mesh.vertexCount = rects.count as int * 6;
+    mesh.triangleCount = rects.count as int * 2;
+    mesh.vertices  = MemAlloc((mesh.vertexCount * 3 * sizeof(f32)) as uint) as *f32;
+    mesh.normals   = MemAlloc((mesh.vertexCount * 3 * sizeof(f32)) as uint) as *f32;
+    mesh.texcoords = MemAlloc((mesh.vertexCount * 2 * sizeof(f32)) as uint) as *f32;
+    v := 0;
+    for rect in rects {
+        corners := [
+            Vector2{rect.x, rect.y}, Vector2{rect.x, rect.y + rect.height}, Vector2{rect.x + rect.width, rect.y + rect.height},
+            Vector2{rect.x, rect.y}, Vector2{rect.x + rect.width, rect.y + rect.height}, Vector2{rect.x + rect.width, rect.y},
+        ];
+        for corner in corners {
+            mesh.vertices[v * 3] = corner.x;
+            mesh.vertices[v * 3 + 1] = y;
+            mesh.vertices[v * 3 + 2] = corner.y;
+            mesh.normals[v * 3] = 0;
+            mesh.normals[v * 3 + 1] = 1;
+            mesh.normals[v * 3 + 2] = 0;
+            mesh.texcoords[v * 2] = 0;
+            mesh.texcoords[v * 2 + 1] = 0;
+            v += 1;
+        }
+    }
+    UploadMesh(&mesh, false);
+    return mesh;
 }
 
 // A light strip on the side of the road where the heroes are going

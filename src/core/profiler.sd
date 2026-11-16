@@ -1,0 +1,90 @@
+namespace core;
+
+// Where the time of a frame goes: each part of the frame is timed, and the debug overlay (toggleDebugOverlay) and the
+// console (profile) show what each costs, on average and at the worst of the last seconds. To time a part of the code:
+//
+//     profileBegin(.traffic);
+//     game.traffic.update(...);
+//     profileEnd(.traffic);
+
+import console;
+import fmt;
+import math;
+import time;
+
+ProfileSection :: enum {
+    frame,          // All of it, from one frame to the next
+    simulate,       // The world moving on: the parts below, and the rest
+    bots,           // The bots thinking
+    heroes,         // The orders carried out, the heroes moving and being hit
+    traffic,
+    effects,        // The particles moving, and the new ones of the auras and such
+    scene,          // The 3D scene drawn: the parts below, and the rest
+    scenery,        // The city
+    cars,
+    particles,
+    hud,
+}
+
+Profiler :: struct {
+    started: [ProfileSection.count]f64;
+    current: [ProfileSection.count]f64;     // Seconds of this frame so far
+    average: [ProfileSection.count]f64;     // Over the last frames
+    worst:   [ProfileSection.count]f64;     // The longest of the last WorstSeconds
+    shownWorst: [ProfileSection.count]f64;
+    since:   f64;                            // When the worst were last shown and started again
+    frames:  int;
+}
+
+WorstSeconds :: 2.0;
+
+@threadLocal
+profiler: Profiler;
+
+profileBegin :: (section: ProfileSection) {
+    profiler.started[section] = time.clock();
+}
+
+profileEnd :: (section: ProfileSection) {
+    profiler.current[section] += time.clock() - profiler.started[section];
+}
+
+// At the end of a frame: the averages take this frame in, and the next frame starts at nothing
+profileFrame :: () {
+    now := time.clock();
+    for section in ProfileSection.values {
+        value := profiler.current[section];
+        if profiler.frames == 0 { profiler.average[section] = value; }
+        else { profiler.average[section] = profiler.average[section] * 0.95 + value * 0.05; }
+        profiler.worst[section] = math.max(profiler.worst[section], value);
+        profiler.current[section] = 0;
+    }
+    profiler.frames += 1;
+    if now - profiler.since > WorstSeconds {
+        profiler.shownWorst = profiler.worst;
+        for *worst in profiler.worst { *worst = 0; }
+        profiler.since = now;
+    }
+}
+
+// The lines that say what each part costs, in milliseconds
+profileLines :: () -> [..]string {
+    lines: [..]string;
+    for section in ProfileSection.values {
+        indent := "  ";
+        if section == .frame || section == .simulate || section == .scene || section == .hud { indent = ""; }
+        lines.add(tprint("%%: % ms, at worst %", indent, ProfileSection.names[section],
+            fmt.fixed((profiler.average[section] * 1000) as f32, 2), fmt.fixed((profiler.shownWorst[section] * 1000) as f32, 1)));
+    }
+    return lines;
+}
+
+@console.command("What each part of a frame costs, in milliseconds: on average, and at the worst of the last 2 seconds")
+profile :: () {
+    lines := profileLines();
+    defer lines.free();
+    fps := 0;
+    if profiler.average[ProfileSection.frame] > 0 { fps = (1 / profiler.average[ProfileSection.frame]) as int; }
+    console.print("About % frames a second", fps);
+    for line in lines { console.print("    %", line); }
+}

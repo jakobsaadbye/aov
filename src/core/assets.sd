@@ -14,6 +14,8 @@ Assets :: struct {
     ground:          Mesh;  // The field
     groundMaterial:  Material;
     road:            Mesh;
+    laneMarkings:    Mesh;  // All of the lines on the road (render.sd)
+    laneMarkingsMaterial: Material;
     roadMaterial:    Material;
     outside:         Mesh;  // The land around the field, to the horizon
     outsideMaterial: Material;
@@ -70,6 +72,12 @@ loadAssets :: () -> Assets {
     tileTexture(&assets.road, RoadHalfWidth * 2 / 16, RoadEnd * 2 / 16);
     assets.roadMaterial = assets.lighting.newMaterial(White);
     assets.roadMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = loadTexture("textures/road/asphalt.png");
+
+    rects := laneMarkingRects();
+    assets.laneMarkings = flatMesh(rects, 0.09);
+    rects.free();
+    assets.laneMarkingsMaterial = LoadMaterialDefault();      // Unlit, like the paint should look
+    assets.laneMarkingsMaterial.maps[MaterialMapIndex.materialMapAlbedo].color = LaneLineColor;
 
     // The models, lit by the sun like the rest
     for kind in CarKind.values {
@@ -133,6 +141,7 @@ unload :: method (assets: *Assets) {
     for _, icon in assets.icons  { UnloadTexture(icon); }
 
     UnloadMesh(assets.cube);
+    UnloadMesh(assets.laneMarkings);
     UnloadMesh(assets.ground);
     UnloadMesh(assets.road);
     UnloadMesh(assets.outside);
@@ -160,16 +169,17 @@ drawWall :: method (assets: *Assets, wall: Rectangle) {
 
 // Draws a vehicle with the color of the car on its body
 // The tufts, flowers and rocks near a point, e.g what the camera looks at
-drawScenery :: method (assets: *Assets, around: Vector3, reach: f32) {
+drawScenery :: method (assets: *Assets, frustum: *ViewFrustum) {
     // The pavement of the blocks, with a curb around it
     for block in assets.cityBlocks {
         center := block.center();
-        if math.fabsf(center.x - around.x) > reach + BlockSize || math.fabsf(center.y - around.z) > reach + BlockSize { continue; }
+        if !frustum.sees(center.at(0), block.width * 0.75) { continue; }
         DrawCube(center.at(0.1), block.width + 0.8, 0.2, block.height + 0.8, {120, 118, 112, 255});
         DrawCube(center.at(0.12), block.width, 0.22, block.height, {172, 168, 158, 255});
     }
     for decoration in assets.scenery {
-        if math.fabsf(decoration.position.x - around.x) > reach || math.fabsf(decoration.position.z - around.z) > reach { continue; }
+        center, radius := decoration.bounds();
+        if !frustum.sees(center, radius) { continue; }
         DrawModelEx(assets.sceneryModels[decoration.kind], decoration.position, {0, 1, 0}, decoration.angle, decoration.size, White);
     }
 }

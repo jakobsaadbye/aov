@@ -242,6 +242,24 @@ same with or without them. The textures are made by `tools/make_textures.py part
 60` makes one at your hero, `particles` says how many there are and what they cost, and `particleStorm 8000` makes a
 lot to see it. The debug overlay (`toggleDebugOverlay`) shows the cost too.
 
+## Speed
+
+The game aims at 120 frames a second, also in a debug build. Where the time of a frame goes is measured
+(`core/profiler.sd`): `profile` in the console, and the debug overlay (`toggleDebugOverlay`), show what the bots, the
+heroes, the traffic, the effects, the city, the cars, the particles and the HUD each cost, on average and at the worst
+of the last 2 seconds. To time another part, put it between `profileBegin(.part)` and `profileEnd(.part)`.
+
+What keeps it quick:
+
+* The bots search for their ways on threads of their own, one for each bot, so a frame never waits for a search: a bot
+  goes on with the plan it has until the new one comes, a frame or a few later (`bots/search_job.sd`). Only in the
+  window: the tests, the arena and training search on the thread of the game, so a seed always plays the same game.
+  `toggleAsyncBots` in the console switches it.
+* The forecast of the bots is made in a fraction of a millisecond: the cells the walls block are worked out once for
+  each size of hero, and the safe times of a cell only when the search asks for them.
+* Only what the camera sees is drawn: cars, their shadows, and the buildings and blocks of the city outside of the view
+  are skipped. The lines on the road are one mesh, made when the game starts.
+
 ## Players and bots
 
 Up to six players race across the same road: you and the bots. Each has a hero, a score and a side it starts on, which

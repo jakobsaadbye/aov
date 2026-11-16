@@ -99,3 +99,40 @@ groundPoint :: method (camera: *RtsCamera, screen: Vector2) -> ?Vector3 {
     if t < 0 { return null; }
     return ray.position + ray.direction * t;
 }
+
+// What the camera sees: a pyramid from the camera along its view, as wide as the window. Things outside of it aren't
+// drawn
+ViewFrustum :: struct {
+    position: Vector3;
+    forward:  Vector3;
+    right:    Vector3;
+    up:       Vector3;
+    tanX:     f32;          // How far it spreads to each side, and up and down, for each step forward
+    tanY:     f32;
+    secX:     f32;          // How much further a sphere reaches across its side than its radius
+    secY:     f32;
+}
+
+frustum :: method (camera: *RtsCamera) -> ViewFrustum {
+    view := camera.view;
+    f: ViewFrustum;
+    f.position = view.position;
+    f.forward = (view.target - view.position).normalize();
+    f.right = f.forward.cross(view.up).normalize();
+    f.up = f.right.cross(f.forward);
+    f.tanY = math.tanf(view.fovy * Deg2Rad * 0.5);
+    f.tanX = f.tanY * GetScreenWidth() as f32 / math.max(GetScreenHeight(), 1) as f32;
+    f.secY = math.sqrtf(1 + f.tanY * f.tanY);
+    f.secX = math.sqrtf(1 + f.tanX * f.tanX);
+    return f;
+}
+
+// Whether any of a sphere is in view
+sees :: method (f: *ViewFrustum, center: Vector3, radius: f32) -> bool {
+    d := center - f.position;
+    z := d.dot(f.forward);
+    if z < -radius { return false; }
+    if math.fabsf(d.dot(f.right)) > z * f.tanX + radius * f.secX { return false; }
+    if math.fabsf(d.dot(f.up)) > z * f.tanY + radius * f.secY { return false; }
+    return true;
+}
