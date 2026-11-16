@@ -224,38 +224,61 @@ drawConsole :: (view: *ConsoleView) {
 // Under the console: the commands that start with the first word typed, how each is used and what it does
 @private
 drawMatches :: method (view: *ConsoleView, top: int) {
-    text := view.text();
-    space := text.indexOf(" ");
-    word := text;
-    if space >= 0 { word = text.slice(0, space); }
-    if word.len == 0 { return; }
-    matches := console.complete(word);
-    if matches.count == 0 { return; }
-    // Typing the arguments of a command: only that command
-    if space >= 0 {
-        exact := console.lookup(word);
-        if exact == null { return; }
-        matches.clear();
-        matches.add(exact);
+    // While Tab goes through the matches: all that match what was typed before it, with the one it is on lit up
+    selected := -1;
+    word: string;
+    if view.completing >= 0 {
+        word.data = view.prefix.data;
+        word.len = view.prefix.count;
+        selected = view.completing;
+    } else {
+        word = view.text();
+        space := word.indexOf(" ");
+        if space >= 0 {
+            // Typing the arguments of a command: only that command
+            entry := console.lookup(word.slice(0, space));
+            if entry != null { view.drawMatchRows(top, [entry], -1); }
+            return;
+        }
     }
+    if word.len == 0 && selected < 0 { return; }
+    matches := console.complete(word);
+    if matches.count > 0 { view.drawMatchRows(top, matches, selected); }
+}
 
-    shown := math.min(matches.count as int, 8);
+MaxMatches :: 8;
+
+@private
+drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*console.Entry, selected: int) {
+    // A window of the matches that has the selected one in it
+    first := 0;
+    if selected >= MaxMatches { first = selected - MaxMatches + 1; }
+    shown := math.min(matches.count as int - first, MaxMatches);
+
     width := 0;
-    for i in 0..shown {
+    for i in first..first + shown {
         entry := matches[i];
         width = math.max(width, textWidth(console.usage(entry), ConsoleFontSize) + textWidth(entry.help, ConsoleFontSize) + 60);
     }
     width = math.min(width, GetScreenWidth() - 28);
-    DrawRectangle(14, top + 4, width, shown * ConsoleLine + 12, ConsoleColor);
-    for i in 0..shown {
+    rows := shown;
+    if matches.count > first + shown { rows += 1; }
+    DrawRectangle(14, top + 4, width, rows * ConsoleLine + 12, ConsoleColor);
+    for k in 0..shown {
+        i := first + k as int;
         entry := matches[i];
-        y := top + 10 + i as int * ConsoleLine;
+        y := top + 10 + k as int * ConsoleLine;
         usage := console.usage(entry);
-        drawText(usage, 24, y, ConsoleFontSize, TextColor);
+        color := TextColor;
+        if i == selected {
+            DrawRectangle(16, y - 2, width - 4, ConsoleLine, ColorAlpha(InputColor, 0.25));
+            color = InputColor;
+        }
+        drawText(usage, 24, y, ConsoleFontSize, color);
         drawText(entry.help, 24 + textWidth(usage, ConsoleFontSize) + 24, y, ConsoleFontSize, DimColor);
     }
-    if matches.count > shown {
-        drawText(tprint("and % more", matches.count - shown), 24, top + 10 + shown * ConsoleLine, ConsoleFontSize, DimColor);
+    if matches.count > first + shown {
+        drawText(tprint("and % more (Tab)", matches.count - first - shown), 24, top + 10 + shown * ConsoleLine, ConsoleFontSize, DimColor);
     }
 }
 
