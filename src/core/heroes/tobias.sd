@@ -56,7 +56,7 @@ castFlash :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> b
 castSelfie :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     player := &game.players[caster];
     victim := game.spellTarget(caster, ability, target);
-    if victim < 0 { return false; }
+    if victim < 0 { return spent(victim); }
     enemy := &game.players[victim].hero;
     hero := &player.hero;
     mine := hero.position;

@@ -1,0 +1,57 @@
+namespace core;
+
+// Magnus the Magnet: a man of steel. He pushes the cars back, pulls his enemies in, and nothing pushes him
+
+import math;
+use raylib;
+
+defineMagnus :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Magnus", title: "the Magnet", color: {150, 155, 170, 255}, width: 2.8, height: 4.4, moveSpeed: 7.2, hitRadius: 0.9, maxHealth: 65};
+    hero.abilities.add(Ability{
+        name: "Repel", icon: "repel", sound: "ability.repel", cooldown: 11, cast: castRepel, bot: .stopCars,
+        description: "Pushes the cars within 14 that are coming at him 7 back up the road",
+        radius: 14, power: 7,
+    });
+    hero.abilities.add(Ability{
+        name: "Attract", icon: "attract", sound: "ability.attract", cooldown: 12, targeting: .enemy, cast: castAttract, bot: .pullEnemy,
+        description: "Pulls the enemy nearest the cursor, up to 16 away, right up to him, through whatever is in the way",
+        range: 16,
+    });
+    hero.abilities.add(passive("Steel frame", "steel_frame", "Too heavy to move: nobody shoves him, and nothing knocks him away", .unshovable));
+    return hero;
+}
+
+castRepel :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    radius := hero.reach(ability.radius);
+    pushed := 0;
+    for *car in game.traffic.cars {
+        if !car.isActive || car.kind == .ambulance || car.z > ground.y + 1 { continue; }
+        if !CheckCollisionCircleRec(ground, radius, car.rect()) { continue; }
+        car.z -= ability.power;
+        pushed += 1;
+    }
+    game.effects.addRing(ground, 1, radius, {200, 210, 255, 255}, 0.4);
+    game.effects.particles.emit(.sparks, hero.position + Vector3{0, 2, 0}, 16);
+    return true;
+}
+
+castAttract :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    victim := game.spellTarget(caster, ability, target);
+    if victim < 0 { return spent(victim); }
+    enemy := &game.players[victim].hero;
+    if enemy.stats.unshovable { return true; }
+    toward := enemy.ground() - hero.ground();
+    if toward.length() < 0.1 { return true; }
+    stop := hero.ground() + toward.normalize() * (hero.info().hitRadius + enemy.info().hitRadius + 0.6);
+    enemy.displacement = Displacement{to: stop.at(), speed: KnockbackSpeed};
+    enemy.clearStatus(.sleep);
+    enemy.stop();
+    enemy.hook = null;
+    enemy.harmedBy = caster;
+    enemy.harmedAt = game.time;
+    game.announce(victim, {200, 210, 255, 255}, "% was pulled in by Magnus (%)!", enemy.info().name, game.players[caster].name);
+    return true;
+}

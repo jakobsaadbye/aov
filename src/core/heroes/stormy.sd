@@ -1,0 +1,68 @@
+namespace core;
+
+// Stormy the Weather Girl: she strikes cars with lightning, brings rain that slows everything down, and the wind is
+// always at her back
+
+import math;
+use raylib;
+
+defineStormy :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Stormy", title: "the Weather Girl", color: {60, 110, 220, 255}, width: 2.4, height: 4.4, moveSpeed: 8, hitRadius: 0.75, maxHealth: 28};
+    hero.abilities.add(Ability{
+        name: "Lightning", icon: "lightning", sound: "ability.lightning", cooldown: 10, targeting: .point, cast: castLightning, bot: .stopCarsAhead,
+        description: "Strikes the car nearest the cursor, up to 30 away: it stops dead for 3.5 seconds, and the cars behind it queue up",
+        range: 30, duration: 3.5,
+    });
+    hero.abilities.add(Ability{
+        name: "Downpour", icon: "downpour", sound: "ability.downpour", cooldown: 14, cast: castDownpour, bot: .stopCars,
+        description: "Rain within 16 of her for 4 seconds: the cars in it drive 40% slower, and the enemies in it walk 35% slower",
+        radius: 16, duration: 4, power: 0.4,
+    });
+    hero.abilities.add(passive("Tailwind", "tailwind", "The wind is at her back: 15% faster towards the far side", Trait{tailwind: 1.15}));
+    return hero;
+}
+
+castLightning :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    index := game.traffic.carNear(aim, 6);
+    if index < 0 { return false; }
+    car := &game.traffic.cars[index];
+    duration := ability.duration + hero.stats.coldBlooded;
+    car.frozenLeft = math.max(car.frozenLeft, duration);
+    game.traffic.halt(car.lane, car.lane, car.z - car.length() * 0.5 - QueueGap, duration);
+    at := car.position() + Vector3{0, car.height(), 0};
+    game.effects.particles.emit(.sparks, at, 30);
+    game.effects.particles.emit(.flash, at, 10);
+    game.effects.addRing(car.position().xz(), 0.5, 5, {255, 240, 150, 255}, 0.3);
+    game.strikes.add(Strike{at: at, timeLeft: 0.25});
+    return true;
+}
+
+castDownpour :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    radius := hero.reach(ability.radius);
+    game.rain.add(Rain{center: hero.ground(), radius: radius, slow: ability.power, timeLeft: ability.duration + hero.stats.coldBlooded});
+    for *player, i in game.players {
+        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        if player.hero.ground().distance(hero.ground()) <= radius {
+            player.hero.addStatus(.slow, ability.duration, 0.35, source: caster, time: game.time);
+        }
+    }
+    return true;
+}
+
+// A bolt of lightning from the sky, for a moment
+Strike :: struct {
+    at:       Vector3;
+    timeLeft: f32;
+}
+
+drawStrikes :: (game: *Game) {
+    for strike in game.strikes {
+        top := strike.at + Vector3{1.5, 30, -1};
+        middle := strike.at + Vector3{-1.2, 14, 0.8};
+        DrawCylinderEx(top, middle, 0.3, 0.25, 5, {255, 250, 200, 255});
+        DrawCylinderEx(middle, strike.at, 0.25, 0.15, 5, {255, 250, 200, 255});
+    }
+}

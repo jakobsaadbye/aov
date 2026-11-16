@@ -399,13 +399,12 @@ trajectoryOf :: (game: *Game, car: Car, appears: f32) -> Trajectory {
         t += car.frozenLeft;
     }
 
-    // Slower near a hero with a chill aura, as long as it is near it now
+    // Slower near a hero with a chill aura, in rain, ..., as long as it is in there now
     speed := car.speed;
-    for player in game.players {
-        aura := player.hero.chillAura();
-        if aura.hasValue() && player.isPlaying() && CheckCollisionCircleRec(player.hero.ground(), aura.value().radius, car.rect()) {
-            speed *= 1 - aura.value().slow;
-        }
+    zones := game.slowZones();
+    defer zones.free();
+    for zone in zones {
+        if CheckCollisionCircleRec(zone.center, zone.radius, car.rect()) { speed *= 1 - zone.slow; }
     }
 
     // Held before Hilda's line until her sign comes down

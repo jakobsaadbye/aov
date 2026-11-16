@@ -95,6 +95,7 @@ shove :: method (game: *Game, from: int, to: int) -> bool {
     ratio := math.clamp(math.sqrtf(attacker.weight() / victim.weight()), 0.6, 2.0);
     victim.displacement = Displacement{to: (victim.ground() + direction * ShoveDistance * ratio).at(), speed: ShoveSpeed};
     victim.isMoving = false;
+    victim.clearStatus(.sleep);
     victim.harmedBy = from;
     victim.harmedAt = game.time;
     attacker.shoveLeft = ShoveCooldown;

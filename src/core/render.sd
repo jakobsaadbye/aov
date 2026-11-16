@@ -48,6 +48,11 @@ drawScene :: method (game: *Game, assets: *Assets) {
     profileEnd(.cars);
     for sign in game.stopSigns { drawStopSign(assets, sign); }
     drawBridges(game);
+    drawRain(game);
+    drawPeels(game);
+    drawProjectiles(game);
+    drawStrikes(game);
+    drawDecoys(game, assets);
 
     // Shadows, stains and rings lie on the ground, above the road
     for *car in game.traffic.cars {

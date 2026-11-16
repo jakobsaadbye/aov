@@ -1,0 +1,246 @@
+namespace core;
+
+// What abilities leave in the world for a while: things thrown through the air (Ivar's axe, a banana peel), rain that
+// slows the cars (Stormy), Tim & Tom's decoy, and the zones that slow the cars, which the traffic and the forecast of
+// the bots both use (slowZones)
+
+import math;
+use raylib;
+
+//
+// Where the cars drive slower: chill auras, rain, and behind Gudrun
+//
+
+GudrunZoneBehind :: 6.0;     // How far behind her the middle of the zone is
+
+slowZones :: method (game: *Game) -> [..]SlowZone {
+    zones: [..]SlowZone;
+    for *player in game.players {
+        if !player.isPlaying() { continue; }
+        hero := &player.hero;
+        aura := hero.chillAura();
+        if aura.hasValue() { zones.add(SlowZone{hero.ground(), aura.value().radius, aura.value().slow}); }
+        // The cars brake for her when she is on the road in front of them
+        if hero.stats.carsBrake > 0 && math.fabsf(hero.position.x) < RoadHalfWidth {
+            zones.add(SlowZone{hero.ground() - Vector2{0, GudrunZoneBehind}, hero.stats.carsBrake * 0.8, 0.75});
+        }
+    }
+    for rain in game.rain { zones.add(SlowZone{rain.center, rain.radius, rain.slow}); }
+    return zones;
+}
+
+Rain :: struct {
+    center:   Vector2;
+    radius:   f32;
+    slow:     f32;
+    timeLeft: f32;
+}
+
+//
+// Thrown things
+//
+
+ProjectileKind :: enum {
+    axe,
+    banana,
+}
+
+Projectile :: struct {
+    kind:         ProjectileKind;
+    position:     Vector2;
+    velocity:     Vector2;
+    distanceLeft: f32;
+    owner:        int;
+    power:        f32;      // Seconds of what it does to the one it hits
+    spin:         f32;
+}
+
+ProjectileRadius :: 1.0;
+
+throwProjectile :: method (game: *Game, owner: int, kind: ProjectileKind, target: Vector2, range: f32, speed: f32, power: f32) -> bool {
+    hero := &game.players[owner].hero;
+    toward := target - hero.ground();
+    if toward.length() < 0.5 { return false; }
+    direction := toward.normalize();
+    hero.facing = math.atan2f(direction.x, direction.y);
+    distance := range;
+    if kind == .banana { distance = math.min(range, toward.length()); }       // A peel lands where it is thrown
+    game.projectiles.add(Projectile{kind: kind, position: hero.ground() + direction * 1.2, velocity: direction * speed,
+        distanceLeft: distance, owner: owner, power: power});
+    return true;
+}
+
+updateWorldEffects :: method (game: *Game, dt: f32) {
+    for *rain in game.rain { rain.timeLeft -= dt; }
+    game.rain.removeWhere(rain => rain.timeLeft <= 0);
+
+    for *projectile in game.projectiles {
+        step := projectile.velocity * dt;
+        projectile.position += step;
+        projectile.distanceLeft -= step.length();
+        projectile.spin += dt * 18;
+        hit := game.projectileHit(projectile);
+        if hit >= 0 {
+            game.projectileHits(projectile, hit);
+            projectile.distanceLeft = -1;
+        } else if projectile.distanceLeft <= 0 {
+            game.projectileLands(projectile);
+        }
+    }
+    game.projectiles.removeWhere(projectile => projectile.distanceLeft <= 0);
+
+    for *player, i in game.players { game.updateDecoy(i as int, dt); }
+}
+
+// The enemy a thrown thing flies into, or -1
+@private
+projectileHit :: method (game: *Game, projectile: *Projectile) -> int {
+    for *player, i in game.players {
+        if i as int == projectile.owner || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        if player.hero.ground().distance(projectile.position) <= player.hero.info().hitRadius + ProjectileRadius { return i as int; }
+    }
+    return -1;
+}
+
+@private
+projectileHits :: method (game: *Game, projectile: *Projectile, victim: int) {
+    hero := &game.players[victim].hero;
+    switch projectile.kind {
+        case .axe {
+            hero.addStatus(.stun, projectile.power, source: projectile.owner, time: game.time);
+            hero.clearStatus(.sleep);
+            game.effects.particles.emit(.sparks, hero.position + Vector3{0, 2, 0}, 14);
+            game.sounds.playAt("ability.axe_hit", hero.position);
+            owner := &game.players[projectile.owner];
+            game.announce(victim, {255, 150, 90, 255}, "% was hit by the axe of % (%)!", hero.info().name, owner.hero.info().name, owner.name);
+        }
+        case .banana {
+            game.slipOnBanana(victim, projectile.owner);
+        }
+    }
+}
+
+@private
+projectileLands :: method (game: *Game, projectile: *Projectile) {
+    switch projectile.kind {
+        case .axe    { game.effects.particles.emit(.dust, projectile.position.at(0.3), 8); }
+        case .banana { game.peels.add(Peel{position: projectile.position, timeLeft: PeelTime, owner: projectile.owner}); }
+    }
+}
+
+drawProjectiles :: (game: *Game) {
+    for projectile in game.projectiles {
+        at := projectile.position.at(2.0);
+        direction := projectile.velocity.normalize().at();
+        switch projectile.kind {
+            case .axe {
+                // A spinning axe: a handle and a head at its end
+                spin := Vector3{math.sinf(projectile.spin), math.cosf(projectile.spin), 0} * 0.9;
+                spin = Vector3{spin.x * direction.z, spin.y, -spin.x * direction.x} + direction * spin.x * 0.2;
+                DrawCylinderEx(at - spin, at + spin, 0.08, 0.08, 6, {120, 80, 40, 255});
+                DrawCube(at + spin * 1.1, 0.5, 0.5, 0.5, {200, 200, 210, 255});
+            }
+            case .banana {
+                DrawSphereEx(at - Vector3{0, 1, 0}, 0.4, 6, 6, {250, 220, 60, 255});
+            }
+        }
+    }
+}
+
+//
+// Tim & Tom's decoy: the other twin, who walks on towards the far side. Spells cast on them hit it first
+//
+
+Decoy :: struct {
+    position: Vector2;
+    velocity: Vector2;
+    timeLeft: f32;
+    facing:   f32;
+}
+
+updateDecoy :: method (game: *Game, index: int, dt: f32) {
+    player := &game.players[index];
+    if !player.decoy.hasValue() { return; }
+    decoy := player.decoy.value();
+    decoy.timeLeft -= dt;
+    decoy.position = game.world.resolveCollisions(decoy.position + decoy.velocity * dt, player.hero.info().hitRadius, false);
+    if decoy.timeLeft <= 0 || !player.isPlaying() || game.traffic.carHitting(decoy.position, player.hero.info().hitRadius).hasValue() {
+        game.popDecoy(index);
+        return;
+    }
+    player.decoy = decoy;
+}
+
+popDecoy :: method (game: *Game, index: int) {
+    player := &game.players[index];
+    if !player.decoy.hasValue() { return; }
+    game.effects.particles.emit(.wisps, player.decoy.value().position.at(1.5), 24, tint: {255, 220, 120, 255});
+    player.decoy = null;
+}
+
+drawDecoys :: (game: *Game, assets: *Assets) {
+    for player in game.players {
+        if !player.decoy.hasValue() || !player.isPlaying() { continue; }
+        decoy := player.decoy.value();
+        bob := math.fabsf(math.sinf(game.time * 9)) * 0.3;
+        assets.drawHero(player.hero.kind, decoy.position.at(bob), decoy.facing, {255, 255, 255, 170});
+        DrawCircle3D(decoy.position.at(0.18), player.hero.info().width * 0.85, {1, 0, 0}, 90, ColorAlpha(player.color, 0.4));
+    }
+}
+
+drawRain :: (game: *Game) {
+    for rain in game.rain {
+        alpha := math.min(rain.timeLeft, 1);
+        DrawCylinder(rain.center.at(0.13), rain.radius, rain.radius, 0.02, 40, ColorAlpha({90, 130, 200, 255}, 0.18 * alpha));
+        DrawCircle3D(rain.center.at(0.15), rain.radius, {1, 0, 0}, 90, ColorAlpha({150, 190, 255, 255}, 0.6 * alpha));
+    }
+}
+
+//
+// Banana peels on the ground: the first enemy of the one who threw it that steps on it slips
+//
+
+Peel :: struct {
+    position: Vector2;
+    timeLeft: f32;
+    owner:    int;
+}
+
+PeelTime :: 12.0;
+PeelSlip :: 5.0;           // How far it slides
+
+updatePeels :: method (game: *Game, dt: f32) {
+    for *peel in game.peels {
+        peel.timeLeft -= dt;
+        for *player, i in game.players {
+            if i as int == peel.owner || !player.isPlaying() || player.hero.isAirborne() { continue; }
+            if player.hero.ground().distance(peel.position) > player.hero.info().hitRadius + 0.6 { continue; }
+            game.slipOnBanana(i as int, peel.owner);
+            peel.timeLeft = 0;
+            break;
+        }
+    }
+    game.peels.removeWhere(peel => peel.timeLeft <= 0);
+}
+
+slipOnBanana :: method (game: *Game, victim: int, owner: int) {
+    hero := &game.players[victim].hero;
+    forward := Vector2{math.sinf(hero.facing), math.cosf(hero.facing)};
+    hero.addStatus(.stun, 0.9, source: owner, time: game.time);
+    if !hero.stats.unshovable {
+        hero.displacement = Displacement{to: (hero.ground() + forward * PeelSlip).at(), speed: 14};
+    }
+    game.sounds.playAt("item.banana", hero.position);
+    game.announce(victim, {250, 220, 60, 255}, "% slipped on a banana peel!", game.players[victim].name);
+}
+
+drawPeels :: (game: *Game) {
+    for peel in game.peels {
+        at := peel.position.at(0.2);
+        for k in 0..3 {
+            angle := k as f32 * 2.1;
+            DrawCube(at + Vector3{math.sinf(angle) * 0.35, 0, math.cosf(angle) * 0.35}, 0.35, 0.08, 0.6, {250, 220, 60, 255});
+        }
+        DrawSphere(at, 0.15, {120, 90, 30, 255});
+    }
+}

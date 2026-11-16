@@ -118,11 +118,27 @@ enemyNear :: method (game: *Game, index: int, point: Vector2, reach: f32) -> int
     return best;
 }
 
-// The enemy a spell of the caster hits: the one nearest the point within reach of the caster, or -1
+// The enemy a spell of the caster hits: the one nearest the point within reach of the caster, or -1 when there is none.
+// Absorbed when something took it instead, e.g the decoy of Tim & Tom: then the spell is spent, on nothing
 spellTarget :: method (game: *Game, caster: int, ability: *Ability, target: Vector2) -> int {
     hero := &game.players[caster].hero;
     aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
-    return game.enemyNear(caster, aim, TargetSnapRadius);
+    victim := game.enemyNear(caster, aim, TargetSnapRadius);
+    if victim < 0 { return -1; }
+    enemy := &game.players[victim];
+    if enemy.hero.stats.decoysFirst && enemy.decoy.hasValue() {
+        game.popDecoy(victim);
+        game.announce(caster, {255, 220, 120, 255}, "% hit a decoy", ability.name);
+        return Absorbed;
+    }
+    return victim;
+}
+
+Absorbed :: -2;
+
+// What a cast does when spellTarget found no victim: spent when the spell was absorbed, else not cast
+spent :: (victim: int) -> bool {
+    return victim == Absorbed;
 }
 
 // Knocks a hero away from a point, unless it can't be moved
@@ -133,6 +149,7 @@ knockAway :: method (game: *Game, victim: int, from: Vector2, distance: f32, sou
     if away.lengthSqr() < 0.01 { away = Vector2{1, 0}; }
     away = away.normalize();
     enemy.displacement = Displacement{to: (enemy.ground() + away * distance).at(), speed: KnockbackSpeed};
+    enemy.clearStatus(.sleep);
     enemy.stop();
     enemy.hook = null;
     if source >= 0 {

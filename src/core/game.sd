@@ -51,6 +51,7 @@ Player :: struct {
     commands:  [..]Command;                 // The orders of this frame, carried out by Game.simulate
     backpack:  Backpack;                    // The items it picked up, which boost all of its heroes (items.sd)
     perks:     [..]PerkKind;                // Picked after the crossings, for all of its heroes (perks.sd)
+    decoy:     ?Decoy;                      // Tim & Tom's other twin, while it walks (world_effects.sd)
 
     isBot :: method () -> bool {
         return self.brain != null;
@@ -168,6 +169,10 @@ Game :: struct {
     keyboardTaken: bool;                    // The console (F1) is open: the game reads no keys or mouse
     stopSigns:   [..]StopSign;              // Hilda's signs and Birgit's barricades, while their lanes are stopped
     bridges:     [..]Bridge;                // Birgit's footbridges (motions.sd)
+    projectiles: [..]Projectile;            // Thrown things, e.g Ivar's axe (world_effects.sd)
+    rain:        [..]Rain;                  // Stormy's downpours
+    peels:       [..]Peel;                  // Banana peels on the ground
+    strikes:     [..]Strike;                // Stormy's lightning, while it is seen
     items:       Items;                     // The item on the road, and when the next one comes (items.sd)
     slicks:      Slicks;                    // The oil on the road (slicks.sd)
     restarts:    int;                       // Games started, the first one too
@@ -242,6 +247,11 @@ restart :: method (game: *Game) {
     game.effects.clear();
     game.stopSigns.clear();
     game.bridges.clear();
+    game.projectiles.clear();
+    game.rain.clear();
+    game.peels.clear();
+    game.strikes.clear();
+    for *player in game.players { player.decoy = null; }
     // Seeded by the games so far, so a replay has the same items and oil as the game it recorded
     game.restarts += 1;
     game.winner = -1;
@@ -269,6 +279,10 @@ free :: method (game: *Game) {
     game.feed.free();
     game.stopSigns.free();
     game.bridges.free();
+    game.projectiles.free();
+    game.rain.free();
+    game.peels.free();
+    game.strikes.free();
     game.effects.particles.free();
     game.slicks.list.free();
     for *player in game.players {
@@ -515,15 +529,9 @@ simulate :: method (game: *Game, dt: f32) {
     game.updateItems(dt);
     game.updateSlicks(dt);
 
-    // Frosty's chill aura slows the cars around him
-    slowZones: [..]SlowZone;
+    // Chill auras, rain and Gudrun slow the cars around them
+    slowZones := game.slowZones();
     defer slowZones.free();
-    for player in game.players {
-        aura := player.hero.chillAura();
-        if aura.hasValue() && player.isPlaying() {
-            slowZones.add(SlowZone{player.hero.ground(), aura.value().radius, aura.value().slow});
-        }
-    }
     rushBefore := game.traffic.rush;
     sirenBefore := game.traffic.emergencyLane;
     profileBegin(.traffic);
@@ -536,6 +544,10 @@ simulate :: method (game: *Game, dt: f32) {
     }
     game.stopSigns.removeWhere(sign => sign.timeLeft <= 0);
     game.updateBridges(dt);
+    game.updateWorldEffects(dt);
+    game.updatePeels(dt);
+    for *strike in game.strikes { strike.timeLeft -= dt; }
+    game.strikes.removeWhere(strike => strike.timeLeft <= 0);
 
     for *line in game.feed { line.timeLeft -= dt; }
     while game.feed.count > 0 && game.feed[0].timeLeft <= 0 { game.feed.removeAt(0).text.free(); }
@@ -612,6 +624,7 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
                 if hero.hurtFor > 0.3 { game.sounds.playAt("hero.hurt", hero.position, 0.8, 0.06); }
                 if hero.hurtFor > 0.3 && player.isBot() { player.brain.wasHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
+                hero.clearStatus(.sleep);
                 hero.hurtFor = 0;
                 if hero.health <= 0 && !game.savedByClover(index) {
                     game.heroRunOver(index, car.value());

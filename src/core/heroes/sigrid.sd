@@ -36,7 +36,7 @@ castBroom :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> b
 castHex :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     player := &game.players[caster];
     victim := game.spellTarget(caster, ability, target);
-    if victim < 0 { return false; }
+    if victim < 0 { return spent(victim); }
     enemy := &game.players[victim].hero;
     enemy.addStatus(.hex, ability.duration, source: caster, time: game.time);
     game.effects.particles.emit(.wisps, enemy.position + Vector3{0, 1.2, 0}, 30, tint: {120, 220, 90, 255});

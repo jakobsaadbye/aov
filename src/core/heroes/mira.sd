@@ -54,7 +54,7 @@ castRewind :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> 
 castTimeLock :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     player := &game.players[caster];
     victim := game.spellTarget(caster, ability, target);
-    if victim < 0 { return false; }
+    if victim < 0 { return spent(victim); }
     enemy := &game.players[victim].hero;
     enemy.addStatus(.timeLock, ability.duration, source: caster, time: game.time);
     game.effects.addRing(enemy.ground(), 4, 1, {190, 140, 255, 255}, 0.5);

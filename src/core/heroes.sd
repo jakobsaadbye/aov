@@ -26,6 +26,13 @@ HeroKind :: enum {
     tobias,
     mads,
     ditte,
+    gudrun,
+    magnus,
+    stormy,
+    hugo,
+    twins,
+    kenji,
+    ivar,
 }
 
 // The keys of the abilities that are cast, in order. A hero can have as many of them as there are keys, and passives
@@ -80,6 +87,13 @@ defineHero :: (kind: HeroKind) -> HeroDefinition {
         case .tobias  => defineTobias();
         case .mads    => defineMads();
         case .ditte   => defineDitte();
+        case .gudrun  => defineGudrun();
+        case .magnus  => defineMagnus();
+        case .stormy  => defineStormy();
+        case .hugo    => defineHugo();
+        case .twins   => defineTwins();
+        case .kenji   => defineKenji();
+        case .ivar    => defineIvar();
     };
 }
 
