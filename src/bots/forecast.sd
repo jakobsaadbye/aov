@@ -1,4 +1,6 @@
-namespace aov;
+namespace bots;
+
+use core;
 
 import math;
 use raylib;

@@ -1,4 +1,4 @@
-namespace aov;
+namespace core;
 
 // Recordings of games, which can be played back exactly, e.g to see again what a bot did, or to show a bug.
 //
@@ -164,14 +164,13 @@ loadRecording :: (path: string) -> Recording, error {
     return recording, null;
 }
 
-// A new game that plays a recording back
-newReplay :: (recording: Recording) -> *Game {
-    game := newGame(recording.seed, bots: recording.bots, humans: recording.humans, difficulty: recording.difficulty);
+// Makes a new game play a recording back: a game of the seed, players and difficulty of the recording (bots.newReplay
+// makes one)
+startReplay :: method (game: *Game, recording: Recording) {
     if recording.firstHero >= 0 && recording.humans > 0 {
         game.spawnHero(game.local, recording.firstHero as HeroKind);
     }
     game.recording.firstHero = recording.firstHero;
     game.replay = new(Replay);
     game.replay.recording = recording;
-    return game;
 }

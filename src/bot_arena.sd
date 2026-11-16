@@ -9,7 +9,8 @@
 //
 // Build it with --llvm (saad build bot_arena.sd --llvm): the bots think about 10 times as fast
 
-import aov;
+import core;
+import bots;
 import fmt;
 import os;
 import time;
@@ -19,33 +20,33 @@ use raylib;
 Dt :: 1.0 / 60.0;
 
 main :: () {
-    bots := 4;
+    botCount := 4;
     games := 3;
     seconds := 180;
     seed: u64 = 1;
     peaceful := false;
     mixed := false;         // A bot of each difficulty in each game, and how each difficulty did
-    byDifficulty: [aov.Difficulty.count]aov.Stats;
-    fitnessOf:    [aov.Difficulty.count]f32;
-    difficulty := aov.Difficulty.expert;
+    byDifficulty: [core.Difficulty.count]core.Stats;
+    fitnessOf:    [core.Difficulty.count]f32;
+    difficulty := core.Difficulty.expert;
     args := os.args();
     i := 1;
     while i < args.count {
         next := "";
         if i + 1 < args.count { next = args[i + 1]; }
         switch args[i] {
-            case "--bots"     { bots = (next.toInt() ?? 4) as int; i += 1; }
+            case "--bots"     { botCount = (next.toInt() ?? 4) as int; i += 1; }
             case "--games"    { games = (next.toInt() ?? 3) as int; i += 1; }
             case "--seconds"  { seconds = (next.toInt() ?? 180) as int; i += 1; }
             case "--seed"     { seed = (next.toInt() ?? 1) as u64; i += 1; }
             case "--peaceful" { peaceful = true; }
             case "--mixed"    { mixed = true; }
             case "--difficulty" {
-                index := aov.Difficulty.names.indexOf(next);
-                if index >= 0 { difficulty = index as aov.Difficulty; }
+                index := core.Difficulty.names.indexOf(next);
+                if index >= 0 { difficulty = index as core.Difficulty; }
                 i += 1;
             }
-            case "--hits"     { aov.debugHits = true; }
+            case "--hits"     { bots.debugHits = true; }
             else              { fmt.print("Unknown option '%'", args[i]); }
         }
         i += 1;
@@ -58,21 +59,21 @@ main :: () {
     frames := 0;
 
     for g in 0..games {
-        game: *aov.Game = null;
+        game: *core.Game = null;
         if mixed {
             rng := random.newRandom(seed + g as u64);
-            personalities: [..]aov.BotPersonality;
+            personalities: [..]bots.BotPersonality;
             // A different seat for each difficulty in each game, so where a bot starts doesn't count
-            for k in 0..aov.Difficulty.count {
-                personalities.add(aov.personalityFor(((k + g) % aov.Difficulty.count) as aov.Difficulty, &rng));
+            for k in 0..core.Difficulty.count {
+                personalities.add(bots.personalityFor(((k + g) % core.Difficulty.count) as core.Difficulty, &rng));
             }
-            game = aov.newGameWith(seed + g as u64, personalities, humans: 0);
+            game = bots.newGameWith(seed + g as u64, personalities, humans: 0);
         } else {
-            game = aov.newGame(seed + g as u64, bots: bots, humans: 0, difficulty: difficulty);
+            game = bots.newGame(seed + g as u64, bots: botCount, humans: 0, difficulty: difficulty);
         }
         defer game.free();
         if peaceful {
-            for *player in game.players { (player.brain as *aov.Bot).personality.genome.set(.aggression, 0); }
+            for *player in game.players { (player.brain as *bots.Bot).personality.genome.set(.aggression, 0); }
         }
 
         steps := (seconds as f32 / Dt) as int;
@@ -89,7 +90,7 @@ main :: () {
         for player, i in game.players {
             best := "-";
             if player.stats.bestTime.hasValue() { best = fmt.sprint("% s", fmt.fixed(player.stats.bestTime.value(), 1)); }
-            profile := player.brain.profile();
+            profile := (player.brain as *bots.Bot).profile();
             plans := atLeastOne(profile.plans);
             fmt.print("    %   across %   run over %   best %   |  waits % s, walks % s, no plan % s, dodged %  |  search % ms (% of % forecasts), % states, % found a way",
                 player.name, player.stats.crossings, player.stats.deaths, best,
@@ -97,8 +98,8 @@ main :: () {
                 fmt.fixed((profile.planSeconds / plans as f64 * 1000) as f32, 1), profile.plans, profile.forecasts,
                 profile.expanded / plans as i64, fmt.fixed(profile.reachedGoal as f32 / plans as f32, 2));
             if mixed {
-                level := &byDifficulty[(i + g) % aov.Difficulty.count];
-                fitnessOf[(i + g) % aov.Difficulty.count] += aov.fitnessOf(game, i as int);
+                level := &byDifficulty[(i + g) % core.Difficulty.count];
+                fitnessOf[(i + g) % core.Difficulty.count] += bots.fitnessOf(game, i as int);
                 level.crossings += player.stats.crossings;
                 level.deaths += player.stats.deaths;
                 level.kills += player.stats.kills;
@@ -111,7 +112,7 @@ main :: () {
     if mixed {
         fmt.print("");
         for level, d in byDifficulty {
-            fmt.print("%:  across %, run over %, kills %, fitness % a game", aov.Difficulty.names[d], level.crossings, level.deaths, level.kills, fmt.fixed(fitnessOf[d] / games as f32, 2));
+            fmt.print("%:  across %, run over %, kills %, fitness % a game", core.Difficulty.names[d], level.crossings, level.deaths, level.kills, fmt.fixed(fitnessOf[d] / games as f32, 2));
         }
     }
     fmt.print("");

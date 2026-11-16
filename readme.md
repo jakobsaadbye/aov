@@ -45,7 +45,7 @@ of the game. The body of a vehicle, the part that gets the color of the car, is 
 
 ## Sounds
 
-The game plays its sounds through a `SoundPlayer` (`src/aov/sound.sd`), which the `Game` owns:
+The game plays its sounds through a `SoundPlayer` (`src/core/sound.sd`), which the `Game` owns:
 `game.sounds.play("hero.crossed")`, or `game.sounds.playAt("ability.blink", position)` for one that is quieter the further
 it is from the camera. The name is the folder and the file in `data/sounds`: `hero.crossed` is
 `data/sounds/hero/crossed.wav`. Files that end in a number are variants that are picked at random, e.g `hero/hurt_1.wav`
@@ -149,7 +149,9 @@ Everything a player does is a `Command` (`game.sd`): walk to a point, stop, or c
 mouse make commands, and so do the bots, so a bot can do exactly what you can and nothing else. That is also what a
 multiplayer game would send over the network.
 
-A bot is a `Brain` (`bot.sd`): anything with the methods `think`, `reset`, `plannedPath` and `profile`. The bot of the game
+A bot is a `Brain` (`core/game.sd`): anything with the methods `think`, `reset`, `free`, `setDifficulty`, `wasHit`, and
+the ones the inspector draws with. The game knows nothing else of the bots, which are in their own namespace, `bots`
+(`src/bots/`). The bot there
 thinks in three parts, which can each be changed on its own:
 
 1. **Forecast** (`forecast.sd`): when each cell of a grid on the ground is free of cars, for the next 12 seconds. A car
@@ -243,13 +245,14 @@ saad run bot_arena.sd -- --peaceful --hits      # no casting on each other, and 
 
 ## The code
 
-All of the game is in the namespace `aov`, in `src/aov/`. `src/main.sd` opens the window and runs the loop.
+The game is in the namespace `core`, in `src/core/`, and the bots in the namespace `bots`, in `src/bots/`. The core
+doesn't use the bots: a bot is a `Brain` to it, and `bots.newGame` makes a game with bots in it. `src/main.sd` opens the
+window and runs the loop.
 
 | File | |
 | --- | --- |
 | `config.sd` | The numbers that tune the game: the size of the field, the road, the traffic |
 | `heroes.sd` | The heroes, their stats and their abilities |
-| `bot.sd`, `planner.sd`, `forecast.sd` | The bots: what they think, how they plan a way across, what they know of the cars |
 | `world.sd` | The walls with their openings, and the collisions of the heroes with them |
 | `traffic.sd` | The lanes and the cars |
 | `game.sd` | The game itself: the players, their commands, the heroes, being run over, crossing, the next hero |
@@ -259,6 +262,14 @@ All of the game is in the namespace `aov`, in `src/aov/`. `src/main.sd` opens th
 | `inspector.sd`, `recording.sd` | The inspector of the bots (F4), and recordings and replays |
 | `render.sd`, `hud.sd` | The 3D scene and the 2D overlay, with the hero drawn in 3D in its portrait |
 | `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
+| `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
+
+| `src/bots/` | |
+| --- | --- |
+| `games.sd` | Games with bots, and replays of them |
+| `bot.sd`, `planner.sd`, `forecast.sd` | What the bots think, how they plan a way across, what they know of the cars |
+| `genome.sd`, `difficulty.sd` | The genes of a bot, the fitness training aims for, and the difficulties |
+| `inspection.sd` | What a bot shows in the inspector (F4) |
 
 `src/simulation_test.sd` plays the game without a window and checks the rules: the walls, the traffic (one way, cars
 passing through each other, no room between the lanes), being run over, crossing and crossing back, the abilities, the

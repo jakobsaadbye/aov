@@ -4,7 +4,9 @@
 //     saad run main.sd                                   from this folder
 //     saad run main.sd -- --bots 5 --seed 7              options after --, see Options below
 
-import aov;
+import core;
+import bots;
+import bots.DefaultBots;
 import fmt;
 import math;
 import os;
@@ -26,11 +28,11 @@ use raylib;
 //     --record FILE       Save a recording of the game to FILE when it closes. F8 saves one at any time
 //     --replay FILE       Play a recording back (recording.sd). The other options of the game are the recording's
 Options :: struct {
-    bots:       int = aov.DefaultBots;
-    difficulty: aov.Difficulty = .normal;
+    bots:       int = DefaultBots;
+    difficulty: core.Difficulty = .normal;
     spectate:   bool;
     seed:       ?u64;
-    hero:       ?aov.HeroKind;
+    hero:       ?core.HeroKind;
     inspect:    ?int;
     speed:      f32 = 1;
     shots:      [..]Screenshot;
@@ -54,11 +56,11 @@ readOptions :: () -> Options {
         next := "";
         if i + 1 < args.count { next = args[i + 1]; }
         switch arg {
-            case "--bots"     { options.bots = (next.toInt() ?? aov.DefaultBots) as int; i += 1; }
+            case "--bots"     { options.bots = (next.toInt() ?? bots.DefaultBots) as int; i += 1; }
             case "--spectate" { options.spectate = true; }
             case "--difficulty" {
-                index := aov.Difficulty.names.indexOf(next);
-                if index >= 0 { options.difficulty = index as aov.Difficulty; }
+                index := core.Difficulty.names.indexOf(next);
+                if index >= 0 { options.difficulty = index as core.Difficulty; }
                 else          { fmt.print("WARNING: No difficulty named '%': easy, normal, hard or expert", next); }
                 i += 1;
             }
@@ -70,8 +72,8 @@ readOptions :: () -> Options {
             case "--record"   { options.record = next; i += 1; }
             case "--replay"   { options.replay = next; i += 1; }
             case "--hero" {
-                index := aov.HeroKind.names.indexOf(next);
-                if index >= 0 { options.hero = index as aov.HeroKind; }
+                index := core.HeroKind.names.indexOf(next);
+                if index >= 0 { options.hero = index as core.HeroKind; }
                 else          { fmt.print("WARNING: No hero named '%'", next); }
                 i += 1;
             }
@@ -92,27 +94,27 @@ main :: () {
     options := readOptions();
 
     SetConfigFlags(.msaa4xHint | .windowResizable | .vsyncHint);
-    InitWindow(aov.WindowWidth, aov.WindowHeight, "Allan over vejen");
+    InitWindow(core.WindowWidth, core.WindowHeight, "Allan over vejen");
     defer CloseWindow();
-    SetTargetFPS(aov.TargetFps);
+    SetTargetFPS(core.TargetFps);
     SetExitKey(.null);      // Escape doesn't close the game. Closing the window does
 
-    assets := aov.loadAssets();
+    assets := core.loadAssets();
     defer assets.unload();
 
-    game: *aov.Game = null;
+    game: *core.Game = null;
     if options.replay.hasValue() {
-        recording, err := aov.loadRecording(options.replay.value());
+        recording, err := core.loadRecording(options.replay.value());
         if err != null {
             fmt.print("ERROR: Couldn't read the recording %: %", options.replay.value(), err.message);
             return;
         }
-        game = aov.newReplay(recording);
+        game = bots.newReplay(recording);
     } else {
         seed := options.seed ?? time.now().unixMilli() as u64;
         humans := 1;
         if options.spectate { humans = 0; }
-        game = aov.newGame(seed, bots: options.bots, humans: humans, difficulty: options.difficulty);
+        game = bots.newGame(seed, bots: options.bots, humans: humans, difficulty: options.difficulty);
         if options.hero.hasValue() && !options.spectate {
             game.spawnHero(game.local, options.hero.value());
             game.recording.firstHero = options.hero.value() as int;
@@ -126,11 +128,11 @@ main :: () {
         }
     }
     if options.inspect.hasValue() {
-        game.inspector = aov.Inspector{isOpen: true, player: options.inspect.value()};
+        game.inspector = core.Inspector{isOpen: true, player: options.inspect.value()};
     }
 
     if !options.mute {
-        folder := aov.dataFolder();
+        folder := core.dataFolder();
         game.sounds.load(folder);
         folder.free();
         game.sounds.playMusic("theme", 0.5);
@@ -165,7 +167,7 @@ main :: () {
         game.sounds.update(dt);
 
         BeginDrawing();
-        ClearBackground(aov.SkyColor);
+        ClearBackground(core.SkyColor);
         game.drawScene(&assets);
         game.drawHud(&assets);
         EndDrawing();

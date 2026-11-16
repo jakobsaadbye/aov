@@ -1,0 +1,96 @@
+namespace core;
+
+// The inspector of the bots (F4): what one bot thinks, while the game goes on. Tab picks the next bot.
+//
+// In the world it shows what the bot knows (for the Bot of src/bots: where it is safe from the cars right now, and its plan),
+// and in a panel what it is doing and why: waiting for a gap, walking, dodging, the score of each of its abilities.
+// What is shown is up to the Brain (drawInspection and describe), so another kind of bot shows what it thinks with.
+//
+// When you spectate (--spectate), the camera follows the bot that is inspected. Otherwise space does, while it is held.
+
+import fmt;
+import math;
+use raylib;
+
+Inspector :: struct {
+    isOpen: bool;
+    player: int = -1;       // The player whose bot is inspected
+}
+
+InspectorLine :: struct {
+    text:  string;
+    color: Color = TextColor;
+}
+
+// The keys of the inspector: F4 opens and closes it, Tab picks the next bot
+updateInspector :: method (game: *Game) {
+    if IsKeyPressed(.f4) {
+        game.inspector.isOpen = !game.inspector.isOpen;
+        if game.inspector.isOpen && !game.inspectedIsBot() { game.inspectNextBot(); }
+    }
+    if game.inspector.isOpen && IsKeyPressed(.tab) { game.inspectNextBot(); }
+}
+
+inspectNextBot :: method (game: *Game) {
+    for k in 1...game.players.count {
+        i := (game.inspector.player + k as int) % game.players.count as int;
+        if i < 0 { i += game.players.count as int; }
+        if game.players[i].isBot() {
+            game.inspector.player = i;
+            return;
+        }
+    }
+}
+
+inspectedIsBot :: method (game: *Game) -> bool {
+    player := game.inspector.player;
+    return player >= 0 && player < game.players.count && game.players[player].isBot();
+}
+
+// The hero the camera follows: yours, or the inspected bot's when you spectate or hold space
+followedHero :: method (game: *Game) -> Vector3 {
+    if game.inspector.isOpen && game.inspectedIsBot() && (game.you().isBot() || IsKeyDown(.space)) {
+        return game.players[game.inspector.player].hero.position;
+    }
+    return game.you().hero.position;
+}
+
+// In the 3D scene: the plans of all bots, faintly, and what the inspected one knows
+drawInspection3D :: (game: *Game) {
+    if !game.inspector.isOpen { return; }
+    drawPlans(game);
+    if game.inspectedIsBot() {
+        index := game.inspector.player;
+        game.players[index].brain.drawInspection(game, index);
+    }
+}
+
+// The panel, on the right of the screen
+drawInspectorPanel :: (game: *Game) {
+    if !game.inspector.isOpen { return; }
+    lines: [..]InspectorLine;
+    if !game.inspectedIsBot() {
+        lines.add(InspectorLine{text: "No bot to inspect"});
+    } else {
+        index := game.inspector.player;
+        game.players[index].brain.describe(game, index, &lines);
+    }
+    lines.add(InspectorLine{text: "Tab: the next bot", color: DimColor});
+
+    width := 380;
+    lineHeight := 21;
+    x := GetScreenWidth() - width - 16;
+    panel := Rectangle{x as f32, 16, width as f32, (lines.count * lineHeight + 50) as f32};
+    drawPanel(panel);
+    drawTitle("Inspector", x + 14, 24, 20, {255, 210, 90, 255});
+    for line, i in lines {
+        drawText(line.text, x + 14, 54 + i as int * lineHeight, 16, line.color);
+    }
+}
+
+// The plans of the bots: their way across, in the color of each
+drawPlans :: (game: *Game) {
+    for player, i in game.players {
+        if player.isBot() && player.isPlaying() { player.brain.drawPlan(game, i as int); }
+    }
+}
