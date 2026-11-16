@@ -183,6 +183,12 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     }
 
     bot.takeSearch(game);
+    // Blinded by a flash: it can't see the cars, and walks on with the plan it had
+    if hero.has(.blind) {
+        bot.follow(game, me, dt);
+        return;
+    }
+
     bot.replanIn -= dt;
     if bot.isBehindPlan(game.time) { bot.mustSearch = true; }
     if bot.replanIn <= 0 || bot.mustSearch {
@@ -288,6 +294,8 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         margin:       bot.gene(.margin),
         leadTime:     bot.gene(.leadTime),
         trailTime:    bot.gene(.trailTime),
+        oilProof:       hero.stats.oilProof,
+        ambulanceProof: hero.stats.ambulanceProof,
     };
     bot.forecast = newForecast(game, options);
     bot.forecastAt = game.time;

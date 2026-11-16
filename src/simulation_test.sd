@@ -18,16 +18,27 @@ Dt :: 1.0 / 60.0;
 noZones: [..]core.SlowZone;
 
 main :: () {
+    fmt.print("start");
     testPushOutOfRect();
+    fmt.print("rect");
     testWalls();
+    fmt.print("testWalls");
     testTraffic();
+    fmt.print("testTraffic");
     testNoGapBetweenLanes();
+    fmt.print("testNoGapBetweenLanes");
     testFrozenCars();
+    fmt.print("testFrozenCars");
     testRunOver();
+    fmt.print("testRunOver");
     testHealth();
+    fmt.print("testHealth");
     testCrossing();
+    fmt.print("testCrossing");
     testAbilities();
+    fmt.print("testAbilities");
     testNewHeroes();
+    fmt.print("testNewHeroes");
     testCommands();
     testEnemySpells();
     testForecast();

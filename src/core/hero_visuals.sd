@@ -1,0 +1,58 @@
+namespace core;
+
+// Drawing that several heroes share: a hero turned into a toad, and what its definition draws besides its model
+
+import math;
+use raylib;
+
+drawHeroExtras :: (game: *Game, index: int, bob: f32) {
+    hero := &game.players[index].hero;
+    if hero.has(.hex) { return; }
+    draw := hero.info().drawExtras;
+    if draw != null { draw(game, index, bob); }
+
+    // Healing with a bandage: a green cross that pulses over the head
+    if hero.has(.mending) {
+        top := hero.position + Vector3{0, hero.info().height + 1 + bob, 0};
+        pulse := 0.8 + 0.2 * math.sinf(game.time * 8);
+        DrawCube(top, 0.9 * pulse, 0.3, 0.3, {90, 230, 110, 255});
+        DrawCube(top, 0.3, 0.9 * pulse, 0.3, {90, 230, 110, 255});
+    }
+    // Scared: a drop of sweat that jumps. Taunted: a red mark. Blinded: stars of the flash
+    top := hero.position + Vector3{0, hero.info().height + 0.7 + bob, 0};
+    if hero.has(.fear)  { DrawSphere(top + Vector3{0.6, math.fabsf(math.sinf(game.time * 9)) * 0.4, 0}, 0.2, {120, 190, 255, 255}); }
+    if hero.has(.taunt) { DrawCube(top, 0.25, 0.8, 0.25, {255, 60, 50, 255}); }
+    if hero.has(.blind) {
+        for k in 0..4 {
+            angle := game.time * 4 + k as f32 * Pi * 0.5;
+            DrawSphere(top + Vector3{math.sinf(angle) * 0.8, 0.1, math.cosf(angle) * 0.8}, 0.14, {255, 255, 230, 255});
+        }
+    }
+    if hero.has(.sleep) {
+        for k in 0..3 {
+            rise := math.fmodf(game.time * 0.8 + k as f32 * 0.33, 1);
+            DrawCube(top + Vector3{0.4 + rise * 0.6, rise * 1.4, 0}, 0.35 * (1 - rise * 0.5), 0.35 * (1 - rise * 0.5), 0.05, ColorAlpha({220, 230, 255, 255}, 1 - rise));
+        }
+    }
+    if hero.has(.tangled) {
+        DrawCylinderWires(hero.position + Vector3{0, 0.6, 0}, hero.info().hitRadius + 0.3, hero.info().hitRadius + 0.3, 1.2, 8, {230, 90, 160, 255});
+    }
+}
+
+// Sigrid's hex: a fat green toad with big eyes, where the hero was
+drawToad :: (position: Vector3, facing: f32, time: f32) {
+    Green :: Color{90, 160, 60, 255};
+    Belly :: Color{200, 210, 120, 255};
+    hop := math.fabsf(math.sinf(time * 5)) * 0.4;
+    base := position + Vector3{0, hop, 0};
+    forward := Vector3{math.sinf(facing), 0, math.cosf(facing)};
+    right := Vector3{forward.z, 0, -forward.x};
+    DrawSphereEx(base + Vector3{0, 0.7, 0}, 0.9, 10, 10, Green);
+    DrawSphereEx(base + Vector3{0, 0.5, 0} + forward * 0.35, 0.6, 8, 8, Belly);
+    for side in [-1.0, 1.0] {
+        eye := base + Vector3{0, 1.45, 0} + forward * 0.45 + right * (side * 0.42);
+        DrawSphere(eye, 0.28, Green);
+        DrawSphere(eye + forward * 0.18 + Vector3{0, 0.05, 0}, 0.14, Black);
+        DrawSphere(base + Vector3{0, 0.2, 0} + right * (side * 0.8) - forward * 0.3, 0.35, Green);
+    }
+}

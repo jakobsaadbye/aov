@@ -166,7 +166,8 @@ Game :: struct {
     restartPending:  bool;                  // Keys of this frame, carried out by advance
     pendingHero: ?HeroKind;                 // The hero the player at the keyboard changes to, e.g by setHero
     keyboardTaken: bool;                    // The console (F1) is open: the game reads no keys or mouse
-    stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
+    stopSigns:   [..]StopSign;              // Hilda's signs and Birgit's barricades, while their lanes are stopped
+    bridges:     [..]Bridge;                // Birgit's footbridges (motions.sd)
     items:       Items;                     // The item on the road, and when the next one comes (items.sd)
     slicks:      Slicks;                    // The oil on the road (slicks.sd)
     restarts:    int;                       // Games started, the first one too
@@ -197,8 +198,14 @@ announceTraffic :: method (game: *Game, rushBefore: RushPhase, sirenBefore: int)
     }
 }
 
-// The sign Hilda holds up, where she raised it
+// What stops the cars of some lanes for a while, where it stands
+SignKind :: enum {
+    stopSign,       // Hilda holds it up
+    barricade,      // Birgit put it on the road
+}
+
 StopSign :: struct {
+    kind:     SignKind;
     position: Vector3;
     timeLeft: f32;
     lanes:    [2]int;                       // The first and the last lane it stops
@@ -234,6 +241,7 @@ restart :: method (game: *Game) {
     game.traffic = newTraffic(0, &game.rng);
     game.effects.clear();
     game.stopSigns.clear();
+    game.bridges.clear();
     // Seeded by the games so far, so a replay has the same items and oil as the game it recorded
     game.restarts += 1;
     game.winner = -1;
@@ -260,6 +268,7 @@ free :: method (game: *Game) {
     for line in game.feed { line.text.free(); }
     game.feed.free();
     game.stopSigns.free();
+    game.bridges.free();
     game.effects.particles.free();
     game.slicks.list.free();
     for *player in game.players {
@@ -526,6 +535,7 @@ simulate :: method (game: *Game, dt: f32) {
         game.stopSigns[i].timeLeft -= dt;
     }
     game.stopSigns.removeWhere(sign => sign.timeLeft <= 0);
+    game.updateBridges(dt);
 
     for *line in game.feed { line.timeLeft -= dt; }
     while game.feed.count > 0 && game.feed[0].timeLeft <= 0 { game.feed.removeAt(0).text.free(); }
@@ -597,7 +607,8 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
             // A car on the hero takes health, fast. Without one for a while, the hero heals
             hero := &player.hero;
             car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius);
-            if car.hasValue() && !hero.carsPass() && !game.bounced(index) {
+            if car.hasValue() && car.value().kind == .ambulance && hero.stats.ambulanceProof { car = null; }
+            if car.hasValue() && !hero.carsPass() && !game.onBridge(hero.ground()) && !game.dodgedCar(index, car.value()) {
                 if hero.hurtFor > 0.3 { game.sounds.playAt("hero.hurt", hero.position, 0.8, 0.06); }
                 if hero.hurtFor > 0.3 && player.isBot() { player.brain.wasHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
@@ -652,6 +663,17 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     hero.updateStatuses(dt);
     hero.bounceLeft = math.max(0, hero.bounceLeft - dt);
     hero.shoveLeft  = math.max(0, hero.shoveLeft - dt);
+    hero.nimbleLeft = math.max(0, hero.nimbleLeft - dt);
+    game.updateTraitsOverTime(index, dt);
+
+    if hero.ride.hasValue() {
+        game.rideCar(index, dt);
+        return;
+    }
+    if hero.dash.hasValue() {
+        game.moveDash(index, dt);
+        return;
+    }
 
     if hero.leap.hasValue() {
         game.flyLeap(index, dt);
@@ -674,6 +696,7 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     }
 
     before := hero.position;
+    facingBefore := hero.facing;
     if game.slide(hero, dt) {
         // On the oil: it can't turn
     } else if hero.isMoving {
@@ -693,6 +716,14 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     }
 
     hero.position = game.world.resolveCollisions(hero.ground(), info.hitRadius, hero.walksThroughWalls()).at();
+
+    // Mads gathers speed walking straight on, and loses it when he turns
+    if hero.stats.momentum {
+        turn := math.fabsf(math.remainderf(hero.facing - facingBefore, Pi * 2));
+        if !hero.isMoving       { hero.momentum = math.max(0, hero.momentum - dt * 2); }
+        else if turn > 0.4      { hero.momentum *= 0.3; }
+        else                    { hero.momentum = math.min(1, hero.momentum + dt * 0.5); }
+    }
 
     // Walking into a wall: give up after a moment, instead of pushing against it forever
     if hero.isMoving && Vector3Distance(before, hero.position) < hero.speed() * dt * 0.1 {
@@ -852,6 +883,8 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
     spot.z += (index as f32 - (game.players.count - 1) as f32 * 0.5) * SpawnSpacing;
 
     player.hero  = newHero(kind, spot, facing);
+    player.hero.goalSign = player.startSide.opposite().sign();
+    player.hero.lostIn = LostEveryLow;
     player.phase = .playing;
     player.hero.stats = statsOf(player);
     player.hero.savesLeft = player.hero.stats.saves;

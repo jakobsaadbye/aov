@@ -1,0 +1,55 @@
+namespace core;
+
+// Sigrid the Witch: she flies over the traffic on her broom, turns her enemies into toads, and has nine lives
+
+import math;
+use raylib;
+
+defineSigrid :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Sigrid", title: "the Witch", color: {70, 50, 90, 255}, width: 2.4, height: 5.0, moveSpeed: 7.8, hitRadius: 0.7, maxHealth: 22, drawExtras: drawSigrid};
+    hero.abilities.add(Ability{
+        name: "Broom", icon: "broom", sound: "ability.broom", cooldown: 13, targeting: .point, cast: castBroom, bot: .escape,
+        description: "Flies on her broom to the cursor, up to 24 away, over the cars, but she can't turn on the way",
+        range: 24, power: BroomSpeed, delay: 0.9,
+    });
+    hero.abilities.add(Ability{
+        name: "Hex", icon: "hex", sound: "ability.hex", cooldown: 12, targeting: .enemy, cast: castHex, bot: .disableEnemy,
+        description: "Turns the enemy nearest the cursor, up to 14 away, into a toad for 2.5 seconds: slow, and it can't cast",
+        range: 14, duration: 2.5,
+    });
+    hero.abilities.add(passive("Nine lives", "nine_lives", "Her black cat watches over her: once each life, a car that would run her over leaves her alive", Trait{saves: 1}));
+    return hero;
+}
+
+BroomSpeed :: 22.0;
+
+castBroom :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    point := towards(hero.ground(), target, hero.reach(ability.range));
+    if !point.hasValue() { return false; }
+    distance := point.value().distance(hero.ground());
+    hero.startLeap(point.value(), math.max(distance / ability.power, 0.3), 2.4);
+    game.effects.particles.emit(.wisps, hero.position + Vector3{0, 1, 0}, 14);
+    return true;
+}
+
+castHex :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    player := &game.players[caster];
+    victim := game.spellTarget(caster, ability, target);
+    if victim < 0 { return false; }
+    enemy := &game.players[victim].hero;
+    enemy.addStatus(.hex, ability.duration, source: caster, time: game.time);
+    game.effects.particles.emit(.wisps, enemy.position + Vector3{0, 1.2, 0}, 30, tint: {120, 220, 90, 255});
+    game.announce(victim, {130, 220, 100, 255}, "% was turned into a toad by % (%)!", enemy.info().name, player.hero.info().name, player.name);
+    return true;
+}
+
+// Her broom under her while she flies
+drawSigrid :: (game: *Game, index: int, bob: f32) {
+    hero := &game.players[index].hero;
+    if !hero.leap.hasValue() { return; }
+    forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
+    seat := hero.position + Vector3{0, bob + 0.9, 0};
+    DrawCylinderEx(seat + forward * 1.8, seat - forward * 1.6, 0.09, 0.09, 6, {120, 80, 40, 255});
+    DrawCylinderEx(seat - forward * 1.4, seat - forward * 2.4, 0.15, 0.5, 8, {210, 180, 90, 255});
+}

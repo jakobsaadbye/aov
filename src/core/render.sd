@@ -28,6 +28,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     drawGoalStrip(game.you().startSide.opposite());
     drawSlicks(game);
     drawEmergencyWarning(game);
+    drawTimetable(game);
 
     if game.debug.wireframes { rlEnableWireMode(); }
 
@@ -46,6 +47,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     }
     profileEnd(.cars);
     for sign in game.stopSigns { drawStopSign(assets, sign); }
+    drawBridges(game);
 
     // Shadows, stains and rings lie on the ground, above the road
     for *car in game.traffic.cars {
@@ -138,7 +140,18 @@ drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
     if warped && car.kind != .ambulance { color = ColorLerp(color, WarpColor, 0.35); }
     // Cars that drive through each other are drawn at slightly different sizes, so their faces don't fight
     scale := 1 + car.layer as f32 * 0.012;
-    assets.drawVehicle(car.kind, car.position(), color, scale);
+    position := car.position();
+    if car.liftedLeft > 0 {
+        // Up on Karl's jack: raised, with the jack under it
+        lift := LiftHeight * math.min(1, math.min(car.liftedLeft * 3, (LiftTime - car.liftedLeft + 0.01) * 6));
+        position.y += lift;
+        for k in [-1.0, 1.0] {
+            foot := car.position() + Vector3{0, 0, k * car.length() * 0.25};
+            DrawCube(foot + Vector3{0, 0.15, 0}, 1.2, 0.3, 0.8, {200, 40, 30, 255});
+            DrawCylinderEx(foot + Vector3{0, 0.3, 0}, foot + Vector3{0, lift + 0.2, 0}, 0.18, 0.18, 6, {120, 120, 130, 255});
+        }
+    }
+    assets.drawVehicle(car.kind, position, color, scale);
     if car.kind == .ambulance { drawEmergencyLights(assets, car, time); }
 
     if car.frozenLeft > 0 {
@@ -162,6 +175,22 @@ drawStopSign :: (assets: *Assets, sign: StopSign) {
     left  := laneCenter(sign.lanes[0]) - LaneWidth * 0.5;
     right := laneCenter(sign.lanes[1]) + LaneWidth * 0.5;
     fade := math.min(1, sign.timeLeft * 2);
+    if sign.kind == .barricade {
+        // Striped boards on legs across the lane, red and white
+        z := sign.line + 0.8;
+        segments := 6;
+        width := (right - left) / segments as f32;
+        for k in 0..segments {
+            color := White;
+            if k % 2 == 0 { color = {220, 40, 35, 255}; }
+            x := left + (k as f32 + 0.5) * width;
+            DrawCube({x, 1.2, z}, width, 0.5, 0.25, ColorAlpha(color, fade));
+            DrawCube({x, 0.6, z}, width, 0.35, 0.25, ColorAlpha(color, fade));
+        }
+        for x in [left + 0.4, right - 0.4] { DrawCube({x, 0.7, z}, 0.2, 1.4, 0.8, ColorAlpha({60, 60, 60, 255}, fade)); }
+        DrawSphere({left + 0.4, 1.6, z}, 0.18, ColorAlpha({255, 170, 40, 255}, fade * (0.5 + 0.5 * math.sinf(sign.timeLeft * 12))));
+        return;
+    }
     DrawCube({(left + right) * 0.5, 0.11, sign.line}, right - left, 0.02, 0.6, ColorAlpha(White, 0.9 * fade));
     DrawCube({(left + right) * 0.5, 0.1, sign.line - 1.5}, right - left, 0.02, 2.4, ColorAlpha({255, 60, 50, 255}, 0.25 * fade));
 
@@ -186,6 +215,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     if hero.walksThroughWalls()             { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
     if hero.leap.hasValue()                 { bob = math.sinf(hero.leap.value().flight * Pi) * hero.leap.value().height; }
     if hero.isStopped()                     { bob = 0; }
+    bob += game.rideHeight(hero) + game.bridgeHeightAt(hero.ground());
 
     // A shadow that stays on the ground, and a circle in the color of the player, as under the units of Warcraft.
     // Yours is thicker
@@ -201,7 +231,12 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     if hero.walksThroughWalls() { tint.a = 150; }      // Ghosty is see-through
     if hero.isFaded()           { tint.a = 70; }       // and more so when he fades
     if hero.has(.timeLock)      { tint = {200, 160, 255, 255}; }
-    assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
+    if hero.has(.hex) {
+        drawToad(hero.position + Vector3{0, bob, 0}, hero.facing, game.time);
+    } else {
+        assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
+    }
+    drawHeroExtras(game, index, bob);
 
     // Stunned: stars going round over the head. Locked in time: a clock face over it
     top := hero.position + Vector3{0, info.height + 0.6, 0};
@@ -335,4 +370,17 @@ extern "raylib.dll" {
     rlEnableWireMode  :: () -> void;
     rlDisableWireMode :: () -> void;
     rlSetClipPlanes   :: (near: f64, far: f64) -> void;
+}
+
+// Bent knows the timetable: a lane lights up at the far end of the field before its next car comes
+drawTimetable :: (game: *Game) {
+    if !game.you().hero.stats.timetable || !game.you().isPlaying() { return; }
+    Soon :: 1.5;
+    for lane, i in game.traffic.lanes {
+        if lane.spawnTimer > Soon { continue; }
+        alpha := 1 - lane.spawnTimer / Soon;
+        x := laneCenter(i as int);
+        DrawCube({x, 0.1, -MapHalfLength + 6}, LaneWidth * 0.7, 0.02, 12, ColorAlpha({255, 200, 60, 255}, 0.45 * alpha));
+        DrawCube({x, 0.11, -MapHalfLength + 1}, LaneWidth * 0.8, 0.02, 0.6, ColorAlpha({255, 230, 120, 255}, alpha));
+    }
 }

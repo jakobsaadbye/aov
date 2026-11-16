@@ -138,3 +138,32 @@ watch :: (game: *Game, player: int) {
     }
     game.watch(player);
 }
+
+@console.command("Casts an ability (0 is Q) of a player's hero at a point x z, or where it stands. You when no player is given, e.g cast 0 -80 10. It is an order, so it is recorded")
+cast :: (game: *Game, slot: int, x: ?f32, z: ?f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    hero := &game.players[index].hero;
+    abilities := hero.abilities();
+    if slot < 0 || slot >= abilities.count {
+        console.fail("% has abilities 0 to %", hero.info().name, abilities.count - 1);
+        return;
+    }
+    target := hero.ground();
+    if x.hasValue() && z.hasValue() { target = Vector2{x.value(), z.value()}; }
+    if !hero.abilityReady(slot) { console.fail("% isn't ready", abilities[slot].name); }
+    game.players[index].order(Command{cast: {slot: slot, target: target}});
+}
+
+@console.command("Walks a player's hero to a point x z, you when no player is given")
+walk :: (game: *Game, x: f32, z: f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    game.players[index].order(Command{move: Vector2{x, z}});
+}

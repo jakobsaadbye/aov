@@ -187,7 +187,9 @@ castLeap :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bo
     ground := hero.ground();
     point := towards(ground, target, hero.reach(ability.range));
     if !point.hasValue() { return false; }
-    hero.startLeap(point.value(), ability.duration, LeapHeight);
+    height := LeapHeight;
+    if ability.power > 0 { height = ability.power; }       // How high, when it isn't the height of Bjørn's leap
+    hero.startLeap(point.value(), ability.duration, height);
     game.effects.addRing(ground, 0.5, 3, {230, 200, 150, 255}, 0.3);
     return true;
 }

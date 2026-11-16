@@ -1,0 +1,49 @@
+namespace core;
+
+// Birgit the Builder: she puts a footbridge over the road, that anyone can use, and barricades across the lanes
+
+import math;
+use raylib;
+
+defineBirgit :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Birgit", title: "the Builder", color: {245, 160, 40, 255}, width: 2.4, height: 4.4, moveSpeed: 7.8, hitRadius: 0.8, maxHealth: 40};
+    hero.abilities.add(Ability{
+        name: "Footbridge", icon: "footbridge", sound: "ability.build", cooldown: 14, targeting: .point, cast: castFootbridge, bot: .stopCarsAhead,
+        description: "Builds a footbridge over the three lanes at the cursor, up to 10 away, for 5 seconds. Anyone on it is safe from the cars. Enemies too",
+        range: 10, duration: 5, count: 3,
+    });
+    hero.abilities.add(Ability{
+        name: "Barricade", icon: "barricade", sound: "ability.barricade", cooldown: 7, targeting: .point, cast: castBarricade, bot: .stopCarsAhead,
+        description: "Puts a barricade across two lanes at the cursor, up to 16 away: their cars stop before it for 4 seconds",
+        range: 16, duration: 4, count: 2,
+    });
+    hero.abilities.add(passive("Overtime", "overtime", "Always one more job: her abilities cool down 15% faster", Trait{cooldown: 0.85}));
+    return hero;
+}
+
+castFootbridge :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    if math.fabsf(point.x) > RoadHalfWidth { return false; }
+    lane := laneAt(point.x);
+    halfWidth := LaneWidth * ability.count as f32 * 0.5 + RampLength;
+    // On the road, not over the walls
+    center := Vector2{math.clamp(laneCenter(lane), -RoadHalfWidth + halfWidth, RoadHalfWidth - halfWidth), point.y};
+    game.bridges.add(Bridge{center: center, halfWidth: halfWidth, halfLength: 2.2, timeLeft: ability.duration, owner: caster});
+    game.effects.particles.emit(.dust, center.at(0.5), 30);
+    return true;
+}
+
+castBarricade :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    if math.fabsf(point.x) > RoadHalfWidth { return false; }
+    first := laneAt(point.x);
+    last := math.min(first + ability.count - 1, LaneCount - 1);
+    line := point.y - 1;
+    duration := ability.duration + hero.stats.coldBlooded;
+    game.traffic.halt(first, last, line, duration);
+    game.stopSigns.add(StopSign{kind: .barricade, position: point.at(), timeLeft: duration, lanes: [first, last], line: line});
+    game.effects.particles.emit(.dust, point.at(0.5), 16);
+    return true;
+}

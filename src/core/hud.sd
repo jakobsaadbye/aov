@@ -53,6 +53,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
     for player, i in game.players {
         if player.phase.kind != .runOver { drawHealthOverHero(game, i as int); }
     }
+    drawBlindness(game);
     drawScoreboard(game, assets);
     drawFeed(game);
     drawHeroCard(game, assets);
@@ -559,4 +560,12 @@ measureWith :: (title: bool, text: string, size: int) -> int {
     font := fonts.value().text;
     if title { font = fonts.value().title; }
     return MeasureTextEx(font, cText, size as f32, size * 0.03).x as int;
+}
+
+// Blinded by a flash: the screen is white, and fades back
+drawBlindness :: (game: *Game) {
+    hero := &game.you().hero;
+    if !hero.has(.blind) { return; }
+    alpha := math.min(hero.timeLeft(.blind) / 1.2, 1) * 0.92;
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), ColorAlpha({255, 252, 240, 255}, alpha));
 }

@@ -24,6 +24,7 @@ StatusKind :: enum {
     puppet,         // Walks to point, which the puppeteer picks (Hugo)
     tangled,        // In yarn: amount slower (Gudrun)
     windedDown,     // After an energy drink: amount slower
+    mending,        // Heals amount of its most health a second while it stands still (Ditte)
 }
 
 Status :: struct {
@@ -58,6 +59,7 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .puppet     => StatusRules{silences: true, steers: true, harms: true};
         case .tangled    => StatusRules{harms: true};
         case .windedDown => StatusRules{};
+        case .mending    => StatusRules{};
     };
 }
 

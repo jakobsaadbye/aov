@@ -1,0 +1,41 @@
+namespace core;
+
+// Karl the Mechanic: he jacks the cars up and walks under them, and leaves oil for the others to slide on
+
+use raylib;
+
+defineKarl :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Karl", title: "the Mechanic", color: {60, 110, 170, 255}, width: 2.6, height: 4.3, moveSpeed: 7.8, hitRadius: 0.85, maxHealth: 45};
+    hero.abilities.add(Ability{
+        name: "Jack", icon: "jack", sound: "ability.jack", cooldown: 9, targeting: .point, cast: castJack, bot: .stopCarsAhead,
+        description: "Jacks up the car nearest the cursor, up to 14 away, for 3 seconds: it stands still, and anyone can walk under it",
+        range: 14, duration: LiftTime,
+    });
+    hero.abilities.add(Ability{
+        name: "Oil change", icon: "oil_change", sound: "ability.oil", cooldown: 8, targeting: .point, cast: castOilChange, bot: .dropTrap,
+        description: "Pours a puddle of oil at the cursor, up to 12 away. A hero on it can't turn",
+        range: 12, radius: 2.6,
+    });
+    hero.abilities.add(passive("Grease monkey", "grease_monkey", "Oil is nothing new to him: he doesn't slide on it", .oilProof));
+    return hero;
+}
+
+castJack :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    index := game.traffic.carNear(aim, 4);
+    if index < 0 { return false; }
+    car := &game.traffic.cars[index];
+    car.liftedLeft = ability.duration + hero.stats.coldBlooded;
+    car.frozenLeft = 0;
+    game.effects.particles.emit(.sparks, car.position() + Vector3{0, 0.5, 0}, 12);
+    return true;
+}
+
+castOilChange :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    game.addSlick(point, ability.radius);
+    game.effects.particles.emit(.oil, point.at(1), 20);
+    return true;
+}

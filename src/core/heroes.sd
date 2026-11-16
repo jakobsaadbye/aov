@@ -19,6 +19,13 @@ HeroKind :: enum {
     bjorn,
     hilda,
     mira,
+    karl,
+    birgit,
+    bent,
+    sigrid,
+    tobias,
+    mads,
+    ditte,
 }
 
 // The keys of the abilities that are cast, in order. A hero can have as many of them as there are keys, and passives
@@ -36,7 +43,11 @@ HeroDefinition :: struct {
     hitRadius: f32;             // The circle on the ground that the cars hit
     maxHealth: f32;             // A car takes CarDamagePerSecond, so a tanky hero survives a car for a moment
     abilities: [..]Ability;
+    drawExtras: HeroDrawFunction;   // What is drawn of it besides its model, e.g Mads's skateboard. Can be null
 }
+
+// Draws what a hero has besides its model, at its height (bob) over the ground
+HeroDrawFunction :: (game: *Game, index: int, bob: f32);
 
 @private
 heroDefinitions: [HeroKind.count]HeroDefinition;
@@ -62,7 +73,28 @@ defineHero :: (kind: HeroKind) -> HeroDefinition {
         case .bjorn   => defineBjorn();
         case .hilda   => defineHilda();
         case .mira    => defineMira();
+        case .karl    => defineKarl();
+        case .birgit  => defineBirgit();
+        case .bent    => defineBent();
+        case .sigrid  => defineSigrid();
+        case .tobias  => defineTobias();
+        case .mads    => defineMads();
+        case .ditte   => defineDitte();
     };
+}
+
+// On the roof of a car, e.g Bent's hop on: it goes where the car goes, and the cars drive under it
+RideState :: struct {
+    car:      int;
+    timeLeft: f32;
+    offset:   f32;          // Along the car, from its middle
+}
+
+// Moving straight on by itself, fast, e.g Mads grinding a lane line
+DashState :: struct {
+    velocity:    Vector2;
+    timeLeft:    f32;
+    untouchable: bool;      // The cars can't hit it meanwhile
 }
 
 // Moved by something else, e.g knocked away or dragged by a hook. The hero can't act until it is over
@@ -72,6 +104,7 @@ Displacement :: struct {
 }
 
 LeapHeight :: 7.0;
+MomentumBonus :: 0.35;     // How much faster the trait momentum makes it, at the most
 
 // A jump through the air, over cars and walls, e.g Bjørn's leap
 LeapState :: struct {
@@ -116,6 +149,13 @@ Hero :: struct {
     // What the abilities are doing right now
     hook:             ?HookState;
     leap:             ?LeapState;
+    ride:             ?RideState;
+    dash:             ?DashState;
+    momentum:         f32;          // 0 to 1, how long it has walked straight on (the trait momentum)
+    lostIn:           f32;          // Seconds to its next burst of speed (the trait lost)
+    goalSign:         f32 = 1;      // Which way across is the way to the goal: 1 is +x
+    rolledOnce:       bool;         // A car only knocked it down, once (the trait roll)
+    nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
 
     // What the enemies did to the hero
     harmedBy:     int = -1;             // The player that last hooked, bashed or locked it, who gets the kill if a car
@@ -141,7 +181,16 @@ Hero :: struct {
     }
 
     speed :: method () -> f32 {
-        return self.info().moveSpeed * self.stats.speed * self.statusSpeed() * (1 - self.slowedBy);
+        speed := self.info().moveSpeed * self.stats.speed * self.statusSpeed() * (1 - self.slowedBy);
+        stats := self.stats;
+        if stats.momentum { speed *= 1 + MomentumBonus * self.momentum; }
+        if stats.tailwind != 1 && self.isMoving && (self.target.x - self.position.x) * self.goalSign > 0 { speed *= stats.tailwind; }
+        if stats.berserk != 1 && self.health < self.maxHealth() * 0.5 { speed *= stats.berserk; }
+        if stats.jaywalker != 1 {
+            if math.fabsf(self.position.x) < RoadHalfWidth { speed *= stats.jaywalker; }
+            else                                           { speed /= stats.jaywalker; }
+        }
+        return speed;
     }
 
     walksThroughWalls :: method () -> bool {
@@ -162,9 +211,9 @@ Hero :: struct {
         return self.has(.fade);
     }
 
-    // In the air, where no car reaches
+    // In the air or on a car, where no car reaches
     isAirborne :: method () -> bool {
-        return self.leap.hasValue();
+        return self.leap.hasValue() || self.ride.hasValue();
     }
 
     // Enemies' spells can find it
@@ -174,12 +223,14 @@ Hero :: struct {
 
     // The cars drive through it
     carsPass :: method () -> bool {
+        if self.dash.hasValue() && self.dash.value().untouchable { return true; }
         return self.isAirborne() || self.anyStatus(rules => rules.carsPass);
     }
 
     // If it can be given orders: not stunned, dragged, or in the middle of a hook or a leap
     canAct :: method () -> bool {
-        return !self.isStopped() && !self.displacement.hasValue() && !self.isPulledByHook() && !self.leap.hasValue();
+        return !self.isStopped() && !self.displacement.hasValue() && !self.isPulledByHook() && !self.leap.hasValue() &&
+            !self.ride.hasValue() && !self.dash.hasValue();
     }
 
     // If it can cast: it can act, and isn't silenced, e.g a toad or scared

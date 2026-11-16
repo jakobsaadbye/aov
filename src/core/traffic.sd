@@ -22,6 +22,7 @@ Car :: struct {
     color:      Color;
     speed:      f32;
     frozenLeft: f32;        // Seconds it is frozen by Frosty
+    liftedLeft: f32;        // Seconds it is up on Karl's jack: it stands still, and the heroes walk under it
     isBraking:  bool;       // Held up in a lane that Hilda stopped, with its brake lights on
     age:        f32;        // Seconds since it was spawned
     leakLeft:   f32;        // Seconds it still leaks oil (slicks.sd)
@@ -96,6 +97,9 @@ Traffic :: struct {
     emergencyLane: int = -1;    // The middle lane of the ambulances that come, after their siren
     emergencyIn:   f32;         // and the seconds until it is on the road
 }
+
+LiftHeight :: 2.6;      // How high Karl's jack lifts a car
+LiftTime   :: 3.0;
 
 // The room a car in a queue leaves to the car in front of it
 QueueGap :: 1.5;
@@ -180,6 +184,10 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZones: []
         if car.kind == .ambulance {
             car.z += car.speed * dt;
             if car.z > RoadEnd + car.length() { car.isActive = false; }
+            continue;
+        }
+        if car.liftedLeft > 0 {
+            car.liftedLeft -= dt;
             continue;
         }
         if car.frozenLeft > 0 {
@@ -322,10 +330,10 @@ freezeAround :: method (traffic: *Traffic, point: Vector2, radius: f32, duration
     return frozen;
 }
 
-// The first car that hits a circle on the ground
+// The first car that hits a circle on the ground. A car up on a jack hits nobody
 carHitting :: method (traffic: *Traffic, center: Vector2, radius: f32) -> ?*Car {
     for *car in traffic.cars {
-        if car.isActive && CheckCollisionCircleRec(center, radius, car.rect()) {
+        if car.isActive && car.liftedLeft <= 0 && CheckCollisionCircleRec(center, radius, car.rect()) {
             return car;
         }
     }
@@ -338,6 +346,32 @@ carIndexHitting :: method (traffic: *Traffic, center: Vector2, radius: f32) -> i
         if car.isActive && CheckCollisionCircleRec(center, radius, car.rect()) { return i as int; }
     }
     return -1;
+}
+
+// The index of the car nearest a point within a radius, or -1. Not the ambulances
+carNear :: method (traffic: *Traffic, point: Vector2, radius: f32) -> int {
+    best := -1;
+    bestDistance := radius;
+    for car, i in traffic.cars {
+        if !car.isActive || car.kind == .ambulance { continue; }
+        rect := car.rect();
+        nearest := Vector2{math.clamp(point.x, rect.x, rect.x + rect.width), math.clamp(point.y, rect.y, rect.y + rect.height)};
+        distance := nearest.distance(point);
+        if distance <= bestDistance {
+            best = i as int;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+// An ambulance down a lane, from the far end of the road, e.g called by Ditte
+spawnAmbulance :: method (traffic: *Traffic, lane: int) {
+    for *car in traffic.cars {
+        if car.isActive { continue; }
+        *car = Car{isActive: true, kind: .ambulance, lane: lane, z: -RoadEnd - VanLength * 0.5, color: White, speed: traffic.emergencySpeed()};
+        return;
+    }
 }
 
 activeCount :: method (traffic: *Traffic) -> int {
