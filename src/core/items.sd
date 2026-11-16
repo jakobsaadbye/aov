@@ -34,7 +34,7 @@ itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
         case .hardHat   => ItemDefinition{"Hard Hat", "The cars do 35% less damage", "item_hard_hat", {255, 200, 30, 255}};
         case .hourglass => ItemDefinition{"Hourglass", "The abilities cool down 30% faster", "item_hourglass", {230, 190, 120, 255}};
         case .spyglass  => ItemDefinition{"Spyglass", "The abilities reach 30% further", "item_spyglass", {120, 170, 255, 255}};
-        case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals three times as fast", "item_first_aid", {235, 60, 60, 255}};
+        case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals 50% faster", "item_first_aid", {235, 60, 60, 255}};
         case .clover    => ItemDefinition{"Four-Leaf Clover", "Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment", "item_clover", {80, 220, 90, 255}};
     };
 }
@@ -58,7 +58,7 @@ boostOf :: (items: []ItemKind) -> Boost {
             case .hardHat   { boost.damage *= 0.65; }
             case .hourglass { boost.cooldown *= 0.7; }
             case .spyglass  { boost.reach *= 1.3; }
-            case .firstAid  { boost.health *= 1.4; boost.heal *= 3; }
+            case .firstAid  { boost.health *= 1.4; boost.heal *= 1.5; }
             case .clover    { boost.saves += 1; }
         }
     }
@@ -185,10 +185,11 @@ drawItem :: (game: *Game, assets: *Assets) {
 
     DrawCylinder(ground, 2.6, 2.6, 0.03, 32, ColorAlpha(definition.color, 0.3 + 0.2 * pulse));
     DrawCircle3D(ground + Vector3{0, 0.02, 0}, 2.6 + pulse * 0.5, {1, 0, 0}, 90, ColorAlpha(definition.color, 0.9));
-    DrawCylinderEx(ground, ground + Vector3{0, 18, 0}, 0.7, 0.15, 12, ColorAlpha(definition.color, 0.22));
 
-    // The icon, on a pedestal that turns
+    // The icon, on a pedestal, and the beam above it, which starts over the icon so it doesn't cut through it
     height := 3.2 + 0.4 * math.sinf(t * 2.5);
+    beamStart := item.position.at(height + 2.7);
+    DrawCylinderEx(beamStart, beamStart + Vector3{0, 16, 0}, 0.5, 0.12, 12, ColorAlpha(definition.color, 0.22));
     DrawCube(item.position.at(0.5), 1.6, 0.8, 1.6, {40, 36, 30, 255});
     DrawCubeWires(item.position.at(0.5), 1.6, 0.8, 1.6, definition.color);
     icon := assets.icons[definition.icon];
@@ -199,22 +200,26 @@ drawItem :: (game: *Game, assets: *Assets) {
 // Console commands, e.g to try an item out
 //
 
-@console.command("Puts an item on the road, a random one without a name")
-spawnItem :: (game: *Game, kind: ?ItemKind) {
+@console.command("Puts an item on the road, a random one without a name, at z along the road or anywhere")
+spawnItem :: (game: *Game, kind: ?ItemKind, z: ?f32) {
     item := kind ?? game.items.rng.between(0, ItemKind.count as int - 1) as ItemKind;
-    game.placeItem(item, Vector2{0, game.items.rng.uniform(-ItemRoadLength, ItemRoadLength) as f32});
+    at := z ?? game.items.rng.uniform(-ItemRoadLength, ItemRoadLength) as f32;
+    game.placeItem(item, Vector2{0, at});
 }
 
-@console.command("Puts an item in the backpack of a player, you when no player is given")
+@console.command("Puts an item in the backpack of a player, you when no player is given. In a full backpack it takes the place of the oldest")
 giveItem :: (game: *Game, kind: ItemKind, player: ?int) {
     index := player ?? game.local;
     if index < 0 || index >= game.players.count {
         console.fail("There is no player %. status lists them", index);
         return;
     }
-    if game.players[index].backpack.isFull() {
-        console.fail("The backpack of % is full", game.players[index].name);
-        return;
+    backpack := &game.players[index].backpack;
+    if backpack.isFull() {
+        console.print("% takes the place of % in the backpack of %", kind.itemDefinition().name,
+            backpack.items[0].itemDefinition().name, game.players[index].name);
+        for i in 1..BackpackSize { backpack.items[i - 1] = backpack.items[i]; }
+        backpack.count -= 1;
     }
     game.pickUp(index, kind);
 }

@@ -163,7 +163,7 @@ shows the backpacks and when the next item comes, and the hero card yours (the m
 | Hard Hat | The cars do 35% less damage |
 | Hourglass | The abilities cool down 30% faster |
 | Spyglass | The abilities reach 30% further |
-| First Aid Kit | 40% more health, and heals three times as fast |
+| First Aid Kit | 40% more health (the grey part of the health bar), and heals 50% faster |
 | Four-Leaf Clover | Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment |
 
 Two of the same do it twice. An item is a value of `ItemKind`, its definition, and what it does in `boostOf`
