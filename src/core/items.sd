@@ -4,7 +4,7 @@ namespace core;
 // its player. An item boosts every hero of that player for the rest of the game, also the ones after the hero that
 // picked it up is run over. A backpack holds two; with two, a hero walks over an item and leaves it for the others.
 //
-// A new item is a value of ItemKind, its definition in itemDefinition, and what it does in boostOf.
+// A new item is a value of ItemKind and its definition in itemDefinition: its traits (traits.sd) say what it does.
 
 import console;
 import fmt;
@@ -29,34 +29,8 @@ ItemDefinition :: struct {
     description: string;
     icon:        string;        // data/icons/<icon>.png
     color:       Color;         // Of the item on the road
-}
-
-itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
-    return switch kind {
-        case .sneakers  => ItemDefinition{"Sneakers", "Walks 15% faster", "item_sneakers", {240, 240, 245, 255}};
-        case .hardHat   => ItemDefinition{"Hard Hat", "The cars do 35% less damage", "item_hard_hat", {255, 200, 30, 255}};
-        case .hourglass => ItemDefinition{"Hourglass", "The abilities cool down 30% faster", "item_hourglass", {230, 190, 120, 255}};
-        case .spyglass  => ItemDefinition{"Spyglass", "The abilities reach 30% further", "item_spyglass", {120, 170, 255, 255}};
-        case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals 10% of it a second when no car is on it. Nothing else heals", "item_first_aid", {235, 60, 60, 255}};
-        case .frostCharm  => ItemDefinition{"Frost Charm", "An aura of cold: the cars near the hero drive 30% slower", "item_frost_charm", {150, 220, 255, 255}};
-        case .garlic      => ItemDefinition{"Garlic", "A stench: enemy heroes near the hero walk 30% slower", "item_garlic", {200, 230, 120, 255}};
-        case .springShoes => ItemDefinition{"Spring Shoes", "A car that hits the hero bounces it over the car, towards the far side. Every 12 seconds", "item_spring_shoes", {255, 150, 60, 255}};
-        case .clover    => ItemDefinition{"Four-Leaf Clover", "Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment", "item_clover", {80, 220, 90, 255}};
-    };
-}
-
-// What the items of a backpack do together. Two of the same do it twice
-Boost :: struct {
-    speed:    f32 = 1;      // Times the speed
-    damage:   f32 = 1;      // Times what the cars take
-    cooldown: f32 = 1;      // Times the cooldowns
-    reach:    f32 = 1;      // Times the range of the abilities
-    health:   f32 = 1;      // Times the most health
-    regen:    f32;          // The share of its most health it heals a second. Only items heal
-    saves:    int;          // Times a hero gets away when a car would run it over
-    chill:    f32;          // The radius of an aura that slows the cars around the hero
-    stench:   f32;          // The radius of an aura that slows the enemy heroes around it
-    bounces:  bool;         // A car that hits it bounces it over, now and then
+    trait:       Trait;         // What it does for the heroes of its player (traits.sd)
+    also:        Trait;         // and a second thing it does, if any
 }
 
 ItemAuraSlow   :: 0.3;      // How much slower the Frost Charm makes the cars, and Garlic the enemies
@@ -66,22 +40,18 @@ BounceCooldown :: 12.0;
 BounceDistance :: 7.0;      // How far towards the far side a bounce takes the hero
 BounceTime     :: 0.55;
 
-boostOf :: (items: []ItemKind) -> Boost {
-    boost: Boost;
-    for item in items {
-        switch item {
-            case .sneakers  { boost.speed *= 1.15; }
-            case .hardHat   { boost.damage *= 0.65; }
-            case .hourglass { boost.cooldown *= 0.7; }
-            case .spyglass  { boost.reach *= 1.3; }
-            case .firstAid  { boost.health *= 1.4; boost.regen += 0.1; }
-            case .clover    { boost.saves += 1; }
-            case .frostCharm  { boost.chill += FrostRadius; }
-            case .garlic      { boost.stench += StenchRadius; }
-            case .springShoes { boost.bounces = true; }
-        }
-    }
-    return boost;
+itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
+    return switch kind {
+        case .sneakers  => ItemDefinition{"Sneakers", "Walks 15% faster", "item_sneakers", {240, 240, 245, 255}, Trait{speed: 1.15}};
+        case .hardHat   => ItemDefinition{"Hard Hat", "The cars do 35% less damage", "item_hard_hat", {255, 200, 30, 255}, Trait{damageTaken: 0.65}};
+        case .hourglass => ItemDefinition{"Hourglass", "The abilities cool down 30% faster", "item_hourglass", {230, 190, 120, 255}, Trait{cooldown: 0.7}};
+        case .spyglass  => ItemDefinition{"Spyglass", "The abilities reach 30% further", "item_spyglass", {120, 170, 255, 255}, Trait{reach: 1.3}};
+        case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals 10% of it a second when no car is on it. Nothing else heals", "item_first_aid", {235, 60, 60, 255}, Trait{regen: 0.1}, Trait{maxHealth: 1.4}};
+        case .frostCharm  => ItemDefinition{"Frost Charm", "An aura of cold: the cars near the hero drive 30% slower", "item_frost_charm", {150, 220, 255, 255}, Trait{chillAura: {radius: FrostRadius, slow: ItemAuraSlow}}};
+        case .garlic      => ItemDefinition{"Garlic", "A stench: enemy heroes near the hero walk 30% slower", "item_garlic", {200, 230, 120, 255}, Trait{stench: StenchRadius}};
+        case .springShoes => ItemDefinition{"Spring Shoes", "A car that hits the hero bounces it over the car, towards the far side. Every 12 seconds", "item_spring_shoes", {255, 150, 60, 255}, .bounce};
+        case .clover    => ItemDefinition{"Four-Leaf Clover", "Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment", "item_clover", {80, 220, 90, 255}, Trait{saves: 1}};
+    };
 }
 
 BackpackSize :: 2;
@@ -195,7 +165,7 @@ pickUp :: method (game: *Game, index: int, kind: ItemKind) {
     player.backpack.items[player.backpack.count] = kind;
     player.backpack.count += 1;
     player.stats.items += 1;
-    player.applyBoost();
+    player.refreshStats();
     if given.hasValue() {
         game.announce(index, player.color, "% picked up %, in place of %", player.name, kind.itemDefinition().name, given.value().itemDefinition().name);
     } else {
@@ -205,14 +175,14 @@ pickUp :: method (game: *Game, index: int, kind: ItemKind) {
     game.effects.particles.emit(.sparkles, player.hero.position + Vector3{0, 1.5, 0}, 30, tint: kind.itemDefinition().color);
 }
 
-// The boost of the backpack on the hero. Its health goes up with its most health
-applyBoost :: method (player: *Player) {
+// The stats of the hero, after an item or a perk was added. Its health goes up with its most health
+refreshStats :: method (player: *Player) {
     hero := &player.hero;
     share := hero.health / hero.maxHealth();
-    savesUsed := hero.boost.saves - hero.savesLeft;
-    hero.boost = boostOf(player.backpack.list());
+    savesUsed := hero.stats.saves - hero.savesLeft;
+    hero.stats = statsOf(player);
     hero.health = share * hero.maxHealth();
-    hero.savesLeft = math.max(0, hero.boost.saves - savesUsed);
+    hero.savesLeft = math.max(0, hero.stats.saves - savesUsed);
 }
 
 // How much of the cooldown of an item is left, 0 to 1, and the seconds of it, for the HUD. 1 and 0 seconds for one that
@@ -227,7 +197,7 @@ itemCooldown :: (hero: *Hero, kind: ItemKind) -> f32, f32 {
 bounced :: method (game: *Game, index: int) -> bool {
     player := &game.players[index];
     hero := &player.hero;
-    if !hero.boost.bounces || hero.bounceLeft > 0 || hero.isAirborne() { return false; }
+    if !hero.stats.bounces || hero.bounceLeft > 0 || hero.isAirborne() { return false; }
     hero.bounceLeft = BounceCooldown;
     across := player.startSide.opposite().sign();
     to := hero.position + Vector3{across * BounceDistance, 0, 2.5};
@@ -246,8 +216,8 @@ updateStench :: method (game: *Game) {
         player.hero.slowedBy = 0;
         if !player.isPlaying() { continue; }
         for other, k in game.players {
-            if k == i || !other.isPlaying() || other.hero.boost.stench <= 0 { continue; }
-            if other.hero.ground().distance(player.hero.ground()) <= other.hero.boost.stench {
+            if k == i || !other.isPlaying() || other.hero.stats.stench <= 0 { continue; }
+            if other.hero.ground().distance(player.hero.ground()) <= other.hero.stats.stench {
                 player.hero.slowedBy = ItemAuraSlow;
             }
         }
@@ -260,16 +230,17 @@ drawItemAuras :: (game: *Game) {
         if !player.isPlaying() { continue; }
         hero := player.hero;
         ground := hero.ground();
-        if hero.boost.chill > 0 && !hero.hasChillAbility() {
-            DrawCircle3D(ground.at(0.14), hero.boost.chill, {1, 0, 0}, 90, {170, 230, 255, 110});
-            DrawCylinder(ground.at(0.12), hero.boost.chill, hero.boost.chill, 0.02, 40, {170, 230, 255, 25});
+        if hero.stats.chill.hasValue() && !hero.hasChillAbility() {
+            chill := hero.stats.chill.value().radius;
+            DrawCircle3D(ground.at(0.14), chill, {1, 0, 0}, 90, {170, 230, 255, 110});
+            DrawCylinder(ground.at(0.12), chill, chill, 0.02, 40, {170, 230, 255, 25});
         }
-        if hero.boost.stench > 0 {
+        if hero.stats.stench > 0 {
             pulse := 0.5 + 0.5 * math.sinf(game.time * 3);
-            DrawCircle3D(ground.at(0.15), hero.boost.stench * (0.95 + pulse * 0.05), {1, 0, 0}, 90, {215, 185, 60, 170});
-            DrawCylinder(ground.at(0.12), hero.boost.stench, hero.boost.stench, 0.02, 40, {200, 170, 50, 45 + (pulse * 20) as u8});
+            DrawCircle3D(ground.at(0.15), hero.stats.stench * (0.95 + pulse * 0.05), {1, 0, 0}, 90, {215, 185, 60, 170});
+            DrawCylinder(ground.at(0.12), hero.stats.stench, hero.stats.stench, 0.02, 40, {200, 170, 50, 45 + (pulse * 20) as u8});
         }
-        if hero.boost.bounces && hero.bounceLeft <= 0 {
+        if hero.stats.bounces && hero.bounceLeft <= 0 {
             DrawCircle3D(ground.at(0.16), hero.info().hitRadius + 0.9, {1, 0, 0}, 90, {255, 150, 60, 140});
         }
     }
@@ -282,7 +253,7 @@ savedByClover :: method (game: *Game, index: int) -> bool {
     if hero.savesLeft <= 0 { return false; }
     hero.savesLeft -= 1;
     hero.health = hero.maxHealth() * 0.25;
-    hero.fadeLeft = math.max(hero.fadeLeft, 1.2);
+    hero.addStatus(.fade, 1.2);
     game.announce(index, {80, 220, 90, 255}, "The clover saved %", game.players[index].name);
     game.effects.particles.emit(.sparkles, hero.position + Vector3{0, 1.5, 0}, 40, tint: {120, 255, 120, 255});
     game.sounds.playAt("ability.fade", hero.position, 0.9);

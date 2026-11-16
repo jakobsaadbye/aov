@@ -1,0 +1,46 @@
+namespace core;
+
+// Perks: after each crossing, every player picks one of three, at random, for the rest of the game. Like the items,
+// each is a trait (traits.sd) of all the heroes of its player, so two players with the same hero still play it
+// differently. A new perk is a value of PerkKind and its definition.
+
+use raylib;
+
+PerkKind :: enum {
+    secondWind,
+    thickSkin,
+    scavenger,
+    revenge,
+    jaywalker,
+    pocket,
+    nimble,
+    coldBlooded,
+    hotPotato,
+    fleetFoot,
+    focus,
+    longArms,
+}
+
+PerkDefinition :: struct {
+    name:        string;
+    description: string;
+    icon:        string;        // data/icons/<icon>.png
+    trait:       Trait;
+}
+
+perkDefinition :: method (kind: PerkKind) -> PerkDefinition {
+    return switch kind {
+        case .secondWind  => PerkDefinition{"Second Wind", "Runs 30% faster for 2 seconds after being shoved or knocked away", "perk_second_wind", .secondWind};
+        case .thickSkin   => PerkDefinition{"Thick Skin", "20% more health", "perk_thick_skin", Trait{maxHealth: 1.2}};
+        case .scavenger   => PerkDefinition{"Scavenger", "Picks items up from 3 further away", "perk_scavenger", Trait{itemReach: 3}};
+        case .revenge     => PerkDefinition{"Revenge", "Whoever got it run over has 3 seconds more on all cooldowns", "perk_revenge", Trait{revenge: 3}};
+        case .jaywalker   => PerkDefinition{"Jaywalker", "15% faster on the road, 15% slower off it", "perk_jaywalker", Trait{jaywalker: 1.15}};
+        case .pocket      => PerkDefinition{"Deep Pockets", "One more slot in the backpack", "perk_pocket", .pocket};
+        case .nimble      => PerkDefinition{"Nimble", "Steps aside by itself when a car is about to hit it. Every 20 seconds", "perk_nimble", .nimble};
+        case .coldBlooded => PerkDefinition{"Cold Blooded", "Cars it freezes, stops or slows stay so 1 second longer", "perk_cold_blooded", Trait{coldBlooded: 1}};
+        case .hotPotato   => PerkDefinition{"Hot Potato", "Shoving an enemy swaps an item with it", "perk_hot_potato", .hotPotato};
+        case .fleetFoot   => PerkDefinition{"Fleet Foot", "Walks 6% faster", "perk_fleet_foot", Trait{speed: 1.06}};
+        case .focus       => PerkDefinition{"Focus", "The abilities cool down 12% faster", "perk_focus", Trait{cooldown: 0.88}};
+        case .longArms    => PerkDefinition{"Long Arms", "The abilities reach 15% further", "perk_long_arms", Trait{reach: 1.15}};
+    };
+}

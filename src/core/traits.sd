@@ -1,0 +1,145 @@
+namespace core;
+
+// What makes a hero different, besides its abilities: its passives, the items in the backpack of its player and the
+// perks the player picked are all lists of traits. Together they make the HeroStats of the hero, which the rest of the game
+// asks (speed, damage, auras, ...), so it never needs to know where a trait came from.
+//
+// A new kind of trait is a case of Trait, what it does to the stats in addTrait, and where the game reads that stat.
+
+import math;
+use raylib;
+
+Trait :: union {
+    none;
+    speed:        f32;          // Times the speed, e.g 1.1 is 10% faster
+    damageTaken:  f32;          // Times the damage of the cars, e.g 0.5 takes half
+    cooldown:     f32;          // Times the cooldowns, e.g 0.7 cools down 30% faster
+    reach:        f32;          // Times the range of the abilities
+    maxHealth:    f32;          // Times the most health
+    regen:        f32;          // The share of the most health it heals a second, a while after a car. Nothing else heals
+    saves:        int;          // Times a car that would run it over leaves it alive instead, each hero
+    chillAura:    ChillAura;    // Cars near it drive slower
+    stench:       f32;          // The radius of an aura that slows enemy heroes
+    bounce;                     // A car that hits it bounces it over the car, now and then (Spring Shoes)
+    throughWalls;               // Walks through the walls
+    oilProof;                   // Doesn't slide on oil
+    unshovable;                 // Isn't pushed by heroes that walk into it, or by abilities that knock it away
+    ambulanceProof;             // The ambulances drive round it
+    stunTaken:    f32;          // Times how long stuns and the like hold it
+    carsBrake:    f32;          // Cars this far behind it slow down for it (Gudrun, a reflective vest)
+    momentum;                   // Faster the longer it walks straight on, slower when it turns (Mads)
+    tailwind:     f32;          // Times the speed while walking towards the goal
+    berserk:      f32;          // Times the speed below half its health
+    roll;                       // The first car that hits each hero only knocks it down (Kenji)
+    timetable;                  // Sees where the next cars come from, before they are there (Bent)
+    lost;                       // Now and then a burst of speed, for no reason (Tobias)
+    decoysFirst;                // Spells cast on it hit its decoy instead, while it has one (Tim & Tom)
+    jaywalker:    f32;          // Times the speed on the road, and the inverse of it off the road
+    secondWind;                 // Faster for a moment after it is shoved or knocked away
+    revenge:      f32;          // Seconds added to the cooldowns of whoever ran it over
+    pocket;                     // One more slot in the backpack
+    nimble;                     // Steps aside by itself when a car is about to hit it, now and then
+    itemReach:    f32;          // Picks items up from this much further away
+    coldBlooded:  f32;          // Seconds longer the cars it froze or slowed stay so
+    hotPotato;                  // Shoving an enemy swaps an item with it
+}
+
+ChillAura :: struct {
+    radius: f32;
+    slow:   f32;            // 0.4 is 40% slower
+}
+
+// What the traits of a hero add up to
+HeroStats :: struct {
+    speed:       f32 = 1;
+    damageTaken: f32 = 1;
+    cooldown:    f32 = 1;
+    reach:       f32 = 1;
+    maxHealth:   f32 = 1;
+    regen:       f32;
+    saves:       int;
+    chill:       ?ChillAura;
+    stench:      f32;
+    bounces:     bool;
+    throughWalls: bool;
+    oilProof:    bool;
+    unshovable:  bool;
+    ambulanceProof: bool;
+    stunTaken:   f32 = 1;
+    carsBrake:   f32;
+    momentum:    bool;
+    tailwind:    f32 = 1;
+    berserk:     f32 = 1;
+    roll:        bool;
+    timetable:   bool;
+    lost:        bool;
+    decoysFirst: bool;
+    jaywalker:   f32 = 1;
+    secondWind:  bool;
+    revenge:     f32;
+    pockets:     int;
+    nimble:      bool;
+    itemReach:   f32;
+    coldBlooded: f32;
+    hotPotato:   bool;
+}
+
+addTrait :: method (stats: *HeroStats, trait: Trait) {
+    switch v in trait {
+        case .none         { }
+        case .speed        { stats.speed *= v; }
+        case .damageTaken  { stats.damageTaken *= v; }
+        case .cooldown     { stats.cooldown *= v; }
+        case .reach        { stats.reach *= v; }
+        case .maxHealth    { stats.maxHealth *= v; }
+        case .regen        { stats.regen += v; }
+        case .saves        { stats.saves += v; }
+        case .chillAura {
+            // Two auras: the bigger and the stronger of each
+            if stats.chill.hasValue() {
+                old := stats.chill.value();
+                stats.chill = ChillAura{math.max(old.radius, v.radius), math.max(old.slow, v.slow)};
+            } else {
+                stats.chill = v;
+            }
+        }
+        case .stench       { stats.stench += v; }
+        case .bounce       { stats.bounces = true; }
+        case .throughWalls { stats.throughWalls = true; }
+        case .oilProof     { stats.oilProof = true; }
+        case .unshovable   { stats.unshovable = true; }
+        case .ambulanceProof { stats.ambulanceProof = true; }
+        case .stunTaken    { stats.stunTaken *= v; }
+        case .carsBrake    { stats.carsBrake = math.max(stats.carsBrake, v); }
+        case .momentum     { stats.momentum = true; }
+        case .tailwind     { stats.tailwind *= v; }
+        case .berserk      { stats.berserk *= v; }
+        case .roll         { stats.roll = true; }
+        case .timetable    { stats.timetable = true; }
+        case .lost         { stats.lost = true; }
+        case .decoysFirst  { stats.decoysFirst = true; }
+        case .jaywalker    { stats.jaywalker *= v; }
+        case .secondWind   { stats.secondWind = true; }
+        case .revenge      { stats.revenge += v; }
+        case .pocket       { stats.pockets += 1; }
+        case .nimble       { stats.nimble = true; }
+        case .itemReach    { stats.itemReach += v; }
+        case .coldBlooded  { stats.coldBlooded += v; }
+        case .hotPotato    { stats.hotPotato = true; }
+    }
+}
+
+// The stats of the hero of a player: its passives, the items in the backpack and the perks of the player
+statsOf :: (player: *Player) -> HeroStats {
+    stats: HeroStats;
+    for ability in player.hero.abilities() {
+        if ability.isPassive() { stats.addTrait(ability.trait); }
+    }
+    for item in player.backpack.list() {
+        definition := item.itemDefinition();
+        stats.addTrait(definition.trait);
+        stats.addTrait(definition.also);
+    }
+    for perk in player.perks { stats.addTrait(perk.perkDefinition().trait); }
+    return stats;
+}

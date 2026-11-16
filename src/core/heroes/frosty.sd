@@ -1,0 +1,19 @@
+namespace core;
+
+// Frosty: the cars slow down near him, and stop when he snaps his fingers
+
+defineFrosty :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Frosty", title: "the Snowman", color: {110, 220, 235, 255}, width: 2.2, height: 4.3, moveSpeed: 8, hitRadius: 0.7, maxHealth: 35};
+    hero.abilities.add(Ability{
+        name: "Cold snap", icon: "freeze", sound: "ability.freeze", cooldown: 10, cast: castFreeze, bot: .stopCars,
+        description: "Freezes the cars around him for 2.5 seconds",
+        radius: 20, duration: 2.5,
+    });
+    hero.abilities.add(Ability{
+        name: "Slide", icon: "slide", sound: "ability.blink", cooldown: 8, targeting: .point, cast: castBlink, bot: .escape,
+        description: "Slides to the cursor, up to 9 away",
+        range: 9,
+    });
+    hero.abilities.add(passive("Chill aura", "chill", "Cars near him drive 40% slower", Trait{chillAura: {radius: 12, slow: 0.4}}));
+    return hero;
+}

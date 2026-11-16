@@ -1,0 +1,134 @@
+namespace core;
+
+// The Butcher: big, slow and tough. His meat hook bites into a passing car and drags him across with it
+
+import math;
+use raylib;
+
+defineButcher :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Butcher", title: "the Butcher", color: {150, 90, 70, 255}, width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15, maxHealth: 100};
+    hero.abilities.add(Ability{
+        name: "Meat hook", icon: "hook", sound: "ability.hook_throw", cooldown: 7, targeting: .point, cast: castHook,
+        description: "Throws the hook at the cursor, up to 34 away. It bites into the first car it meets, and he is pulled to the side of the car. He can walk while it flies",
+        range: 34,
+    });
+    hero.abilities.add(Ability{
+        name: "Charge", icon: "charge", sound: "ability.charge", cooldown: 10, cast: castSprint, bot: .speedUp,
+        description: "Charges ahead, very fast, for a short moment",
+        power: 2.8, duration: 0.8,
+    });
+    return hero;
+}
+
+// Throws the hook towards the point, at most range away
+castHook :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    point := towards(ground, target, hero.reach(ability.range));
+    if !point.hasValue() { return false; }
+    toTarget := point.value() - ground;
+    hero.hook = HookState{point: point.value().at(), from: hero.position};
+    if !hero.isMoving { hero.facing = math.atan2f(toTarget.x, toTarget.y); }      // He may walk on while it flies
+    return true;
+}
+
+// The Butcher's hook: it flies out to a point and bites into the first car it meets. Then he is pulled to the side of
+// the car, which drives on. A hook that meets no car is reeled in again. He can walk while it flies
+HookState :: struct {
+    point:    Vector3;
+    from:     Vector3;      // Where it was thrown from
+    flight:   f32;          // 0 to 1, while the hook flies out
+    reeling:  bool;         // It met no car, and comes back
+    car:      int = -1;     // The car it bit into, while he is pulled to it
+    bite:     Vector3;      // Where on the car, from its middle
+    pulled:   f32;          // Seconds he has been pulled
+    stuckFor: f32;          // Seconds the pull hasn't moved him, e.g into a wall
+}
+
+HookSpeed     :: 70.0;      // How fast the hook flies
+HookBiteRadius :: 0.6;      // How close to a car the head has to come to bite into it
+HookMaxPull   :: 2.5;       // Seconds he is pulled at most
+HookPullSpeed :: 40.0;
+
+// The head of the hook now: flying out, coming back, or in the car it bit into
+hookHead :: method (game: *Game, hook: HookState, hand: Vector3) -> Vector3 {
+    if hook.car >= 0 { return game.traffic.cars[hook.car].position() + hook.bite; }
+    if hook.reeling { return hand.lerp(hook.point, hook.flight); }
+    return hook.from.lerp(hook.point, hook.flight);
+}
+
+// Moves the hook on. True while he is pulled by it, and can't walk
+pullHook :: method (game: *Game, index: int, dt: f32) -> bool {
+    hero := &game.players[index].hero;
+    hook := hero.hook.value();
+
+    pullSpeed := HookPullSpeed;
+
+    // It met no car: it comes back, fast, and is gone
+    if hook.reeling {
+        length := math.max(hero.position.distance(hook.point), 0.1);
+        hook.flight -= dt * HookSpeed * 2 / length;
+        if hook.flight <= 0 { hero.hook = null; }
+        else                { hero.hook = hook; }
+        return false;
+    }
+
+    // Flying out: the first car the head meets, it bites into
+    if hook.car < 0 {
+        length := math.max(hook.from.distance(hook.point), 0.1);
+        hook.flight = math.min(1, hook.flight + dt * HookSpeed / length);
+        head := hook.from.lerp(hook.point, hook.flight);
+        car := game.traffic.carIndexHitting(head.xz(), HookBiteRadius);
+        if car >= 0 {
+            hook.car = car;
+            hook.bite = Vector3{head.x, 1.2, head.z} - game.traffic.cars[car].position();
+            game.sounds.playAt("ability.hook_hit", head, 1);
+            game.effects.particles.emit(.sparks, head + Vector3{0, 1.2, 0}, 14);
+            hero.stop();
+        } else if hook.flight >= 1 {
+            hook.reeling = true;
+        }
+        hero.hook = hook;
+        return false;
+    }
+
+    // Bitten: pulled to the near side of the car, which drives on, until he is there
+    car := &game.traffic.cars[hook.car];
+    hook.pulled += dt;
+    if !car.isActive || hook.pulled > HookMaxPull {
+        hero.hook = null;
+        hero.stop();
+        return false;
+    }
+    side: f32 = -1;
+    if hero.position.x > laneCenter(car.lane) { side = 1; }
+    target := Vector2{laneCenter(car.lane) + side * (CarWidth * 0.5 + hero.info().hitRadius + 0.4), car.z + hook.bite.z};
+    toTarget := target - hero.ground();
+    distance := toTarget.length();
+    step := pullSpeed * dt;
+    // He keeps up with the car along the road, and is pulled across to it
+    along := Vector2{0, car.speed * dt};
+
+    if distance <= step + 0.4 {
+        hero.position = target.at();
+        hero.hook = null;
+        hero.stop();
+        return true;
+    }
+
+    before := hero.position;
+    hero.position += (toTarget / distance * step + along).at();
+    hero.position = game.world.resolveCollisions(hero.ground(), hero.info().hitRadius, false).at();
+    if toTarget.x != 0 { hero.facing = math.atan2f(toTarget.x, toTarget.y); }
+
+    // A wall in the way stops the pull
+    if Vector3Distance(before, hero.position) < step * 0.25 { hook.stuckFor += dt; }
+    if hook.stuckFor > 0.1 {
+        hero.hook = null;
+        hero.stop();
+        return true;
+    }
+    hero.hook = hook;
+    return true;
+}
+

@@ -457,7 +457,7 @@ testCommands :: () {
     assert(you.hero.ground().distance({-108, 0}) < 0.5 && you.commands.count == 0);
 
     // A stunned hero doesn't move, and doesn't cast
-    you.hero.stunLeft = 1;
+    you.hero.addStatus(.stun, 1);
     you.order(core.Command{move: {-118, 0}});
     game.simulate(Dt);
     for 0..30 { game.simulate(Dt); }
@@ -485,10 +485,10 @@ testEnemySpells :: () {
     game.spawnHero(0, .bjorn);
     game.you().hero.position = Vector3{-118, 0, 0};
     enemy.hero.position = Vector3{-115, 0, 0};
-    enemy.hero.stunLeft = 0;
+    enemy.hero.clearStatus(.stun);
     bashSlot := 1;
     game.cast(0, bashSlot, {-115, 0});
-    assert(enemy.hero.stunLeft > 1);
+    assert(enemy.hero.timeLeft(.stun) > 1);
     for 0..60 { game.simulate(Dt); }
     assert(near(enemy.hero.position.x, -115 + 9, 0.3));
 
@@ -500,11 +500,11 @@ testEnemySpells :: () {
 
     // Mira locks the enemy nearest the point in time
     game.spawnHero(0, .mira);
-    enemy.hero.stunLeft = 0;
+    enemy.hero.clearStatus(.stun);
     game.you().hero.position = Vector3{-118, 0, 0};
     enemy.hero.position = Vector3{-108, 0, 5};
     game.cast(0, 2, {-109, 4});
-    assert(enemy.hero.lockedLeft > 1.9 && !enemy.hero.canAct());
+    assert(enemy.hero.timeLeft(.timeLock) > 1.9 && !enemy.hero.canAct());
     enemy.order(core.Command{move: {-118, 20}});
     for 0..60 { game.simulate(Dt); }
     assert(near(enemy.hero.position.x, -108) && near(enemy.hero.position.z, 5));
@@ -836,7 +836,7 @@ testHazards :: () {
     for 0..60 { game.simulate(Dt); }
     assert(near(you.hero.health, health + most * 0.1, 1));
     you.backpack = core.Backpack{};
-    you.applyBoost();
+    you.refreshStats();
 
     // Rush hour: a warning, then the cars come closer after each other, then calm again
     traffic := &game.traffic;

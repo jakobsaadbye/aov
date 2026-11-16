@@ -364,19 +364,12 @@ drawAbilityButton :: (game: *Game, assets: *Assets, ability: Ability, slot: int,
     inner := Rectangle{button.x + 4, button.y + 4, button.width - 8, button.height - 8};
     DrawTexturePro(icon, source, inner, {0, 0}, 0, White);
     cooldown := hero.cooldowns[slot];
-    drawCooldown(inner, cooldown / (ability.cooldown * hero.boost.cooldown), cooldown, 26);
+    drawCooldown(inner, cooldown / (ability.cooldown * hero.stats.cooldown), cooldown, 26);
 
-    // Lit up while its effect is going on, e.g a sprint, or while it is aimed
-    isActive := false;
-    switch v in ability.effect {
-        case .sprint { isActive = hero.sprintLeft > 0; }
-        case .fade   { isActive = hero.fadeLeft > 0; }
-        case .hook   { isActive = hero.hook.hasValue(); }
-        case .leap   { isActive = hero.leap.hasValue(); }
-        else         { }
-    }
+    // Lit up while it is aimed, or just cast
     highlight: ?Color = null;
-    if isActive || slot == game.aiming { highlight = UiGold; }
+    justCast := cooldown > 0 && ability.cooldown * hero.stats.cooldown - cooldown < math.max(ability.duration, 0.3);
+    if justCast || slot == game.aiming { highlight = UiGold; }
     uiIconFrame(button, highlight);
 
     // The key in the corner
@@ -390,7 +383,7 @@ drawAbilityTooltip :: (hero: *Hero, ability: Ability, button: Rectangle, panel: 
     lines := wrapText(ability.description, 16, 330);
     defer lines.free();
     detail := "Passive";
-    if !ability.isPassive() { detail = tprint("Cooldown % s", fmt.fixed(ability.cooldown * hero.boost.cooldown, 1)); }
+    if !ability.isPassive() { detail = tprint("Cooldown % s", fmt.fixed(ability.cooldown * hero.stats.cooldown, 1)); }
     // Above the panel of the hero
     anchor := Rectangle{button.x, panel.y - 24, button.width, 1};
     uiTooltip(anchor, ability.name, UiGold, lines, detail);

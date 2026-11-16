@@ -162,8 +162,8 @@ emitEffects :: method (game: *Game, dt: f32) {
         ground := hero.ground().at(0.3);
         aura := hero.chillAura();
         if aura.hasValue() { particles.emitRate(.snow, ground, aura.value().radius * 2.5, dt, radius: aura.value().radius); }
-        if hero.boost.stench > 0 { particles.emitRate(.stench, ground, 7, dt, radius: hero.boost.stench * 0.8); }
-        if hero.boost.regen > 0 && hero.health < hero.maxHealth() && hero.hurtFor > HealDelay {
+        if hero.stats.stench > 0 { particles.emitRate(.stench, ground, 7, dt, radius: hero.stats.stench * 0.8); }
+        if hero.stats.regen > 0 && hero.health < hero.maxHealth() && hero.hurtFor > HealDelay {
             particles.emitRate(.heal, ground, 14, dt);
         }
         if hero.isFaded() { particles.emitRate(.wisps, hero.position + Vector3{0, 1.5, 0}, 30, dt); }

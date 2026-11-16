@@ -1,0 +1,203 @@
+namespace core;
+
+// Abilities. Each one carries the function that casts it, so the game never lists them: a new ability is a function and
+// an Ability that names it, in the file of its hero (core/heroes/), or here when several heroes share it. A passive has
+// no cast function, only a trait (traits.sd).
+//
+// The numbers of an ability (range, duration, radius, power, count) mean what its cast function says they mean, so the
+// HUD can show its range and the bots can judge it without knowing the ability. How a bot uses an ability is its BotUse:
+// a bot knows how to use each kind, so it can play any new ability of a kind it knows.
+
+import math;
+use raylib;
+
+// How an ability is aimed
+Targeting :: enum {
+    instant,        // Cast at once, where the hero stands (the point of the mouse is still given)
+    point,          // At a point on the ground: clicking its icon waits for a click on the ground
+    enemy,          // At the enemy nearest a point on the ground, like point
+    passive,        // Always on
+}
+
+// What a bot uses an ability for (bots/tactics.sd)
+BotUse :: enum {
+    none,           // Bots don't cast it
+    speedUp,        // Faster: when a car comes, or by the road
+    stopCars,       // Stops or slows the cars around the hero: when a car comes, or while it waits for a gap
+    stopCarsAhead,  // Stops the cars of the lanes at a point ahead, on the way across
+    escape,         // Gets to a point in range (delay seconds later): out of the way of a car, or a way across
+    untouchable,    // The cars can't hit it for a while: when one is about to
+    rewind,         // Back to where it was: out of danger, or with more health
+    heal,           // When hurt, and safe for a moment
+    knockEnemy,     // At the nearest enemy in range, knocked away: onto the road, or back
+    disableEnemy,   // An enemy in range can't move or cast for a while: best on the road, or ahead
+    pullEnemy,      // An enemy in range comes towards the hero: best through the traffic
+    swapEnemy,      // Swaps places with an enemy in range: best one far ahead
+    dropTrap,       // At a point on the way of the enemies behind it
+}
+
+// Casts the ability of player caster at a point. False when it couldn't, e.g no enemy in range: then it doesn't cool down
+CastFunction :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool;
+
+Ability :: struct {
+    name:        string;
+    description: string;
+    icon:        string;        // data/icons/<icon>.png
+    sound:       string;        // Played when it is cast, e.g "ability.sprint" (see sound.sd)
+    cooldown:    f32;           // Seconds. 0 for a passive
+    targeting:   Targeting;
+    cast:        CastFunction;  // Null for a passive
+    trait:       Trait;         // What a passive does
+    bot:         BotUse;
+
+    // What these mean is up to the cast function
+    range:       f32;           // How far it reaches. Shown around the hero while the mouse is on its icon
+    duration:    f32;
+    radius:      f32;
+    power:       f32;
+    count:       int;
+    delay:       f32;           // Seconds before it gets where it goes, e.g a leap, for the bots
+
+    isPassive :: method () -> bool {
+        return self.cast == null;
+    }
+
+    // Cast at a point the player picks: clicking its icon then waits for a click on the ground. The others are cast
+    // at once
+    aimsAtPoint :: method () -> bool {
+        return self.targeting == .point || self.targeting == .enemy;
+    }
+
+    // The circle shown around the hero while the mouse is on its icon
+    shownReach :: method () -> f32 {
+        if self.range > 0 { return self.range; }
+        return self.radius;
+    }
+}
+
+// A passive: a trait, always on
+passive :: (name: string, icon: string, description: string, trait: Trait) -> Ability {
+    return Ability{name: name, icon: icon, description: description, targeting: .passive, trait: trait};
+}
+
+// Casts the ability in a slot (0 is Q) of a player's hero, aimed at a point, if it is ready
+cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
+    hero := &game.players[index].hero;
+    if !hero.abilityReady(slot) { return; }
+    abilities := hero.abilities();
+    ability := &abilities[slot];
+    if !ability.cast(game, index, ability, target) { return; }
+    hero.cooldowns[slot] = ability.cooldown * hero.stats.cooldown;
+    if ability.sound.len > 0 { game.sounds.playAt(ability.sound, hero.position); }
+}
+
+KnockbackSpeed   :: 30.0;
+TargetSnapRadius :: 4.0;    // How far from the point of a cast an enemy may be, to be its target
+
+// The point towards a target, at most range away from a point, or nothing when the target is on the point itself
+towards :: (from: Vector2, target: Vector2, range: f32) -> ?Vector2 {
+    offset := target - from;
+    if offset.length() < 0.5 { return null; }
+    if offset.length() > range { offset = offset.normalize() * range; }
+    return from + offset;
+}
+
+// The player of the enemy hero nearest a point and within reach of it, or -1. Heroes that are faded, hidden or in the
+// air can't be targeted
+enemyNear :: method (game: *Game, index: int, point: Vector2, reach: f32) -> int {
+    best := -1;
+    bestDistance := 1000000.0;
+    for *player, i in game.players {
+        if i as int == index || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        distance := player.hero.ground().distance(point) - player.hero.info().hitRadius;
+        if distance <= reach && distance < bestDistance {
+            best = i as int;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+// The enemy a spell of the caster hits: the one nearest the point within reach of the caster, or -1
+spellTarget :: method (game: *Game, caster: int, ability: *Ability, target: Vector2) -> int {
+    hero := &game.players[caster].hero;
+    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    return game.enemyNear(caster, aim, TargetSnapRadius);
+}
+
+// Knocks a hero away from a point, unless it can't be moved
+knockAway :: method (game: *Game, victim: int, from: Vector2, distance: f32, source: int) {
+    enemy := &game.players[victim].hero;
+    if enemy.stats.unshovable { return; }
+    away := enemy.ground() - from;
+    if away.lengthSqr() < 0.01 { away = Vector2{1, 0}; }
+    away = away.normalize();
+    enemy.displacement = Displacement{to: (enemy.ground() + away * distance).at(), speed: KnockbackSpeed};
+    enemy.stop();
+    enemy.hook = null;
+    if source >= 0 {
+        enemy.harmedBy = source;
+        enemy.harmedAt = game.time;
+    }
+}
+
+//
+// Abilities that several heroes share
+//
+
+// power: times as fast, for duration
+castSprint :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    hero.addStatus(.haste, ability.duration, ability.power);
+    game.effects.addRing(hero.ground(), 0.5, 4, {255, 220, 90, 255}, 0.4);
+    return true;
+}
+
+// To the point, at most range away, over walls and cars alike
+castBlink :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    point := towards(ground, target, hero.reach(ability.range));
+    if !point.hasValue() { return false; }
+    game.effects.addRing(ground, 2, 0.3, {200, 150, 255, 255}, 0.35);
+    game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 24);
+
+    // It doesn't land inside a wall
+    landing := game.world.resolveCollisions(point.value(), hero.info().hitRadius, hero.walksThroughWalls());
+    toLanding := landing - ground;
+    hero.position = landing.at();
+    hero.stop();
+    if toLanding.lengthSqr() > 0.01 { hero.facing = math.atan2f(toLanding.x, toLanding.y); }
+    game.effects.addRing(landing, 0.3, 2.5, {200, 150, 255, 255}, 0.35);
+    game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 24);
+    return true;
+}
+
+// The cars drive through the hero for duration
+castFade :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    hero.addStatus(.fade, ability.duration);
+    game.effects.addRing(hero.ground(), 0.5, 3, {200, 210, 255, 255}, 0.5);
+    return true;
+}
+
+// Through the air to the point, at most range away, for duration seconds: over cars and walls
+castLeap :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    point := towards(ground, target, hero.reach(ability.range));
+    if !point.hasValue() { return false; }
+    hero.startLeap(point.value(), ability.duration, LeapHeight);
+    game.effects.addRing(ground, 0.5, 3, {230, 200, 150, 255}, 0.3);
+    return true;
+}
+
+// The cars within radius stop for duration
+castFreeze :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    frozen := game.traffic.freezeAround(ground, ability.radius, ability.duration + hero.stats.coldBlooded);
+    game.effects.addRing(ground, 1, ability.radius, {160, 240, 255, 255}, 0.6);
+    if frozen > 0 { game.announce(caster, {160, 240, 255, 255}, "% froze % cars", hero.info().name, frozen); }
+    return true;
+}

@@ -85,7 +85,7 @@ weight :: method (hero: *Hero) -> f32 {
 shove :: method (game: *Game, from: int, to: int) -> bool {
     attacker := &game.players[from].hero;
     victim := &game.players[to].hero;
-    if !attacker.isMoving || attacker.shoveLeft > 0 || victim.displacement.hasValue() || victim.isFaded() || attacker.isFaded() { return false; }
+    if !attacker.isMoving || attacker.shoveLeft > 0 || victim.displacement.hasValue() || victim.isFaded() || attacker.isFaded() || victim.stats.unshovable { return false; }
     offset := victim.ground() - attacker.ground();
     heading := attacker.target.xz() - attacker.ground();
     if offset.length() < 0.001 || heading.length() < 0.001 { return false; }

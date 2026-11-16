@@ -1,0 +1,63 @@
+namespace core;
+
+// Mira: a witch of time. She slows it down for everyone, turns it back for herself, and stops it for her enemies
+
+import math;
+use raylib;
+
+defineMira :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Mira", title: "the Timekeeper", color: {130, 90, 210, 255}, width: 2.4, height: 5.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 20};
+    hero.abilities.add(Ability{
+        name: "Time warp", icon: "time_warp", sound: "ability.time_warp", cooldown: 13, cast: castTimeWarp, bot: .stopCars,
+        description: "Bends time over the whole road: every car drives 70% slower for 3 seconds",
+        power: 0.7, duration: 3,
+    });
+    hero.abilities.add(Ability{
+        name: "Rewind", icon: "rewind", sound: "ability.rewind", cooldown: 10, cast: castRewind, bot: .rewind,
+        description: "Goes back to where she was 3 seconds ago, with the health she had",
+        duration: 3,
+    });
+    hero.abilities.add(Ability{
+        name: "Time lock", icon: "time_lock", sound: "ability.time_lock", cooldown: 12, targeting: .enemy, cast: castTimeLock, bot: .disableEnemy,
+        description: "Locks the enemy nearest the cursor, up to 18 away, in time: it can't move or cast for 2 seconds",
+        range: 18, duration: 2,
+    });
+    return hero;
+}
+
+// Every car drives power slower for duration
+castTimeWarp :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    game.traffic.warpTime(ability.power, ability.duration + hero.stats.coldBlooded);
+    game.effects.addRing(ground, 1, 70, {190, 140, 255, 255}, 1.1);
+    game.effects.addRing(ground, 0.5, 40, {190, 140, 255, 255}, 0.8);
+    game.announce(caster, {200, 160, 255, 255}, "% slows down time", hero.info().name);
+    return true;
+}
+
+// Back to where she was duration seconds ago, with the health she had then if it was more
+castRewind :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    back := hero.rewindSample(ability.duration);
+    if !back.hasValue() { return false; }
+    game.effects.addRing(hero.ground(), 2.5, 0.2, {120, 220, 255, 255}, 0.35);
+    hero.position = back.value().position;
+    hero.health = math.max(hero.health, back.value().health);
+    hero.stop();
+    hero.forgetTrail();
+    game.effects.addRing(hero.ground(), 0.2, 3, {120, 220, 255, 255}, 0.45);
+    return true;
+}
+
+// The enemy nearest the point can't move or cast for duration
+castTimeLock :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    player := &game.players[caster];
+    victim := game.spellTarget(caster, ability, target);
+    if victim < 0 { return false; }
+    enemy := &game.players[victim].hero;
+    enemy.addStatus(.timeLock, ability.duration, source: caster, time: game.time);
+    game.effects.addRing(enemy.ground(), 4, 1, {190, 140, 255, 255}, 0.5);
+    game.announce(victim, {200, 160, 255, 255}, "% was locked in time by % (%)!", enemy.info().name, player.hero.info().name, player.name);
+    return true;
+}

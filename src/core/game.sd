@@ -50,6 +50,7 @@ Player :: struct {
     brain:     Brain;                       // What gives the orders of a bot. Null for a player at the keyboard
     commands:  [..]Command;                 // The orders of this frame, carried out by Game.simulate
     backpack:  Backpack;                    // The items it picked up, which boost all of its heroes (items.sd)
+    perks:     [..]PerkKind;                // Picked after the crossings, for all of its heroes (perks.sd)
 
     isBot :: method () -> bool {
         return self.brain != null;
@@ -244,6 +245,7 @@ restart :: method (game: *Game) {
     for *player, i in game.players {
         player.stats = Stats{};
         player.backpack = Backpack{};
+        player.perks.clear();
         player.startSide = .left;
         player.commands.clear();
         kind := (game.rng.between(0, HeroKind.count as int - 1)) as HeroKind;
@@ -262,6 +264,7 @@ free :: method (game: *Game) {
     game.slicks.list.free();
     for *player in game.players {
         player.commands.free();
+        player.perks.free();
         if player.isBot() { player.brain.free(); }
     }
     for *frame in game.recording.frames { frame.commands.free(); }
@@ -594,7 +597,7 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
             // A car on the hero takes health, fast. Without one for a while, the hero heals
             hero := &player.hero;
             car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius);
-            if car.hasValue() && !hero.isFaded() && !hero.isAirborne() && !game.bounced(index) {
+            if car.hasValue() && !hero.carsPass() && !game.bounced(index) {
                 if hero.hurtFor > 0.3 { game.sounds.playAt("hero.hurt", hero.position, 0.8, 0.06); }
                 if hero.hurtFor > 0.3 && player.isBot() { player.brain.wasHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
@@ -605,8 +608,8 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
             } else {
                 hero.hurtFor += dt;
                 // Only a First Aid Kit heals, a while after a car was on the hero
-                if hero.hurtFor > HealDelay && hero.boost.regen > 0 {
-                    hero.health = math.min(hero.maxHealth(), hero.health + hero.maxHealth() * hero.boost.regen * dt);
+                if hero.hurtFor > HealDelay && hero.stats.regen > 0 {
+                    hero.health = math.min(hero.maxHealth(), hero.health + hero.maxHealth() * hero.stats.regen * dt);
                 }
             }
 
@@ -646,12 +649,9 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
 
     hero.timeAlive += dt;
     for *cooldown in hero.cooldowns { *cooldown = math.max(0, *cooldown - dt); }
-    hero.sprintLeft = math.max(0, hero.sprintLeft - dt);
-    hero.fadeLeft   = math.max(0, hero.fadeLeft - dt);
-    hero.stunLeft   = math.max(0, hero.stunLeft - dt);
+    hero.updateStatuses(dt);
     hero.bounceLeft = math.max(0, hero.bounceLeft - dt);
     hero.shoveLeft  = math.max(0, hero.shoveLeft - dt);
-    hero.lockedLeft = math.max(0, hero.lockedLeft - dt);
 
     if hero.leap.hasValue() {
         game.flyLeap(index, dt);
@@ -664,7 +664,14 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
         return;
     }
     if hero.hook.hasValue() && game.pullHook(index, dt) { return; }
-    if hero.stunLeft > 0 { return; }
+    if hero.isStopped() { return; }
+
+    // Scared, taunted or a puppet: it walks by itself
+    steered := hero.steeredTo();
+    if steered.hasValue() {
+        hero.target = steered.value().at();
+        hero.isMoving = true;
+    }
 
     before := hero.position;
     if game.slide(hero, dt) {
@@ -707,7 +714,7 @@ flyLeap :: method (game: *Game, index: int, dt: f32) {
     }
 
     hero.leap = null;
-    hero.position = game.world.resolveCollisions(hero.ground(), hero.info().hitRadius, false).at();
+    hero.position = game.world.resolveCollisions(hero.ground(), hero.info().hitRadius, hero.walksThroughWalls()).at();
     hero.stop();
     hero.forgetTrail();
     game.effects.addRing(hero.ground(), 0.5, 6, {230, 200, 150, 255}, 0.45);
@@ -738,246 +745,6 @@ displace :: method (game: *Game, index: int, dt: f32) {
         hero.displacement = null;       // Into a wall
         hero.stop();
     }
-}
-
-// The head of the hook now: flying out, coming back, or in the car it bit into
-hookHead :: method (game: *Game, hook: HookState, hand: Vector3) -> Vector3 {
-    if hook.car >= 0 { return game.traffic.cars[hook.car].position() + hook.bite; }
-    if hook.reeling { return hand.lerp(hook.point, hook.flight); }
-    return hook.from.lerp(hook.point, hook.flight);
-}
-
-// Moves the hook on. True while he is pulled by it, and can't walk
-pullHook :: method (game: *Game, index: int, dt: f32) -> bool {
-    hero := &game.players[index].hero;
-    hook := hero.hook.value();
-
-    pullSpeed: f32 = 40;
-    for ability in hero.abilities() {
-        switch v in ability.effect {
-            case .hook { pullSpeed = v.pullSpeed; }
-            else       { }
-        }
-    }
-
-    // It met no car: it comes back, fast, and is gone
-    if hook.reeling {
-        length := math.max(hero.position.distance(hook.point), 0.1);
-        hook.flight -= dt * HookSpeed * 2 / length;
-        if hook.flight <= 0 { hero.hook = null; }
-        else                { hero.hook = hook; }
-        return false;
-    }
-
-    // Flying out: the first car the head meets, it bites into
-    if hook.car < 0 {
-        length := math.max(hook.from.distance(hook.point), 0.1);
-        hook.flight = math.min(1, hook.flight + dt * HookSpeed / length);
-        head := hook.from.lerp(hook.point, hook.flight);
-        car := game.traffic.carIndexHitting(head.xz(), HookBiteRadius);
-        if car >= 0 {
-            hook.car = car;
-            hook.bite = Vector3{head.x, 1.2, head.z} - game.traffic.cars[car].position();
-            game.sounds.playAt("ability.hook_hit", head, 1);
-            game.effects.particles.emit(.sparks, head + Vector3{0, 1.2, 0}, 14);
-            hero.stop();
-        } else if hook.flight >= 1 {
-            hook.reeling = true;
-        }
-        hero.hook = hook;
-        return false;
-    }
-
-    // Bitten: pulled to the near side of the car, which drives on, until he is there
-    car := &game.traffic.cars[hook.car];
-    hook.pulled += dt;
-    if !car.isActive || hook.pulled > HookMaxPull {
-        hero.hook = null;
-        hero.stop();
-        return false;
-    }
-    side: f32 = -1;
-    if hero.position.x > laneCenter(car.lane) { side = 1; }
-    target := Vector2{laneCenter(car.lane) + side * (CarWidth * 0.5 + hero.info().hitRadius + 0.4), car.z + hook.bite.z};
-    toTarget := target - hero.ground();
-    distance := toTarget.length();
-    step := pullSpeed * dt;
-    // He keeps up with the car along the road, and is pulled across to it
-    along := Vector2{0, car.speed * dt};
-
-    if distance <= step + 0.4 {
-        hero.position = target.at();
-        hero.hook = null;
-        hero.stop();
-        return true;
-    }
-
-    before := hero.position;
-    hero.position += (toTarget / distance * step + along).at();
-    hero.position = game.world.resolveCollisions(hero.ground(), hero.info().hitRadius, false).at();
-    if toTarget.x != 0 { hero.facing = math.atan2f(toTarget.x, toTarget.y); }
-
-    // A wall in the way stops the pull
-    if Vector3Distance(before, hero.position) < step * 0.25 { hook.stuckFor += dt; }
-    if hook.stuckFor > 0.1 {
-        hero.hook = null;
-        hero.stop();
-        return true;
-    }
-    hero.hook = hook;
-    return true;
-}
-
-// The player of the enemy hero nearest a point and within reach of it, or -1. Heroes that are faded or in the air
-// can't be targeted
-enemyNear :: method (game: *Game, index: int, point: Vector2, reach: f32) -> int {
-    best := -1;
-    bestDistance := 1000000.0;
-    for player, i in game.players {
-        if i as int == index || !player.isPlaying() || player.hero.isFaded() || player.hero.isAirborne() { continue; }
-        distance := player.hero.ground().distance(point) - player.hero.info().hitRadius;
-        if distance <= reach && distance < bestDistance {
-            best = i as int;
-            bestDistance = distance;
-        }
-    }
-    return best;
-}
-
-// Casts the ability in a slot (0 is Q) of a player's hero, aimed at a point, if it is ready
-cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
-    player := &game.players[index];
-    hero := &player.hero;
-    if !hero.abilityReady(slot) { return; }
-
-    ability := hero.abilities()[slot];
-    ground := hero.ground();
-
-    switch v in ability.effect {
-        case .sprint {
-            hero.sprintLeft = v.duration;
-            hero.sprintMultiplier = v.speedMultiplier;
-            game.effects.addRing(ground, 0.5, 4, {255, 220, 90, 255}, 0.4);
-        }
-        case .hook {
-            point := towards(ground, target, hero.reach(v.range));
-            if !point.hasValue() { return; }
-            toTarget := point.value() - ground;
-            hero.hook = HookState{point: point.value().at(), from: hero.position};
-            if !hero.isMoving { hero.facing = math.atan2f(toTarget.x, toTarget.y); }      // He may walk on while it flies
-        }
-        case .freeze {
-            frozen := game.traffic.freezeAround(ground, v.radius, v.duration);
-            game.effects.addRing(ground, 1, v.radius, {160, 240, 255, 255}, 0.6);
-            if frozen > 0 { game.announce(index, {160, 240, 255, 255}, "% froze % cars", hero.info().name, frozen); }
-        }
-        case .blink {
-            point := towards(ground, target, hero.reach(v.range));
-            if !point.hasValue() { return; }
-            game.effects.addRing(ground, 2, 0.3, {200, 150, 255, 255}, 0.35);
-            game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 24);
-
-            // Over walls and cars alike, but it doesn't land inside a wall
-            landing := game.world.resolveCollisions(point.value(), hero.info().hitRadius, hero.walksThroughWalls());
-            toLanding := landing - ground;
-            hero.position = landing.at();
-            hero.stop();
-            if toLanding.lengthSqr() > 0.01 { hero.facing = math.atan2f(toLanding.x, toLanding.y); }
-            game.effects.addRing(landing, 0.3, 2.5, {200, 150, 255, 255}, 0.35);
-            game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 24);
-        }
-        case .fade {
-            hero.fadeLeft = v.duration;
-            game.effects.addRing(ground, 0.5, 3, {200, 210, 255, 255}, 0.5);
-        }
-        case .leap {
-            point := towards(ground, target, hero.reach(v.range));
-            if !point.hasValue() { return; }
-            toTarget := point.value() - ground;
-            hero.leap = LeapState{from: hero.position, to: point.value().at(), duration: v.duration};
-            hero.isMoving = false;
-            hero.facing = math.atan2f(toTarget.x, toTarget.y);
-            game.effects.addRing(ground, 0.5, 3, {230, 200, 150, 255}, 0.3);
-        }
-        case .halt {
-            lane := laneAt(hero.position.x);
-            first := math.max(lane - v.lanes, 0);
-            last := math.min(lane + v.lanes, LaneCount - 1);
-            line := hero.position.z - 5;
-            game.traffic.halt(first, last, line, v.duration);
-            game.stopSigns.add(StopSign{position: hero.position, timeLeft: v.duration, lanes: [first, last], line: line});
-            game.effects.addRing(ground, 1, 9, {255, 70, 60, 255}, 0.5);
-        }
-        case .timeWarp {
-            game.traffic.warpTime(v.slow, v.duration);
-            game.effects.addRing(ground, 1, 70, {190, 140, 255, 255}, 1.1);
-            game.effects.addRing(ground, 0.5, 40, {190, 140, 255, 255}, 0.8);
-            game.announce(index, {200, 160, 255, 255}, "% slows down time", hero.info().name);
-        }
-        case .rewind {
-            back := hero.rewindSample(v.seconds);
-            if !back.hasValue() { return; }
-            game.effects.addRing(ground, 2.5, 0.2, {120, 220, 255, 255}, 0.35);
-            hero.position = back.value().position;
-            hero.health = math.max(hero.health, back.value().health);
-            hero.stop();
-            hero.forgetTrail();
-            game.effects.addRing(hero.ground(), 0.2, 3, {120, 220, 255, 255}, 0.45);
-        }
-        case .bash {
-            victim := game.enemyNear(index, ground, hero.reach(v.range));
-            if victim < 0 { return; }
-            enemy := &game.players[victim].hero;
-            away := enemy.ground() - ground;
-            if away.lengthSqr() < 0.01 { away = Vector2{player.startSide.opposite().sign(), 0}; }
-            away = away.normalize();
-            hero.facing = math.atan2f(away.x, away.y);
-            enemy.harmedBy = index;
-            enemy.harmedAt = game.time;
-            enemy.stunLeft = math.max(enemy.stunLeft, v.stun);
-            enemy.displacement = Displacement{to: (enemy.ground() + away * v.knockback).at(), speed: KnockbackSpeed};
-            enemy.stop();
-            enemy.hook = null;
-            game.effects.addRing(enemy.ground(), 0.5, 3.5, {255, 230, 150, 255}, 0.35);
-            game.effects.particles.emit(.sparks, enemy.position + Vector3{0, 2.5, 0}, 16, push: away.at(4));
-            game.effects.particles.emit(.shove, enemy.position + Vector3{0, 1.5, 0}, 8);
-            game.announce(victim, {255, 200, 120, 255}, "% was bashed by % (%)!", enemy.info().name, hero.info().name, player.name);
-        }
-        case .timeLock {
-            aim := towards(ground, target, hero.reach(v.range)) ?? ground;
-            victim := game.enemyNear(index, aim, TargetSnapRadius);
-            if victim < 0 { return; }
-            enemy := &game.players[victim].hero;
-            enemy.harmedBy = index;
-            enemy.harmedAt = game.time;
-            enemy.stunLeft = math.max(enemy.stunLeft, v.duration);
-            enemy.lockedLeft = v.duration;
-            enemy.stop();
-            enemy.hook = null;
-            game.effects.addRing(enemy.ground(), 4, 1, {190, 140, 255, 255}, 0.5);
-            game.announce(victim, {200, 160, 255, 255}, "% was locked in time by % (%)!", enemy.info().name, hero.info().name, player.name);
-        }
-        case .phaseWalk
-        case .quickFeet
-        case .chillAura
-        case .ironHide {
-            return;     // A passive is always on
-        }
-    }
-
-    hero.cooldowns[slot] = ability.cooldown * hero.boost.cooldown;
-    if ability.sound.len > 0 { game.sounds.playAt(ability.sound, hero.position); }
-}
-
-KnockbackSpeed   :: 30.0;
-TargetSnapRadius :: 4.0;    // How far from the point of a cast an enemy may be, to be its target
-
-// The point towards a target, at most range away from a point, or nothing when the target is on the point itself
-towards :: (from: Vector2, target: Vector2, range: f32) -> ?Vector2 {
-    offset := target - from;
-    if offset.length() < 0.5 { return null; }
-    if offset.length() > range { offset = offset.normalize() * range; }
-    return from + offset;
 }
 
 // Casts an ability of the player at the keyboard, aimed at the mouse, at once. For tests and debugging
@@ -1086,8 +853,8 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
 
     player.hero  = newHero(kind, spot, facing);
     player.phase = .playing;
-    player.hero.boost = boostOf(player.backpack.list());
-    player.hero.savesLeft = player.hero.boost.saves;
+    player.hero.stats = statsOf(player);
+    player.hero.savesLeft = player.hero.stats.saves;
     player.hero.health = player.hero.maxHealth();
     if index == game.watched { game.sounds.play("hero.spawn", 0.6); }
 }

@@ -184,8 +184,8 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     if hero.isMoving || hero.hook.hasValue() { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
     if player.phase.kind == .crossed         { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
     if hero.walksThroughWalls()             { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
-    if hero.leap.hasValue()                 { bob = math.sinf(hero.leap.value().flight * Pi) * LeapHeight; }
-    if hero.stunLeft > 0                     { bob = 0; }
+    if hero.leap.hasValue()                 { bob = math.sinf(hero.leap.value().flight * Pi) * hero.leap.value().height; }
+    if hero.isStopped()                     { bob = 0; }
 
     // A shadow that stays on the ground, and a circle in the color of the player, as under the units of Warcraft.
     // Yours is thicker
@@ -200,16 +200,16 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     tint := White;
     if hero.walksThroughWalls() { tint.a = 150; }      // Ghosty is see-through
     if hero.isFaded()           { tint.a = 70; }       // and more so when he fades
-    if hero.lockedLeft > 0      { tint = {200, 160, 255, 255}; }
+    if hero.has(.timeLock)      { tint = {200, 160, 255, 255}; }
     assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
 
     // Stunned: stars going round over the head. Locked in time: a clock face over it
     top := hero.position + Vector3{0, info.height + 0.6, 0};
-    if hero.lockedLeft > 0 {
+    if hero.has(.timeLock) {
         DrawCylinderEx(top, top + Vector3{0, 0.1, 0}, 1.2, 1.2, 20, {230, 210, 255, 200});
         angle := -GetTime() as f32 * 6;
         DrawCylinderEx(top + Vector3{0, 0.12, 0}, top + Vector3{math.sinf(angle) * 0.9, 0.12, math.cosf(angle) * 0.9}, 0.08, 0.08, 4, {60, 30, 90, 255});
-    } else if hero.stunLeft > 0 {
+    } else if hero.has(.stun) {
         for k in 0..3 {
             angle := GetTime() as f32 * 5 + k as f32 * Pi * 2 / 3;
             DrawSphere(top + Vector3{math.sinf(angle) * 0.9, 0, math.cosf(angle) * 0.9}, 0.22, {255, 230, 90, 255});
@@ -294,13 +294,8 @@ drawAbilityHints :: (game: *Game) {
 
     // Where a rewind would take her: a faint copy of her, there
     for ability, slot in abilities {
-        seconds: f32 = 0;
-        switch v in ability.effect {
-            case .rewind { seconds = v.seconds; }
-            else         { continue; }
-        }
-        if !hero.abilityReady(slot as int) { continue; }
-        back := hero.rewindSample(seconds);
+        if ability.bot != .rewind || !hero.abilityReady(slot as int) { continue; }
+        back := hero.rewindSample(ability.duration);
         if !back.hasValue() || Vector3Distance(back.value().position, hero.position) < 1.5 { continue; }
         DrawCircle3D(back.value().position + Vector3{0, 0.16, 0}, hero.info().width * 0.6, {1, 0, 0}, 90, {120, 220, 255, 140});
     }
@@ -309,16 +304,8 @@ drawAbilityHints :: (game: *Game) {
     if shown < 0 { shown = game.aiming; }
     if shown < 0 || shown >= abilities.count { return; }
 
-    reach: f32 = 0;
-    switch v in abilities[shown].effect {
-        case .hook   { reach = v.range; }
-        case .blink  { reach = v.range; }
-        case .freeze { reach = v.radius; }
-        case .leap   { reach = v.range; }
-        case .bash   { reach = v.range; }
-        case .timeLock { reach = v.range; }
-        else         { }
-    }
+    reach := abilities[shown].shownReach();
+    if abilities[shown].range > 0 { reach = hero.reach(reach); }
     if reach > 0 {
         DrawCircle3D(ground.at(0.15), reach, {1, 0, 0}, 90, {255, 255, 255, 90});
         DrawCircle3D(ground.at(0.15), reach - 0.15, {1, 0, 0}, 90, {255, 255, 255, 90});

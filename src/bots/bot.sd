@@ -317,14 +317,14 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
 
     speed := hero.speed();
     sprintSpeed := speed;
-    if hero.sprintLeft > 0 { speed = speed / hero.sprintMultiplier; }
+    if hero.has(.haste) { speed = speed / hero.status(.haste).amount; }
     request := PlanRequest{
         start:       hero.ground(),
         goalSide:    game.players[me].startSide.opposite(),
         goalPoint:   bot.chasing,
         speed:       speed,
         sprintSpeed: sprintSpeed,
-        sprintLeft:  hero.sprintLeft,
+        sprintLeft:  hero.timeLeft(.haste),
         now:         game.time,
         waitOnRoad:  bot.gene(.waitOnRoad),
     };
@@ -461,10 +461,11 @@ chooseAbility :: method (bot: *Bot, game: *Game, me: int) -> ?Command {
     bestScore := bot.gene(.castBar);
     bot.decision.bar = bestScore;
     best: ?Command = null;
-    for ability, slot in hero.abilities() {
+    abilities := hero.abilities();
+    for ability, slot in abilities {
         bot.decision.scores[slot] = -1;                         // Not ready, or a passive
         if !hero.abilityReady(slot as int) { continue; }
-        choice := bot.scoreAbility(game, view, ability);
+        choice := bot.scoreAbility(game, view, &abilities[slot]);
         bot.decision.scores[slot] = choice.score;
         if choice.score > bestScore {
             bestScore = choice.score;
@@ -480,67 +481,94 @@ AbilityChoice :: struct {
     target: Vector2;
 }
 
-// How much it wants to cast an ability now, and at what
-// How much it wants to cast an ability now, and at what. The weights are genes, so training decides what is worth it
-scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Ability) -> AbilityChoice {
+// How much it wants to cast an ability now, and at what. It only knows what kind of ability it is (its BotUse), so it
+// plays any ability of a kind it knows. The weights are genes, so training decides what is worth it
+scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: *Ability) -> AbilityChoice {
     no := AbilityChoice{0, view.ground};
     here := AbilityChoice{0, view.ground};
     inDanger := view.danger < bot.gene(.dangerTime);
     waiting := view.onRoad && bot.isWaiting(game);
     aggression := bot.gene(.aggression);
-    reach := game.players[view.me].hero.boost.reach;        // The spyglass
+    hero := &game.players[view.me].hero;
+    range := hero.reach(ability.range);
 
-    switch v in ability.effect {
-        case .sprint {
+    switch ability.bot {
+        case .none {
+            return no;
+        }
+        case .speedUp {
             if inDanger            { here.score = bot.gene(.speedUpDanger); }
             else if view.nearRoad  { here.score = bot.gene(.speedUp); }
             return here;
         }
-        case .hook {
-            // It only bites into cars, and pulls him next to the car: a way across that the planner doesn't know yet
-            return no;
-        }
-        case .freeze
-        case .halt
-        case .timeWarp {
+        case .stopCars {
             if inDanger     { here.score = bot.gene(.stopCars); }
             else if waiting { here.score = bot.gene(.stopCarsWaiting); }
             return here;
         }
-        case .blink {
-            if inDanger { return bot.escape(game, view, (v.range * reach), 0, bot.gene(.escape)); }
-            if view.nearRoad { return bot.shortcut(game, view, (v.range * reach), 0, bot.gene(.shortcut)); }
+        case .stopCarsAhead {
+            // The lanes just ahead of it, on its way across
+            if !inDanger && !waiting { return no; }
+            ahead := view.ground + Vector2{view.goalSide.sign() * math.min(LaneWidth * 1.5, range), 0};
+            score := bot.gene(.stopCarsWaiting);
+            if inDanger { score = bot.gene(.stopCars); }
+            return AbilityChoice{score, ahead};
+        }
+        case .escape {
+            if inDanger { return bot.escape(game, view, range, ability.delay, bot.gene(.escape)); }
+            if view.nearRoad { return bot.shortcut(game, view, range, ability.delay, bot.gene(.shortcut)); }
             return no;
         }
-        case .fade {
+        case .untouchable {
             if view.danger < bot.gene(.dangerTime) * 0.6 { here.score = bot.gene(.escape); }
             return here;
-        }
-        case .leap {
-            if inDanger { return bot.escape(game, view, (v.range * reach), v.duration, bot.gene(.escape)); }
-            if view.nearRoad { return bot.shortcut(game, view, (v.range * reach), v.duration, bot.gene(.shortcut)); }
-            return no;
         }
         case .rewind {
             if view.danger < bot.gene(.dangerTime) * 0.7 { here.score = bot.gene(.escape); }
             else if view.healthShare < bot.gene(.rewindHealth) { here.score = 0.9; }
             return here;
         }
-        case .bash {
-            enemy := game.enemyNear(view.me, view.ground, (v.range * reach));
-            if enemy < 0 || aggression <= 0 { return no; }
-            return AbilityChoice{bot.bashScore(game, view, enemy, v.knockback) * aggression, game.players[enemy].hero.ground()};
+        case .heal {
+            if view.healthShare < 0.6 && !inDanger { here.score = 1 - view.healthShare; }
+            return here;
         }
-        case .timeLock {
-            enemy := bot.enemyToPunish(game, view, (v.range * reach));
+        case .knockEnemy {
+            enemy := game.enemyNear(view.me, view.ground, range);
+            if enemy < 0 || aggression <= 0 { return no; }
+            return AbilityChoice{bot.bashScore(game, view, enemy, ability.power) * aggression, game.players[enemy].hero.ground()};
+        }
+        case .disableEnemy
+        case .pullEnemy {
+            enemy := bot.enemyToPunish(game, view, range);
             if enemy < 0 || aggression <= 0 { return no; }
             return AbilityChoice{aggression * bot.punishScore(game, view, enemy), game.players[enemy].hero.ground()};
         }
-        case .phaseWalk
-        case .quickFeet
-        case .chillAura
-        case .ironHide {
-            return no;          // Passives are always on
+        case .swapEnemy {
+            // One that is well ahead of it, and not on the road
+            best := -1;
+            bestGain: f32 = 0;
+            for *player, i in game.players {
+                if i as int == view.me || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+                ground := player.hero.ground();
+                if ground.distance(view.ground) > range || isOnRoad(ground) { continue; }
+                gain := progressOf(ground, game.players[view.me].startSide) - view.progress;
+                if gain > bestGain {
+                    best = i as int;
+                    bestGain = gain;
+                }
+            }
+            if best < 0 || bestGain < 0.2 { return no; }
+            return AbilityChoice{math.min(bestGain * 2, 1), game.players[best].hero.ground()};
+        }
+        case .dropTrap {
+            // Where an enemy behind it will walk: by its feet, while it is on the road ahead of them
+            if aggression <= 0 || !view.onRoad { return no; }
+            for player, i in game.players {
+                if i as int == view.me || !player.isPlaying() { continue; }
+                behind := view.progress - progressOf(player.hero.ground(), player.startSide);
+                if behind > 0.05 && behind < 0.4 { return AbilityChoice{aggression * 0.6, view.ground}; }
+            }
+            return no;
         }
     }
 }
@@ -563,7 +591,7 @@ enemyToPunish :: method (bot: *Bot, game: *Game, view: TacticsView, reach: f32) 
     best := -1;
     bestScore: f32 = 0;
     for player, i in game.players {
-        if i as int == view.me || !player.isPlaying() || player.hero.isFaded() || player.hero.isAirborne() { continue; }
+        if i as int == view.me || !player.isPlaying() || !player.hero.isTargetable() { continue; }
         ground := player.hero.ground();
         if ground.distance(view.ground) > reach { continue; }
         score: f32 = 0;
@@ -661,7 +689,7 @@ wasHit :: method (bot: *Bot, game: *Game, index: int, car: *Car) {
     newCar := car.age < game.time - bot.searchedAt;
     console.print("HIT car new since the plan: % (age % s, plan % s old, forecast % s old)", newCar, fmt.fixed(car.age, 2), fmt.fixed(game.time - bot.searchedAt, 2), fmt.fixed(game.time - bot.forecastAt, 2));
     console.print("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % z % speed % frozen % braking %",
-        fmt.fixed(game.time, 2), game.players[index].name, fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.isMoving, hero.canAct(), fmt.fixed(hero.stunLeft, 2),
+        fmt.fixed(game.time, 2), game.players[index].name, fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.isMoving, hero.canAct(), fmt.fixed(hero.timeLeft(.stun), 2),
         fmt.fixed(rel, 2), fmt.fixed(bot.forecast.safeFor(hero.ground(), rel), 2), car.lane, fmt.fixed(car.z, 1), fmt.fixed(car.speed, 1), fmt.fixed(car.frozenLeft, 1), car.isBraking);
     if bot.next < bot.plan.count {
         w := bot.plan[bot.next];
