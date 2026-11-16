@@ -61,6 +61,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
     if game.showHelp       { drawHelp(); }
     if game.debug.overlay  { drawDebug(game); }
     drawInspectorPanel(game);
+    drawResults(game);
     if game.isPaused       { drawPaused(game); }
 
     mouse := GetMousePosition();
@@ -87,7 +88,7 @@ drawScoreboard :: (game: *Game, assets: *Assets) {
     y := panel.y as int + 10;
     drawTitle("Allan over vejen", x, y, 22, {255, 210, 90, 255});
     difficulty := Difficulty.names[game.difficulty];
-    drawText(fmt.sprint("Level %  ·  %", game.level() + 1, difficulty), x + 230, y + 4, 16, DimColor);
+    drawText(fmt.sprint("First to %  ·  %", game.length.crossingsToWin(), difficulty), x + 230, y + 4, 16, DimColor);
 
     headerY := y + 32;
     drawText("Across", x + 200, headerY, 14, DimColor);
@@ -468,14 +469,24 @@ drawPaused :: (game: *Game) {
     hint := "Press P or Esc to go on";
     drawText(hint, centerX - textWidth(hint, 20) / 2, centerY - 14, 20, DimColor);
 
-    // The difficulty of the bots, which changes with the arrow keys and is for the next game
+    // The settings of the next game: up and down pick one, left and right change it
     chosen := game.nextDifficulty ?? game.difficulty;
     name := Difficulty.names[chosen];
-    level := fmt.sprint("Bots:   <  %%  >", name.slice(0, 1).toUpper(), name.slice(1));
-    drawTitle(level, centerX - titleWidth(level, 30) / 2, centerY + 30, 30, {255, 210, 90, 255});
-    note := "Left and right to change";
-    if chosen != game.difficulty { note = "From the next game: press F5"; }
-    drawText(note, centerX - textWidth(note, 18) / 2, centerY + 72, 18, DimColor);
+    length := game.nextLength ?? game.length;
+    lengthName := GameLength.names[length];
+    rows := [
+        tprint("Bots:   <  %%  >", name.slice(0, 1).toUpper(), name.slice(1)),
+        tprint("Game:   <  %%, first to %  >", lengthName.slice(0, 1).toUpper(), lengthName.slice(1), length.crossingsToWin()),
+    ];
+    for row, i in rows {
+        y := centerY + 30 + i as int * 48;
+        color := DimColor;
+        if i == game.pauseRow { color = {255, 210, 90, 255}; }
+        drawTitle(row, centerX - titleWidth(row, 30) / 2, y, 30, color);
+    }
+    note := "Up and down to pick, left and right to change";
+    if chosen != game.difficulty || length != game.length { note = "From the next game: press F5"; }
+    drawText(note, centerX - textWidth(note, 18) / 2, centerY + 132, 18, DimColor);
 }
 
 drawPanel :: (rect: Rectangle) {

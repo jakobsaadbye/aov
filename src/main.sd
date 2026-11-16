@@ -29,6 +29,7 @@ Session :: struct {
     isStale:     bool = true;       // The game must be made again, with the settings
     bots:        int = DefaultBots;
     difficulty:  core.Difficulty = .normal;
+    length:      core.GameLength = .medium;
     spectate:    bool;
     seed:        ?u64;
     replayFile:  ?string;
@@ -67,6 +68,7 @@ ensureGame :: method (session: *Session) {
         } else {
             game = bots.newReplay(recording);
             session.difficulty = recording.difficulty;
+            session.length = recording.length;
         }
     }
     if game == null {
@@ -74,6 +76,7 @@ ensureGame :: method (session: *Session) {
         humans := 1;
         if session.spectate { humans = 0; }
         game = bots.newGame(seed, bots: session.bots, humans: humans, difficulty: session.difficulty);
+        game.setLength(session.length);
     }
 
     old := session.game;
@@ -137,6 +140,12 @@ setSeed :: (session: *Session, seed: int) {
 @console.command("How good the bots are. Starts a new game")
 setDifficulty :: (session: *Session, difficulty: core.Difficulty) {
     session.difficulty = difficulty;
+    newGame(session);
+}
+
+@console.command("How many crossings win: short (5), medium (10) or long (15). Starts a new game")
+setGameLength :: (session: *Session, length: core.GameLength) {
+    session.length = length;
     newGame(session);
 }
 

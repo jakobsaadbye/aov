@@ -1,0 +1,164 @@
+namespace core;
+
+// A game is a match: the first to cross the road a number of times wins (short, medium or long). Every crossing ends a
+// round: the others stop where they are and start again from the side it got to, so everyone always races from the
+// same side. And heroes can shove each other: one that walks into an enemy pushes it away, further when it is heavier.
+
+import console;
+import fmt;
+import math;
+use raylib;
+
+GameLength :: enum {
+    short,
+    medium,
+    long,
+}
+
+crossingsToWin :: method (length: GameLength) -> int {
+    return switch length {
+        case .short  => 5;
+        case .medium => 10;
+        case .long   => 15;
+    };
+}
+
+EndTime      :: 8.0;    // Seconds the results are shown before the next game starts
+RegroupTime  :: 1.6;    // Seconds the others stand still after a crossing, before they start from the other side
+
+// Somebody crossed: they win when it was their last crossing, and otherwise everyone starts again from that side
+endRound :: method (game: *Game, index: int) {
+    crosser := &game.players[index];
+    game.side = crosser.startSide.opposite();
+    if crosser.stats.crossings >= game.length.crossingsToWin() && game.winner < 0 {
+        game.win(index);
+        return;
+    }
+    for *player, i in game.players {
+        if i == index { continue; }
+        player.hero.stop();
+        player.phase = Phase{regroup: {timeLeft: RegroupTime}};
+    }
+}
+
+win :: method (game: *Game, index: int) {
+    game.winner = index;
+    game.endLeft = EndTime;
+    for *player in game.players { player.hero.stop(); }
+    player := &game.players[index];
+    if index == game.local { game.showBanner({255, 210, 90, 255}, "You win!"); }
+    else                   { game.showBanner({255, 210, 90, 255}, "% wins!", player.name); }
+    game.sounds.play("hero.crossed", 1);
+}
+
+// How many crossings win, for a game that has just been made (and its recording)
+setLength :: method (game: *Game, length: GameLength) {
+    game.length = length;
+    game.recording.length = length;
+}
+
+isOver :: method (game: *Game) -> bool {
+    return game.winner >= 0;
+}
+
+// While the results are shown: the next game when the time is up
+updateMatch :: method (game: *Game, dt: f32) {
+    if !game.isOver() { return; }
+    game.endLeft -= dt;
+    if game.endLeft <= 0 && game.replay == null { game.restartPending = true; }
+}
+
+//
+// Shoving
+//
+
+ShoveDistance :: 2.4;   // How far a hero pushes one as heavy as itself
+ShoveSpeed    :: 16.0;
+ShoveCooldown :: 1.2;   // Seconds before a hero can shove again
+
+// How heavy a hero is, for shoving: the heavier pushes harder and is pushed less
+weight :: method (hero: *Hero) -> f32 {
+    return hero.info().maxHealth;
+}
+
+// A hero that walks into another pushes it away. True when it did
+shove :: method (game: *Game, from: int, to: int) -> bool {
+    attacker := &game.players[from].hero;
+    victim := &game.players[to].hero;
+    if !attacker.isMoving || attacker.shoveLeft > 0 || victim.displacement.hasValue() || victim.isFaded() || attacker.isFaded() { return false; }
+    offset := victim.ground() - attacker.ground();
+    heading := attacker.target.xz() - attacker.ground();
+    if offset.length() < 0.001 || heading.length() < 0.001 { return false; }
+    direction := offset.normalize();
+    if direction.dot(heading.normalize()) < 0.5 { return false; }     // Not walking into it
+
+    ratio := math.clamp(math.sqrtf(attacker.weight() / victim.weight()), 0.6, 2.0);
+    victim.displacement = Displacement{to: (victim.ground() + direction * ShoveDistance * ratio).at(), speed: ShoveSpeed};
+    victim.isMoving = false;
+    victim.harmedBy = from;
+    victim.harmedAt = game.time;
+    attacker.shoveLeft = ShoveCooldown;
+    game.effects.addRing(victim.ground(), 0.3, 2.5, {255, 255, 255, 255}, 0.25);
+    game.sounds.playAt("ability.shield_bash", victim.position, 0.45, 0.1);
+    return true;
+}
+
+//
+// The results, at the end of a game
+//
+
+drawResults :: (game: *Game) {
+    if !game.isOver() { return; }
+    order: [..]int;
+    for _, i in game.players { order.add(i as int); }
+    defer order.free();
+    for i in 1..order.count {
+        j := i;
+        while j > 0 && (order[j] == game.winner || (order[j - 1] != game.winner && isAhead(game.players[order[j]], game.players[order[j - 1]]))) {
+            order.swap(j, j - 1);
+            j -= 1;
+        }
+    }
+
+    width := 520;
+    rowHeight := 30;
+    height := 150 + order.count as int * rowHeight;
+    x := (GetScreenWidth() - width) / 2;
+    y := GetScreenHeight() / 2 - height / 2 - 40;
+    DrawRectangleRounded({x as f32, y as f32, width as f32, height as f32}, 0.08, 6, {14, 16, 20, 235});
+    drawPanel({x as f32, y as f32, width as f32, height as f32});
+    winner := game.players[game.winner];
+    title := tprint("% wins!", winner.name);
+    if game.winner == game.local { title = "You win!"; }
+    drawTitle(title, x + (width - titleWidth(title, 40)) / 2, y + 16, 40, {255, 210, 90, 255});
+
+    headerY := y + 74;
+    drawText("Across", x + 270, headerY, 15, DimColor);
+    drawText("Run over", x + 340, headerY, 15, DimColor);
+    drawText("Kills", x + 430, headerY, 15, DimColor);
+    for index, row in order {
+        player := game.players[index];
+        rowY := headerY + 24 + row as int * rowHeight;
+        if index == game.winner { DrawRectangle(x + 6, rowY - 4, width - 12, rowHeight, {255, 210, 90, 40}); }
+        DrawRectangle(x + 20, rowY + 4, 12, 12, player.color);
+        drawText(tprint("%. %", row + 1, player.name), x + 42, rowY, 20, TextColor);
+        drawText(tprint("%", player.stats.crossings), x + 290, rowY, 20, TextColor);
+        drawText(tprint("%", player.stats.deaths), x + 360, rowY, 20, DimColor);
+        drawText(tprint("%", player.stats.kills), x + 440, rowY, 20, DimColor);
+    }
+    note := tprint("The next game in % s  ·  F5 to start it now", math.ceilf(math.max(game.endLeft, 0)) as int);
+    drawText(note, x + (width - textWidth(note, 17)) / 2, y + height - 34, 17, DimColor);
+}
+
+@console.command("Ends the game now, with a player as the winner, the one ahead when none is given")
+winGame :: (game: *Game, player: ?int) {
+    index := player ?? 0;
+    if !player.hasValue() {
+        for p, i in game.players { if isAhead(p, game.players[index]) { index = i as int; } }
+    }
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %", index);
+        return;
+    }
+    game.win(index);
+}

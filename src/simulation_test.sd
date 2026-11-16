@@ -39,6 +39,7 @@ main :: () {
     testHazards();
     testSpectating();
     testItemAuras();
+    testMatch();
     fmt.print("All simulation tests passed");
 }
 
@@ -931,4 +932,46 @@ testItemAuras :: () {
     for 0..60 { game.simulate(Dt); }
     assert(you.isPlaying() && you.stats.deaths == 0 && you.hero.bounceLeft > 0);
     assert(you.hero.position.x > core.laneCenter(3) + 4);
+}
+
+// A match: a crossing ends the round for everyone, the first to enough crossings wins, and heroes shove each other
+testMatch :: () {
+    game := bots.newGame(18, bots: 2);
+    defer game.free();
+    clearRoad(game);
+    for *player in game.players { player.brain = null; }
+    game.setLength(.short);
+    assert(game.length.crossingsToWin() == 5 && game.recording.length == .short);
+
+    // You cross: the others stop, and all start again from the far side, the others with the same hero
+    other := &game.players[1];
+    kind := other.hero.kind;
+    game.heroCrossed(0);
+    assert(other.phase.kind == .regroup && game.side == .right);
+    for 0..((core.RegroupTime + 0.2) * 60) as int { game.simulate(Dt); }
+    for player in game.players { assert(player.isPlaying() && player.startSide == .right); }
+    assert(other.hero.kind == kind && other.hero.position.x > 0);
+
+    // The fifth crossing wins: the heroes stand still, the results are shown, then a new game starts
+    game.you().stats.crossings = 4;
+    game.heroCrossed(0);
+    assert(game.isOver() && game.winner == 0);
+    position := game.players[2].hero.position;
+    game.players[2].order(core.Command{move: {0, 0}});
+    for 0..60 { game.step(Dt); }
+    assert(game.players[2].hero.position == position);
+    for 0..((core.EndTime + 0.5) * 60) as int { game.step(Dt); }
+    assert(!game.isOver() && game.you().stats.crossings == 0 && game.length == .short);
+
+    // Shoving: walking into an enemy pushes it away, further for a heavier hero, and counts for a kill
+    clearRoad(game);
+    game.spawnHero(0, .butcher);
+    game.spawnHero(1, .allan);
+    game.you().hero.position = Vector3{-60, 0, 0};
+    other.hero.position = Vector3{-58, 0, 0};
+    other.hero.stop();
+    game.you().hero.moveTo(Vector3{-40, 0, 0});
+    for 0..30 { game.simulate(Dt); }
+    assert(other.hero.position.x > -58 + core.ShoveDistance && other.hero.harmedBy == 0);
+    assert(game.you().hero.shoveLeft > 0);
 }

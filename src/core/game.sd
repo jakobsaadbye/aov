@@ -19,6 +19,7 @@ Phase :: union {
     playing;
     runOver: struct { timeLeft: f32; };     // The hero was hit, and the next one comes soon
     crossed: struct { timeLeft: f32; };     // The hero made it, and celebrates for a moment
+    regroup: struct { timeLeft: f32; };     // Another made it: it stands still, then starts again from that side
 }
 
 Stats :: struct {
@@ -164,6 +165,12 @@ Game :: struct {
     items:       Items;                     // The item on the road, and when the next one comes (items.sd)
     slicks:      Slicks;                    // The oil on the road (slicks.sd)
     restarts:    int;                       // Games started, the first one too
+    length:      GameLength = .medium;      // How many crossings win (match.sd)
+    nextLength:  ?GameLength;               // Chosen while paused, for the next game
+    pauseRow:    int;                       // The setting the arrow keys change on the pause screen
+    side:        Side = .left;              // Where everybody starts from, in this round
+    winner:      int = -1;                  // Who won, while the results are shown
+    endLeft:     f32;                       // Seconds until the next game
 }
 
 // Says when a rush hour is coming, starts and ends, and sounds the siren of an ambulance
@@ -220,6 +227,8 @@ restart :: method (game: *Game) {
     game.stopSigns.clear();
     // Seeded by the games so far, so a replay has the same items and oil as the game it recorded
     game.restarts += 1;
+    game.winner = -1;
+    game.side = .left;
     game.items = newItems(game.recording.seed + game.restarts as u64);
     game.slicks.list.free();
     game.slicks = newSlicks(game.recording.seed + game.restarts as u64);
@@ -316,13 +325,18 @@ handleKeys :: method (game: *Game) {
     if IsKeyPressed(.h)  { game.showHelp = !game.showHelp; }
     if IsKeyPressed(.f8) { game.saveRecordingNow(); }
     if game.isPaused && game.replay == null {
-        // The difficulty of the bots, for the next game (F5)
+        // The settings of the next game (F5): up and down pick one, left and right change it
+        if IsKeyPressed(.up) || IsKeyPressed(.down) { game.pauseRow = 1 - game.pauseRow; }
         step := 0;
         if IsKeyPressed(.left)  { step = -1; }
         if IsKeyPressed(.right) { step = 1; }
-        if step != 0 {
+        if step != 0 && game.pauseRow == 0 {
             current := (game.nextDifficulty ?? game.difficulty) as int;
             game.nextDifficulty = ((current + step + Difficulty.count) % Difficulty.count) as Difficulty;
+        }
+        if step != 0 && game.pauseRow == 1 {
+            current := (game.nextLength ?? game.length) as int;
+            game.nextLength = ((current + step + GameLength.count) % GameLength.count) as GameLength;
         }
     }
     game.updateInspector();
@@ -350,6 +364,8 @@ step :: method (game: *Game, dt: f32) {
     if restart && game.nextDifficulty.hasValue() && game.nextDifficulty.value() != game.difficulty {
         difficulty = game.nextDifficulty;
     }
+    length: ?GameLength = null;
+    if restart && game.nextLength.hasValue() && game.nextLength.value() != game.length { length = game.nextLength; }
     if game.replay != null {
         if game.replay.isFinished() { return; }
         frame := game.replay.recording.frames[game.replay.frame];
@@ -358,12 +374,18 @@ step :: method (game: *Game, dt: f32) {
         hero = frame.hero;
         if frame.nextHero && game.hasLocal() { hero = ((game.players[game.local].hero.kind as int + 1) % HeroKind.count) as HeroKind; }    // Older recordings
         difficulty = frame.difficulty;
+        length = frame.length;
     } else {
         game.recordFrame(step, restart, hero);
         game.recording.frames[game.recording.frames.count - 1].difficulty = difficulty;
+        game.recording.frames[game.recording.frames.count - 1].length = length;
     }
 
     if difficulty.hasValue() { game.setDifficulty(difficulty.value()); }
+    if length.hasValue() {
+        game.length = length.value();
+        game.nextLength = null;
+    }
     if restart {
         game.restart();
         game.showBanner(White, "New game");
@@ -420,12 +442,16 @@ simulate :: method (game: *Game, dt: f32) {
     game.time += dt;
     game.updateStench();
 
+    // While the results are shown, the heroes stand still
+    over := game.isOver();
     for *player, i in game.players {
-        if player.isBot() { player.brain.think(game, i as int, dt); }
+        if player.isBot() && !over { player.brain.think(game, i as int, dt); }
         if game.isStepping { game.recordOrReplay(i as int); }
+        if over { player.commands.clear(); continue; }
         game.carryOut(i as int);
         game.updatePlayer(i as int, dt);
     }
+    game.updateMatch(dt);
 
     game.separateHeroes();
     game.updateItems(dt);
@@ -463,14 +489,20 @@ simulate :: method (game: *Game, dt: f32) {
 separateHeroes :: method (game: *Game) {
     for i in 0..game.players.count {
         a := &game.players[i];
-        if !a.isPlaying() || a.hero.isAirborne() || isNearRoad(a.hero.ground()) { continue; }
+        if !a.isPlaying() || a.hero.isAirborne() { continue; }
         for j in i + 1..game.players.count {
             b := &game.players[j];
-            if !b.isPlaying() || b.hero.isAirborne() || isNearRoad(b.hero.ground()) { continue; }
+            if !b.isPlaying() || b.hero.isAirborne() { continue; }
             offset := b.hero.ground() - a.hero.ground();
             distance := offset.length();
             room := a.hero.info().hitRadius + b.hero.info().hitRadius;
             if distance >= room { continue; }
+
+            // One that walks into the other shoves it, anywhere (match.sd)
+            if game.shove(i as int, j as int) || game.shove(j as int, i as int) { continue; }
+
+            // Else they just stand apart, but not by the road, where a nudge could put one in front of a car
+            if isNearRoad(a.hero.ground()) || isNearRoad(b.hero.ground()) { continue; }
             direction := Vector2{1, 0};
             if distance > 0.001 { direction = offset / distance; }
             push := direction * ((room - distance) * 0.5);
@@ -535,11 +567,20 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
         case .crossed {
             v.timeLeft -= dt;
             player.hero.walkCycle += dt * 14;     // Jumping for joy
-            if v.timeLeft <= 0 {
+            if v.timeLeft <= 0 && !game.isOver() {
                 // The next hero starts where this one got to, and crosses back
-                player.startSide = player.startSide.opposite();
+                player.startSide = game.side;
                 game.traffic.setLevel(game.level(), &game.rng);
                 game.spawnNextHero(index);
+            }
+        }
+        case .regroup {
+            v.timeLeft -= dt;
+            if v.timeLeft <= 0 && !game.isOver() {
+                // The same hero, from the side the round was won on
+                player.startSide = game.side;
+                game.spawnHero(index, player.hero.kind);
+                if player.isBot() { player.brain.reset(); }
             }
         }
     }
@@ -555,6 +596,7 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     hero.fadeLeft   = math.max(0, hero.fadeLeft - dt);
     hero.stunLeft   = math.max(0, hero.stunLeft - dt);
     hero.bounceLeft = math.max(0, hero.bounceLeft - dt);
+    hero.shoveLeft  = math.max(0, hero.shoveLeft - dt);
     hero.lockedLeft = math.max(0, hero.lockedLeft - dt);
 
     if hero.leap.hasValue() {
@@ -948,7 +990,8 @@ heroCrossed :: method (game: *Game, index: int) {
 
     hero.stop();
     game.effects.addRing(hero.ground(), 0.5, 8, {120, 255, 140, 255}, 0.8);
-    player.phase = Phase{crossed: {timeLeft: 1.6}};
+    player.phase = Phase{crossed: {timeLeft: RegroupTime}};
+    game.endRound(index);
 }
 
 // The bots play at a difficulty, e.g for a new game

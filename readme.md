@@ -150,6 +150,19 @@ name, a description, an icon, a cooldown and an effect. A new kind of effect is 
 is in `cast()` in `game.sd` (or, for a passive, where it has its effect), and when the bots use it is its case in
 `scoreAbility()` in `bot.sd`. Both are switches over every effect, so the compiler says where a new one is missing.
 
+## A game
+
+The first to cross the road enough times wins: short (5), medium (10) or long (15), picked on the pause screen (up and
+down pick a setting, left and right change it, for the next game) or with `setGameLength` in the console. Then the
+results are shown, and a new game starts after 8 seconds (or at once with F5).
+
+Every crossing ends a round: the others stop where they are, and a moment later everyone starts again from the side it
+got to, the others with the same hero. So everyone always races from the same side.
+
+Heroes shove each other: one that walks into an enemy pushes it away, a couple of meters, further when it is heavier (by
+its health: the Butcher pushes Allan far and hardly moves for him). A car that gets a hero soon after a shove counts as a
+kill for the one that shoved. `core/match.sd` has all of this.
+
 ## Hazards
 
 The road doesn't stay the same, so a crossing is never quite the one before:
