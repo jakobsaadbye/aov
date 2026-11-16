@@ -1126,13 +1126,15 @@ testPerks :: () {
     defer game.free();
     you := game.you();
     game.offerPerks();
-    assert(you.perkOffer.isOpen && game.players[1].perkOffer.isOpen);
-    a := you.perkOffer.perk(0);
-    b := you.perkOffer.perk(1);
-    c := you.perkOffer.perk(2);
+    assert(you.perkOffer.hasValue() && game.players[1].perkOffer.hasValue());
+    offer := you.perkOffer.value();
+    a := offer.perks[0];
+    b := offer.perks[1];
+    c := offer.perks[2];
+    assert(offer.timeLeft == core.PerkPickTime);
     assert(a != b && b != c && a != c);
     game.choosePerk(0, 1);
-    assert(!you.perkOffer.isOpen && you.perks.count == 1 && you.perks[0] == b);
+    assert(!you.perkOffer.hasValue() && you.perks.count == 1 && you.perks[0] == b);
 
     // Deep Pockets: a third slot in the backpack
     you.perks.add(.pocket);
@@ -1144,5 +1146,5 @@ testPerks :: () {
     assert(game.players[1].perks.count == 1);
     game.offerPerks();
     for 0..(13 * 60) { game.simulate(Dt); }
-    assert(!you.perkOffer.isOpen && you.perks.count == 3);
+    assert(!you.perkOffer.hasValue() && you.perks.count == 3);
 }

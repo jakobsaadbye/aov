@@ -54,7 +54,7 @@ Player :: struct {
     backpack:  Backpack;                    // The items it picked up, which boost all of its heroes (items.sd)
     perks:     [..]PerkKind;                // Picked after the crossings, for all of its heroes (perks.sd)
     decoy:     ?Decoy;                      // Tim & Tom's other twin, while it walks (world_effects.sd)
-    perkOffer: PerkOffer;                    // The perks it may pick one of, after a crossing (perks.sd)
+    perkOffer: ?PerkOffer;                  // The perks it may pick one of, after a crossing (perks.sd)
 
     isBot :: method () -> bool {
         return self.brain != null;
@@ -269,7 +269,7 @@ restart :: method (game: *Game) {
         player.stats = Stats{};
         player.backpack = Backpack{};
         player.perks.clear();
-        player.perkOffer.isOpen = false;
+        player.perkOffer = null;
         player.startSide = .left;
         player.commands.clear();
         kind := (game.rng.between(0, HeroKind.count as int - 1)) as HeroKind;
@@ -454,7 +454,7 @@ readInput :: method (game: *Game) {
     if !game.hasLocal() { return; }                         // Spectating
     player := &game.players[game.local];
     // Perks: a click on a card, or 1, 2 and 3 while the hero waits for the next round
-    if game.players[game.local].perkOffer.isOpen && !game.keyboardTaken {
+    if game.players[game.local].perkOffer.hasValue() && !game.keyboardTaken {
         if IsMouseButtonPressed(.left) && game.hoveredPerk >= 0 {
             game.players[game.local].order(Command{choosePerk: game.hoveredPerk});
             return;
