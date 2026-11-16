@@ -88,6 +88,7 @@ ensureGame :: method (session: *Session) {
         game.debug = old.debug;
         old.free();
     }
+    game.effects.particles.isOn = true;      // Only shown in a window: headless games (tests, training) skip them
     session.game = game;
     session.replayClock = 0;
 }

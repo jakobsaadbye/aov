@@ -207,6 +207,33 @@ used clover darkened until the next hero. An item is a value of `ItemKind`, its 
 isn't more than the gene `itemDetour` longer than the way across. To try one: `spawnItem hourglass` or
 `giveItem clover` in the console, and `items` says what everyone has.
 
+## The look of the UI
+
+Every panel, slot, icon, bar, banner, tooltip and menu is drawn with the few pieces of `core/ui.sd`, in the style of
+Warcraft 3, so they all look alike: `uiPanel` (dark stone in a beveled bronze frame with gold studs), `uiSlot` (a sunken
+slot, for the portrait and the items), `uiIconFrame` (the gold frame of an icon, lit up when it is active or aimed),
+`uiBar` (a bar in a sunken trough), `uiPlaque` (a title on a plaque, e.g the name of the hero and the banners),
+`uiDivider` (a gold line with a gem) and `uiTooltip`. The colors are `UiGold`, `UiGoldDim` and `Parchment`. The frames are
+textures drawn as nine patches, so they fit any size; `tools/make_textures.py ui` makes them.
+
+## Particles
+
+Blood, dust, sparks, snow, stench, sparkles and the like are particles (`core/particles.sd`). What an effect looks like is
+a `ParticleStyle` in `core/effect_styles.sd`, named by a value of `Fx`, and code only says where and how many:
+`particles.emit(.blood, at, 60, push: ...)`, or `emitRate(.stench, at, 7, dt)` for one that goes on, like an aura.
+
+A style has many knobs: the texture (soft, spark, smoke, drop, star, ring) and blend (alpha or additive), lifetime,
+speed, the shape they start in (point, sphere, disc, ring) and the cone they set off in, gravity (below 0 rises), drag,
+wobble, size and how much they grow, three colors over their life, spin, stretch along their way (sparks, drops), and
+what happens on the ground (go through, bounce, lie there, or leave a stain, which is drawn flat on the road and fades).
+
+They are quick: a pool for each texture and blend mode, without holes or allocations while playing, each drawn as one
+batch of quads that face the camera. An update of 15000 takes under a millisecond with LLVM. Only a game in a window
+makes them, so tests and training don't pay for them, and they have random numbers of their own, so a replay is the
+same with or without them. The textures are made by `tools/make_textures.py particles`. In the console, `effect blood
+60` makes one at your hero, `particles` says how many there are and what they cost, and `particleStorm 8000` makes a
+lot to see it. The debug overlay (`toggleDebugOverlay`) shows the cost too.
+
 ## Players and bots
 
 Up to six players race across the same road: you and the bots. Each has a hero, a score and a side it starts on, which
@@ -326,13 +353,14 @@ window and runs the loop.
 | `traffic.sd` | The lanes and the cars |
 | `game.sd` | The game itself: the players, their commands, the heroes, being run over, crossing, the next hero |
 | `camera.sd` | The RTS camera |
-| `effects.sd` | The click marker, the stains, the bits flying and the rings of the abilities |
+| `effects.sd`, `particles.sd`, `effect_styles.sd` | The click marker and the rings of the abilities, the particles, and the effects made of them |
 | `assets.sd`, `lighting.sd` | The textures, models and shader of the data folder |
 | `inspector.sd`, `recording.sd` | The inspector of the bots (F4), and recordings and replays |
 | `render.sd`, `hud.sd` | The 3D scene and the 2D overlay, with the hero drawn in 3D in its portrait |
 | `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
 | `items.sd` | The items on the road and in the backpacks, and what they boost |
 | `traffic_events.sd`, `slicks.sd` | Rush hour and the ambulances, and the oil slicks |
+| `ui.sd` | The pieces every part of the UI is drawn with, in the style of Warcraft 3 |
 | `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
 | `commands.sd`, `console_view.sd` | The console commands of the game, and the console on the screen (F1) |
 

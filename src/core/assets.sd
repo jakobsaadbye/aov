@@ -19,6 +19,7 @@ Assets :: struct {
     outsideMaterial: Material;
 
     vehicles: [CarKind.count]Model;
+    particleTextures: [ParticleTexture.count]Texture;
     vehicleBody: [CarKind.count]int;   // The material of each vehicle that gets the color of the car
     heroes:   [HeroKind.count]Model;
     portrait: RenderTexture;          // The hero of the HUD, drawn in 3D
@@ -88,6 +89,9 @@ loadAssets :: () -> Assets {
         icon := kind.itemDefinition().icon;
         assets.icons[icon] = loadTexture(tprint("icons/%.png", icon));
     }
+    for kind in ParticleTexture.values {
+        assets.particleTextures[kind] = loadTexture(tprint("textures/particles/%.png", ParticleTexture.names[kind]));
+    }
     assets.wall = assets.lighting.loadModel("models/wall.obj");
     assets.portrait = LoadRenderTexture(PortraitResolution, PortraitResolution);
     SetTextureFilter(assets.portrait.texture, .bilinear);
@@ -98,6 +102,7 @@ loadAssets :: () -> Assets {
     assets.scenery = newScenery(77);
 
     loadFonts();
+    loadUi();
 
     assets.cursor = loadTexture("textures/cursor/human.png");
 
@@ -121,6 +126,7 @@ unload :: method (assets: *Assets) {
     for model in assets.sceneryModels { UnloadModel(model); }
     assets.scenery.free();
     unloadFonts();
+    unloadUi();
     for _, icon in assets.icons  { UnloadTexture(icon); }
 
     UnloadMesh(assets.cube);

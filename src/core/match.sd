@@ -99,6 +99,7 @@ shove :: method (game: *Game, from: int, to: int) -> bool {
     victim.harmedAt = game.time;
     attacker.shoveLeft = ShoveCooldown;
     game.effects.addRing(victim.ground(), 0.3, 2.5, {255, 255, 255, 255}, 0.25);
+    game.effects.particles.emit(.shove, (attacker.position + victim.position) * 0.5 + Vector3{0, 1.2, 0}, 10);
     game.sounds.playAt("ability.shield_bash", victim.position, 0.45, 0.1);
     return true;
 }
@@ -125,14 +126,14 @@ drawResults :: (game: *Game) {
     height := 150 + order.count as int * rowHeight;
     x := (GetScreenWidth() - width) / 2;
     y := GetScreenHeight() / 2 - height / 2 - 40;
-    DrawRectangleRounded({x as f32, y as f32, width as f32, height as f32}, 0.08, 6, {14, 16, 20, 235});
-    drawPanel({x as f32, y as f32, width as f32, height as f32});
+    uiPanel({x as f32, y as f32, width as f32, height as f32});
     winner := game.players[game.winner];
     title := tprint("% wins!", winner.name);
     if game.winner == game.local { title = "You win!"; }
-    drawTitle(title, x + (width - titleWidth(title, 40)) / 2, y + 16, 40, {255, 210, 90, 255});
+    uiPlaque(title, x + width / 2, y - 30, 36);
 
-    headerY := y + 74;
+    uiDivider(x + width / 2, y + 40, width - 60);
+    headerY := y + 60;
     drawText("Across", x + 270, headerY, 15, DimColor);
     drawText("Run over", x + 340, headerY, 15, DimColor);
     drawText("Kills", x + 430, headerY, 15, DimColor);

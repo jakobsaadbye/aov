@@ -206,6 +206,7 @@ StopSign :: struct {
 newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
     game := new(Game);
     game.rng = random.newRandom(seed);
+    game.effects.particles = newParticles(seed);
     game.world = newWorld();
     game.difficulty = difficulty;
     game.recording = Recording{seed: seed, bots: brains.count as int, humans: humans, difficulty: difficulty};
@@ -254,6 +255,7 @@ free :: method (game: *Game) {
     for line in game.feed { line.text.free(); }
     game.feed.free();
     game.stopSigns.free();
+    game.effects.particles.free();
     game.slicks.list.free();
     for *player in game.players {
         player.commands.free();
@@ -513,6 +515,7 @@ simulate :: method (game: *Game, dt: f32) {
     while game.feed.count > 0 && game.feed[0].timeLeft <= 0 { game.feed.removeAt(0).text.free(); }
 
     game.effects.update(dt);
+    game.emitEffects(dt);
     game.banner.timeLeft -= dt;
 }
 
@@ -696,7 +699,7 @@ flyLeap :: method (game: *Game, index: int, dt: f32) {
     hero.stop();
     hero.forgetTrail();
     game.effects.addRing(hero.ground(), 0.5, 6, {230, 200, 150, 255}, 0.45);
-    game.effects.burst(hero.position, {150, 130, 100, 255}, 18, {0, -4, 0}, &game.rng);
+    game.effects.particles.emit(.dust, hero.position, 16);
     if index == game.watched { game.camera.shake = math.max(game.camera.shake, 0.15); }
     game.sounds.playAt("ability.land", hero.position, 1, 0.05);
 }
@@ -766,7 +769,8 @@ pullHook :: method (game: *Game, index: int, dt: f32) {
             victim.hook = null;
             victim.leap = null;
             game.sounds.playAt("ability.hook_hit", victim.position, 1);
-            game.effects.burst(victim.position + Vector3{0, 2, 0}, {170, 20, 25, 255}, 14, {0, 0, 0}, &game.rng);
+            game.effects.particles.emit(.blood, victim.position + Vector3{0, 2, 0}, 14);
+            game.effects.particles.emit(.sparks, victim.position + Vector3{0, 2, 0}, 10);
             game.announce(caught, {255, 140, 90, 255}, "% was hooked by % (%)!", victim.info().name, hero.info().name, game.players[index].name);
             return;
         }
@@ -853,6 +857,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             point := towards(ground, target, hero.reach(v.range));
             if !point.hasValue() { return; }
             game.effects.addRing(ground, 2, 0.3, {200, 150, 255, 255}, 0.35);
+            game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 24);
 
             // Over walls and cars alike, but it doesn't land inside a wall
             landing := game.world.resolveCollisions(point.value(), hero.info().hitRadius, hero.walksThroughWalls());
@@ -861,6 +866,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             hero.stop();
             if toLanding.lengthSqr() > 0.01 { hero.facing = math.atan2f(toLanding.x, toLanding.y); }
             game.effects.addRing(landing, 0.3, 2.5, {200, 150, 255, 255}, 0.35);
+            game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 24);
         }
         case .fade {
             hero.fadeLeft = v.duration;
@@ -915,7 +921,8 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             enemy.stop();
             enemy.hook = null;
             game.effects.addRing(enemy.ground(), 0.5, 3.5, {255, 230, 150, 255}, 0.35);
-            game.effects.burst(enemy.position + Vector3{0, 2.5, 0}, {255, 240, 180, 255}, 10, away.at(6), &game.rng);
+            game.effects.particles.emit(.sparks, enemy.position + Vector3{0, 2.5, 0}, 16, push: away.at(4));
+            game.effects.particles.emit(.shove, enemy.position + Vector3{0, 1.5, 0}, 8);
             game.announce(victim, {255, 200, 120, 255}, "% was bashed by % (%)!", enemy.info().name, hero.info().name, player.name);
         }
         case .timeLock {
@@ -980,8 +987,12 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
 
     // The car throws the bits along the road
     push := Vector3{0, 0, car.speed * 0.6};
-    game.effects.burst(hero.position + Vector3{0, info.height * 0.5, 0}, ColorAlpha(info.color, 1), 70, push, &game.rng);
-    game.effects.addSplat(hero.ground(), info.width * 0.9, Color{150, 20, 25, 255});
+    middle := hero.position + Vector3{0, info.height * 0.5, 0};
+    particles := &game.effects.particles;
+    particles.emit(.blood, middle, 60, push: push);
+    particles.emit(.mist, middle, 8, push: push * 0.3);
+    particles.emit(.bits, middle, 30, push: push, tint: ColorAlpha(info.color, 1));
+    particles.addStain(hero.ground(), info.width * 2.2, {130, 10, 15, 230});
     if index == game.watched { game.camera.shake = 0.35; }
     game.sounds.playAt("hero.death", hero.position);
 
