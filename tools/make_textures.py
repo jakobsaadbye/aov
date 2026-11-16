@@ -5,6 +5,9 @@ Writes the textures and the ability icons of the game to data/:
     data/textures/grass/grass.png       calm, even grass that the heroes stand out on. It tiles
     data/textures/road/asphalt.png      grey asphalt with a bit of grit. It tiles
     data/icons/<ability>.png            a 64x64 icon for each ability, by the name of the icon in heroes.sd
+    data/icons/item_<name>.png          and for each item, by the name in items.sd
+
+    python3 tools/make_textures.py items      only the icons of the items
 
     python3 tools/make_textures.py
 
@@ -331,7 +334,91 @@ def icon_time_lock():
     finish(image, "time_lock")
 
 
+#
+# The items (items.sd)
+#
+
+def icon_item_sneakers():
+    image, draw = icon_base((90, 170, 230), (20, 60, 120))
+    # A sneaker from the side: the sole, the body and the laces
+    poly(draw, [(30, 190), (226, 190), (226, 214), (40, 214)], (245, 245, 245))
+    poly(draw, [(40, 190), (60, 100), (120, 96), (150, 140), (222, 160), (226, 190)], (230, 70, 60))
+    draw.line([(64, 120), (110, 112)], fill=(255, 255, 255), width=10)
+    draw.line([(70, 140), (120, 134)], fill=(255, 255, 255), width=10)
+    for k in range(3):
+        draw.line([(150 + k * 22, 200), (170 + k * 22, 200)], fill=(40, 40, 40), width=6)
+    for i, y in enumerate((80, 110, 140)):                                  # Speed lines behind it
+        draw.line([(10, y + 40), (30 - i * 6, y + 40)], fill=(255, 255, 255), width=8)
+    finish(image, "item_sneakers")
+
+
+def icon_item_hard_hat():
+    image, draw = icon_base((90, 90, 100), (30, 30, 36))
+    draw.chord([48, 70, 208, 230], start=180, end=360, fill=(255, 200, 30), outline=(30, 30, 30), width=6)
+    draw.rectangle([24, 146, 232, 172], fill=(240, 180, 20), outline=(30, 30, 30), width=6)   # The brim
+    draw.rectangle([116, 70, 140, 150], fill=(255, 225, 90))                                  # The ridge
+    finish(image, "item_hard_hat")
+
+
+def icon_item_hourglass():
+    image, draw = icon_base((120, 80, 40), (40, 20, 10))
+    draw.rectangle([56, 30, 200, 50], fill=(140, 90, 40), outline=(30, 20, 10), width=5)
+    draw.rectangle([56, 206, 200, 226], fill=(140, 90, 40), outline=(30, 20, 10), width=5)
+    poly(draw, [(72, 50), (184, 50), (136, 128), (184, 206), (72, 206), (120, 128)], (210, 235, 250))
+    poly(draw, [(96, 70), (160, 70), (128, 116)], (240, 200, 110), width=0)               # Sand above
+    poly(draw, [(128, 150), (170, 200), (86, 200)], (240, 200, 110), width=0)             # and below
+    draw.line([(128, 116), (128, 196)], fill=(240, 200, 110), width=5)
+    finish(image, "item_hourglass")
+
+
+def icon_item_spyglass():
+    image, draw = icon_base((40, 70, 140), (10, 20, 50))
+    # A telescope across the icon, in three parts that get thinner
+    for (x0, y0, x1, y1, w, c) in ((40, 200, 110, 150, 46, (140, 90, 40)), (100, 158, 170, 108, 36, (200, 160, 70)),
+                                   (160, 116, 222, 72, 26, (230, 200, 110))):
+        draw.line([(x0, y0), (x1, y1)], fill=(20, 20, 20), width=w + 10)
+        draw.line([(x0, y0), (x1, y1)], fill=c, width=w)
+    draw.ellipse([206, 52, 240, 86], fill=(180, 220, 255), outline=(20, 20, 20), width=5)   # The glass
+    for (x, y) in ((60, 50), (90, 80), (190, 190), (210, 150)):                             # Stars
+        draw.ellipse([x - 5, y - 5, x + 5, y + 5], fill=(255, 255, 220))
+    finish(image, "item_spyglass")
+
+
+def icon_item_first_aid():
+    image, draw = icon_base((235, 235, 235), (170, 170, 175))
+    draw.rounded_rectangle([34, 60, 222, 214], radius=18, fill=(220, 50, 50), outline=(40, 20, 20), width=6)
+    draw.rectangle([96, 36, 160, 60], outline=(40, 20, 20), width=8)                        # The handle
+    draw.rectangle([110, 90, 146, 186], fill=(255, 255, 255))
+    draw.rectangle([80, 120, 176, 156], fill=(255, 255, 255))
+    finish(image, "item_first_aid")
+
+
+def icon_item_clover():
+    image, draw = icon_base((60, 150, 70), (15, 60, 25))
+    c = S / 2
+    for k in range(4):
+        a = math.pi / 2 * k + math.pi / 4
+        x, y = c + math.cos(a) * 46, c - 14 + math.sin(a) * 46
+        draw.ellipse([x - 44, y - 44, x + 44, y + 44], fill=(110, 230, 110), outline=(20, 60, 20), width=6)
+        draw.line([(c, c - 14), (x, y)], fill=(70, 170, 70), width=6)
+    draw.line([(c, c + 20), (c + 30, 236)], fill=(40, 120, 40), width=14)                  # The stem
+    finish(image, "item_clover")
+
+
+def item_icons():
+    icon_item_sneakers()
+    icon_item_hard_hat()
+    icon_item_hourglass()
+    icon_item_spyglass()
+    icon_item_first_aid()
+    icon_item_clover()
+
+
 if __name__ == "__main__":
+    import sys
+    if sys.argv[1:] == ["items"]:
+        item_icons()
+        sys.exit(0)
     make_grass()
     make_asphalt()
     icon_sprint()
@@ -351,3 +438,4 @@ if __name__ == "__main__":
     icon_rewind()
     icon_shield_bash()
     icon_time_lock()
+    item_icons()

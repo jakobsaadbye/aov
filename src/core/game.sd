@@ -26,6 +26,7 @@ Stats :: struct {
     deaths:    int;
     kills:     int;                         // Enemies a car got soon after this player hooked, bashed or locked them
     bestTime:  ?f32;                        // The fastest crossing, in seconds
+    items:     int;                         // Items picked up
     deathsBy:  [HeroKind.count]int;         // How many of each hero the road has taken
 }
 
@@ -46,6 +47,7 @@ Player :: struct {
     startSide: Side;                        // Where the hero starts. It flips with every crossing
     brain:     Brain;                       // What gives the orders of a bot. Null for a player at the keyboard
     commands:  [..]Command;                 // The orders of this frame, carried out by Game.simulate
+    backpack:  Backpack;                    // The items it picked up, which boost all of its heroes (items.sd)
 
     isBot :: method () -> bool {
         return self.brain != null;
@@ -156,6 +158,7 @@ Game :: struct {
     pendingHero: ?HeroKind;                 // The hero the player at the keyboard changes to, e.g by setHero
     keyboardTaken: bool;                    // The console (F1) is open: the game reads no keys or mouse
     stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
+    items:       Items;                     // The item on the road, and when the next one comes (items.sd)
 }
 
 // The sign Hilda holds up, where she raised it
@@ -193,9 +196,11 @@ restart :: method (game: *Game) {
     game.traffic = newTraffic(0, &game.rng);
     game.effects.clear();
     game.stopSigns.clear();
+    game.items = newItems(game.recording.seed + game.recording.frames.count as u64);
 
     for *player, i in game.players {
         player.stats = Stats{};
+        player.backpack = Backpack{};
         player.startSide = .left;
         player.commands.clear();
         kind := (game.rng.between(0, HeroKind.count as int - 1)) as HeroKind;
@@ -377,6 +382,7 @@ simulate :: method (game: *Game, dt: f32) {
     }
 
     game.separateHeroes();
+    game.updateItems(dt);
 
     // Frosty's chill aura slows the cars around him
     slowZones: [..]SlowZone;
@@ -457,13 +463,13 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
                 if hero.hurtFor > 0.3 && player.isBot() { player.brain.wasHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
                 hero.hurtFor = 0;
-                if hero.health <= 0 {
+                if hero.health <= 0 && !game.savedByClover(index) {
                     game.heroRunOver(index, car.value());
                 }
             } else {
                 hero.hurtFor += dt;
                 if hero.hurtFor > HealDelay {
-                    hero.health = math.min(hero.info().maxHealth, hero.health + HealPerSecond * dt);
+                    hero.health = math.min(hero.maxHealth(), hero.health + HealPerSecond * hero.boost.heal * dt);
                 }
             }
 
@@ -699,7 +705,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             game.effects.addRing(ground, 0.5, 4, {255, 220, 90, 255}, 0.4);
         }
         case .hook {
-            point := towards(ground, target, v.range);
+            point := towards(ground, target, hero.reach(v.range));
             if !point.hasValue() { return; }
             toTarget := point.value() - ground;
             hero.hook = HookState{point: point.value().at(), from: hero.position};
@@ -712,7 +718,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             if frozen > 0 { game.announce(index, {160, 240, 255, 255}, "% froze % cars", hero.info().name, frozen); }
         }
         case .blink {
-            point := towards(ground, target, v.range);
+            point := towards(ground, target, hero.reach(v.range));
             if !point.hasValue() { return; }
             game.effects.addRing(ground, 2, 0.3, {200, 150, 255, 255}, 0.35);
 
@@ -729,7 +735,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             game.effects.addRing(ground, 0.5, 3, {200, 210, 255, 255}, 0.5);
         }
         case .leap {
-            point := towards(ground, target, v.range);
+            point := towards(ground, target, hero.reach(v.range));
             if !point.hasValue() { return; }
             toTarget := point.value() - ground;
             hero.leap = LeapState{from: hero.position, to: point.value().at(), duration: v.duration};
@@ -763,7 +769,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             game.effects.addRing(hero.ground(), 0.2, 3, {120, 220, 255, 255}, 0.45);
         }
         case .bash {
-            victim := game.enemyNear(index, ground, v.range);
+            victim := game.enemyNear(index, ground, hero.reach(v.range));
             if victim < 0 { return; }
             enemy := &game.players[victim].hero;
             away := enemy.ground() - ground;
@@ -781,7 +787,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
             game.announce(victim, {255, 200, 120, 255}, "% was bashed by % (%)!", enemy.info().name, hero.info().name, player.name);
         }
         case .timeLock {
-            aim := towards(ground, target, v.range) ?? ground;
+            aim := towards(ground, target, hero.reach(v.range)) ?? ground;
             victim := game.enemyNear(index, aim, TargetSnapRadius);
             if victim < 0 { return; }
             enemy := &game.players[victim].hero;
@@ -802,7 +808,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
         }
     }
 
-    hero.cooldowns[slot] = ability.cooldown;
+    hero.cooldowns[slot] = ability.cooldown * hero.boost.cooldown;
     if ability.sound.len > 0 { game.sounds.playAt(ability.sound, hero.position); }
 }
 
@@ -916,6 +922,9 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
 
     player.hero  = newHero(kind, spot, facing);
     player.phase = .playing;
+    player.hero.boost = boostOf(player.backpack.list());
+    player.hero.savesLeft = player.hero.boost.saves;
+    player.hero.health = player.hero.maxHealth();
     if index == game.local { game.sounds.play("hero.spawn", 0.6); }
 }
 

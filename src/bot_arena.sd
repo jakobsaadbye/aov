@@ -92,8 +92,8 @@ main :: () {
             if player.stats.bestTime.hasValue() { best = fmt.sprint("% s", fmt.fixed(player.stats.bestTime.value(), 1)); }
             profile := (player.brain as *bots.Bot).profile();
             plans := atLeastOne(profile.plans);
-            fmt.print("    %   across %   run over %   best %   |  waits % s, walks % s, no plan % s, dodged %  |  search % ms (% of % forecasts), % states, % found a way",
-                player.name, player.stats.crossings, player.stats.deaths, best,
+            fmt.print("    %   across %   run over %   items %   best %   |  waits % s, walks % s, no plan % s, dodged %  |  search % ms (% of % forecasts), % states, % found a way",
+                player.name, player.stats.crossings, player.stats.deaths, player.stats.items, best,
                 profile.waiting as int, profile.walking as int, profile.noPlan as int, profile.dodges,
                 fmt.fixed((profile.planSeconds / plans as f64 * 1000) as f32, 1), profile.plans, profile.forecasts,
                 profile.expanded / plans as i64, fmt.fixed(profile.reachedGoal as f32 / plans as f32, 2));

@@ -95,6 +95,8 @@ status :: (game: *Game) {
     if game.replay != null { state = fmt.sprint("replaying, frame % of %", game.replay.frame, game.replay.recording.frames.count); }
     console.print("% s, level %, bots %, seed %, %", fmt.fixed(game.time, 1), game.level() + 1, Difficulty.names[game.difficulty],
         game.recording.seed, state);
+    focus := game.camera.focus;
+    console.print("    The camera looks at (% %), % m away", fmt.fixed(focus.x, 1), fmt.fixed(focus.z, 1), game.camera.distance as int);
     for player, i in game.players {
         who := "bot";
         if !player.isBot() { who = "you"; }
@@ -110,4 +112,10 @@ heroes :: () {
     for kind in HeroKind.values {
         console.print("    %  -  %", HeroKind.names[kind], kind.definition().name);
     }
+}
+
+@console.command("Moves the camera to a point on the ground and unlocks it from the hero (Y locks it again)")
+cameraTo :: (game: *Game, x: f32, z: f32) {
+    game.camera.isLocked = false;
+    game.camera.focus = Vector3{x, 0, z};
 }

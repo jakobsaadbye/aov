@@ -82,6 +82,10 @@ loadAssets :: () -> Assets {
             assets.icons[ability.icon] = loadTexture(tprint("icons/%.png", ability.icon));
         }
     }
+    for kind in ItemKind.values {
+        icon := kind.itemDefinition().icon;
+        assets.icons[icon] = loadTexture(tprint("icons/%.png", icon));
+    }
     assets.wall = assets.lighting.loadModel("models/wall.obj");
     assets.portrait = LoadRenderTexture(PortraitResolution, PortraitResolution);
     SetTextureFilter(assets.portrait.texture, .bilinear);

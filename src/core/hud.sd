@@ -53,7 +53,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
     for player, i in game.players {
         if player.phase.kind != .runOver { drawHealthOverHero(game, i as int); }
     }
-    drawScoreboard(game);
+    drawScoreboard(game, assets);
     drawFeed(game);
     drawHeroCard(game, assets);
     drawBanner(game);
@@ -67,7 +67,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
 }
 
 // The players, the one furthest ahead first: their hero, crossings and deaths. Yours is lit up
-drawScoreboard :: (game: *Game) {
+drawScoreboard :: (game: *Game, assets: *Assets) {
     order: [..]int;
     for _, i in game.players { order.add(i as int); }
     // By crossings, then by fewer deaths
@@ -80,7 +80,7 @@ drawScoreboard :: (game: *Game) {
     }
 
     rowHeight := 24;
-    panel := Rectangle{16, 16, 380, (66 + order.count * rowHeight) as f32};
+    panel := Rectangle{16, 16, 430, (90 + order.count * rowHeight) as f32};
     drawPanel(panel);
     x := panel.x as int + 14;
     y := panel.y as int + 10;
@@ -92,6 +92,7 @@ drawScoreboard :: (game: *Game) {
     drawText("Across", x + 200, headerY, 14, DimColor);
     drawText("Run over", x + 254, headerY, 14, DimColor);
     drawText("Kills", x + 318, headerY, 14, DimColor);
+    drawText("Items", x + 362, headerY, 14, DimColor);
     for index, row in order {
         player := game.players[index];
         rowY := headerY + 20 + row as int * rowHeight;
@@ -103,6 +104,19 @@ drawScoreboard :: (game: *Game) {
         drawText(fmt.sprint("%", player.stats.crossings), x + 214, rowY - 1, 17, TextColor);
         drawText(fmt.sprint("%", player.stats.deaths), x + 274, rowY - 1, 17, DimColor);
         drawText(fmt.sprint("%", player.stats.kills), x + 326, rowY - 1, 17, DimColor);
+        for item, k in player.backpack.list() {
+            icon := assets.icons[item.itemDefinition().icon];
+            DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, {(x + 362 + k as int * 22) as f32, (rowY - 1) as f32, 19, 19}, {0, 0}, 0, White);
+        }
+    }
+
+    // The item on the road, or when the next one comes
+    itemY := headerY + 26 + order.count as int * rowHeight;
+    if game.items.onRoad.hasValue() {
+        item := game.items.onRoad.value().kind.itemDefinition();
+        drawText(fmt.sprint("On the road: %", item.name), x, itemY, 15, item.color);
+    } else {
+        drawText(fmt.sprint("The next item in % s", math.ceilf(game.items.nextIn) as int), x, itemY, 15, DimColor);
     }
 }
 
@@ -113,7 +127,7 @@ isAhead :: (a: Player, b: Player) -> bool {
 
 // What happened to the other players, under the scoreboard
 drawFeed :: (game: *Game) {
-    y := 16 + 66 + game.players.count as int * 24 + 12;
+    y := 16 + 90 + game.players.count as int * 24 + 12;      // Under the scoreboard
     for line in game.feed {
         alpha := math.min(1, line.timeLeft);
         drawText(line.text, 22, y + 1, 16, ColorAlpha(Black, 0.8 * alpha));
@@ -168,7 +182,8 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
 
     buttonsWidth := slots.count as int * (AbilityButtonSize + AbilityButtonGap) - AbilityButtonGap;
     if actives > 0 && actives < slots.count { buttonsWidth += PassiveGap - AbilityButtonGap; }
-    width  := math.max(12 + portraitSize + 20 + buttonsWidth + 16, 440);
+    backpackWidth := BackpackSize * (ItemSlotSize + 6) + 24;
+    width  := math.max(12 + portraitSize + 20 + buttonsWidth + backpackWidth + 16, 500);
     height := 150;
     panel := Rectangle{(GetScreenWidth() - width) as f32 * 0.5, (GetScreenHeight() - height - 16) as f32, width as f32, height as f32};
     drawPanel(panel);
@@ -189,8 +204,8 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
 
     // Health, under the portrait and the abilities
     healthBar := Rectangle{x as f32, (y + 114) as f32, (width - 24) as f32, 16};
-    drawHealthBar(healthBar, hero.health / info.maxHealth);
-    healthText := fmt.sprint("% / %", math.ceilf(math.max(hero.health, 0)) as int, info.maxHealth as int);
+    drawHealthBar(healthBar, hero.health / hero.maxHealth());
+    healthText := fmt.sprint("% / %", math.ceilf(math.max(hero.health, 0)) as int, hero.maxHealth() as int);
     drawText(healthText, x + (width - 24 - textWidth(healthText, 15)) / 2, y + 114, 15, White);
 
     // The abilities
@@ -217,6 +232,37 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     if game.hoveredAbility >= 0 {
         drawAbilityTooltip(hero, abilities[game.hoveredAbility], game.hoveredAbility, hoveredButton, panel);
     }
+    drawBackpack(game, assets, panel);
+}
+
+ItemSlotSize :: 46;
+
+// The backpack, at the right of the hero card: the items, and an empty slot for each one more it can hold. The mouse on
+// an item says what it does
+drawBackpack :: (game: *Game, assets: *Assets, panel: Rectangle) {
+    backpack := &game.you().backpack;
+    x := (panel.x + panel.width) as int - 12 - BackpackSize * (ItemSlotSize + 6) + 6;
+    y := panel.y as int + 52;
+    drawText("Backpack", x, y - 18, 14, DimColor);
+    mouse := GetMousePosition();
+    for slot in 0..BackpackSize {
+        box := Rectangle{(x + slot as int * (ItemSlotSize + 6)) as f32, y as f32, ItemSlotSize, ItemSlotSize};
+        DrawRectangleRec(box, {12, 12, 14, 255});
+        DrawRectangleLinesEx(box, 1, {120, 110, 90, 200});
+        if slot >= backpack.count { continue; }
+        item := backpack.items[slot].itemDefinition();
+        icon := assets.icons[item.icon];
+        DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, box, {0, 0}, 0, White);
+        if CheckCollisionPointRec(mouse, box) { drawItemTooltip(item, box); }
+    }
+}
+
+drawItemTooltip :: (item: ItemDefinition, box: Rectangle) {
+    width := math.max(textWidth(item.description, 16), titleWidth(item.name, 20)) + 28;
+    tip := Rectangle{box.x + box.width - width as f32, box.y - 90, width as f32, 72};
+    drawPanel(tip);
+    drawTitle(item.name, tip.x as int + 14, tip.y as int + 10, 20, item.color);
+    drawText(item.description, tip.x as int + 14, tip.y as int + 40, 16, TextColor);
 }
 
 drawAbilityButton :: (game: *Game, assets: *Assets, ability: Ability, slot: int, button: Rectangle) {
@@ -245,7 +291,7 @@ drawAbilityButton :: (game: *Game, assets: *Assets, ability: Ability, slot: int,
     cooldown := hero.cooldowns[slot];
     if cooldown > 0 {
         // The dark part shrinks clockwise from the top, like in Warcraft 3 and Dota 2, with the seconds left on it
-        left := cooldown / ability.cooldown;
+        left := cooldown / (ability.cooldown * hero.boost.cooldown);
         BeginScissorMode(x, y, size, size);
         DrawCircleSector({button.x + size * 0.5, button.y + size * 0.5}, size as f32, -90 + (1 - left) * 360, 270, 48, {0, 0, 0, 170});
         EndScissorMode();

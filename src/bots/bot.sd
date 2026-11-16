@@ -72,6 +72,7 @@ Bot :: struct {
     lastKind:    HeroKind;
     wasActing:   bool;
     decision:    BotDecision;
+    chasing:     ?Vector2;          // The item it plans to pick up on its way
     stats:       BotProfile;
 }
 
@@ -103,6 +104,7 @@ reset :: method (bot: *Bot) {
     bot.replanIn = 0;
     bot.mustSearch = true;
     bot.hasForecast = false;
+    bot.chasing = null;
     bot.arena.clear();
 }
 
@@ -283,6 +285,13 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     bot.stats.forecasts += 1;
     bot.stats.forecastSeconds += forecastDone - started;
 
+    // An item that came or went, or that another hero took: a new plan
+    target := bot.itemTarget(game, me);
+    if target.hasValue() != bot.chasing.hasValue() || (target.hasValue() && target.value() != bot.chasing.value()) {
+        bot.chasing = target;
+        bot.mustSearch = true;
+    }
+
     lookForBetter := !bot.reachesGoal && game.time - bot.searchedAt > 1.0;
     if !bot.mustSearch && !lookForBetter && bot.planHolds() { return; }
 
@@ -301,6 +310,7 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     result := planCrossing(&bot.forecast, PlanRequest{
         start:       hero.ground(),
         goalSide:    game.players[me].startSide.opposite(),
+        goalPoint:   bot.chasing,
         speed:       speed,
         sprintSpeed: sprintSpeed,
         sprintLeft:  hero.sprintLeft,
@@ -319,6 +329,20 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     for waypoint in result.waypoints { bot.plan.add(waypoint); }
     bot.next = 0;
     bot.reachesGoal = result.reachesGoal;
+}
+
+// The item on the road, when its backpack has room and the way past it isn't much longer than the way across, by the gene
+// itemDetour
+itemTarget :: method (bot: *Bot, game: *Game, me: int) -> ?Vector2 {
+    player := &game.players[me];
+    if player.backpack.isFull() || !game.items.onRoad.hasValue() || !player.isPlaying() { return null; }
+    item := game.items.onRoad.value().position;
+    ground := player.hero.ground();
+    goalX := GoalX * player.startSide.opposite().sign();
+    direct := math.fabsf(goalX - ground.x);
+    past := ground.distance(item) + math.fabsf(goalX - item.x);
+    if past - direct > bot.gene(.itemDetour) { return null; }
+    return item;
 }
 
 // If the rest of the plan is still free of cars in the new forecast: the hero can wait where it is until it leaves for
@@ -403,7 +427,7 @@ chooseAbility :: method (bot: *Bot, game: *Game, me: int) -> ?Command {
         nearRoad:    math.fabsf(hero.position.x) < RoadHalfWidth + 3,
         progress:    progressOf(hero.ground(), player.startSide),
         goalSide:    player.startSide.opposite(),
-        healthShare: hero.health / hero.info().maxHealth,
+        healthShare: hero.health / hero.maxHealth(),
     };
 
     bestScore := bot.gene(.castBar);
@@ -436,6 +460,7 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
     inDanger := view.danger < bot.gene(.dangerTime);
     waiting := view.onRoad && bot.isWaiting(game);
     aggression := bot.gene(.aggression);
+    reach := game.players[view.me].hero.boost.reach;        // The spyglass
 
     switch v in ability.effect {
         case .sprint {
@@ -445,14 +470,14 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
         }
         case .hook {
             // An enemy that is ahead, or on the road, is dragged back. Else it is a way out of trouble
-            enemy := bot.enemyToPunish(game, view, v.range * 0.9);
+            enemy := bot.enemyToPunish(game, view, (v.range * reach) * 0.9);
             if enemy >= 0 && aggression > 0 {
                 return AbilityChoice{aggression * bot.punishScore(game, view, enemy), game.players[enemy].hero.ground()};
             }
             if inDanger {
                 // It pulls him through what is between, so the way must be free too
-                choice := bot.escape(game, view, v.range, v.range / HookSpeed, bot.gene(.escape));
-                if choice.score > 0 && bot.wayIsFree(view.ground, choice.target, game.time - bot.forecastAt + v.range / HookSpeed, v.pullSpeed, 0.3) {
+                choice := bot.escape(game, view, (v.range * reach), (v.range * reach) / HookSpeed, bot.gene(.escape));
+                if choice.score > 0 && bot.wayIsFree(view.ground, choice.target, game.time - bot.forecastAt + (v.range * reach) / HookSpeed, v.pullSpeed, 0.3) {
                     return choice;
                 }
             }
@@ -466,8 +491,8 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
             return here;
         }
         case .blink {
-            if inDanger { return bot.escape(game, view, v.range, 0, bot.gene(.escape)); }
-            if view.nearRoad { return bot.shortcut(game, view, v.range, 0, bot.gene(.shortcut)); }
+            if inDanger { return bot.escape(game, view, (v.range * reach), 0, bot.gene(.escape)); }
+            if view.nearRoad { return bot.shortcut(game, view, (v.range * reach), 0, bot.gene(.shortcut)); }
             return no;
         }
         case .fade {
@@ -475,8 +500,8 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
             return here;
         }
         case .leap {
-            if inDanger { return bot.escape(game, view, v.range, v.duration, bot.gene(.escape)); }
-            if view.nearRoad { return bot.shortcut(game, view, v.range, v.duration, bot.gene(.shortcut)); }
+            if inDanger { return bot.escape(game, view, (v.range * reach), v.duration, bot.gene(.escape)); }
+            if view.nearRoad { return bot.shortcut(game, view, (v.range * reach), v.duration, bot.gene(.shortcut)); }
             return no;
         }
         case .rewind {
@@ -485,12 +510,12 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
             return here;
         }
         case .bash {
-            enemy := game.enemyNear(view.me, view.ground, v.range);
+            enemy := game.enemyNear(view.me, view.ground, (v.range * reach));
             if enemy < 0 || aggression <= 0 { return no; }
             return AbilityChoice{bot.bashScore(game, view, enemy, v.knockback) * aggression, game.players[enemy].hero.ground()};
         }
         case .timeLock {
-            enemy := bot.enemyToPunish(game, view, v.range);
+            enemy := bot.enemyToPunish(game, view, (v.range * reach));
             if enemy < 0 || aggression <= 0 { return no; }
             return AbilityChoice{aggression * bot.punishScore(game, view, enemy), game.players[enemy].hero.ground()};
         }
