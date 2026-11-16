@@ -1,0 +1,83 @@
+namespace core;
+
+// Tobias the Tourist: lost in the big city with his camera. The flash blinds drivers and heroes alike, and a selfie
+// with an enemy puts him where it stood
+
+import math;
+use raylib;
+
+defineTobias :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Tobias", title: "the Tourist", color: {240, 120, 150, 255}, width: 2.4, height: 4.2, moveSpeed: 8, hitRadius: 0.75, maxHealth: 30, drawExtras: drawTobias};
+    hero.abilities.add(Ability{
+        name: "Flash photo", icon: "flash_photo", sound: "ability.flash", cooldown: 10, targeting: .point, cast: castFlash, bot: .stopCarsAhead,
+        description: "A photo towards the cursor: the cars in a cone 16 long brake for 1.5 seconds, and the enemies in it are blinded for 2",
+        range: 16, duration: 1.5, power: 2,
+    });
+    hero.abilities.add(Ability{
+        name: "Selfie", icon: "selfie", sound: "ability.selfie", cooldown: 16, targeting: .enemy, cast: castSelfie, bot: .swapEnemy,
+        description: "A selfie with the enemy nearest the cursor, up to 15 away: they swap places",
+        range: 15,
+    });
+    hero.abilities.add(passive("Lost", "lost", "He doesn't know where he is going: now and then he hurries off, much faster, for a moment", .lost));
+    return hero;
+}
+
+FlashHalfAngle :: 0.6;     // Radians each side of the aim
+
+castFlash :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    aim := target - ground;
+    if aim.length() < 0.5 { aim = Vector2{hero.goalSign, 0}; }
+    aim = aim.normalize();
+    range := hero.reach(ability.range);
+    hero.facing = math.atan2f(aim.x, aim.y);
+
+    inCone :: (point: Vector2, from: Vector2, aim: Vector2, range: f32) -> bool {
+        offset := point - from;
+        distance := offset.length();
+        if distance > range { return false; }
+        if distance < 1 { return true; }
+        return offset.normalize().dot(aim) > math.cosf(FlashHalfAngle);
+    };
+    for *car in game.traffic.cars {
+        if !car.isActive || car.kind == .ambulance { continue; }
+        if inCone(car.rect().center(), ground, aim, range) { car.frozenLeft = math.max(car.frozenLeft, ability.duration + hero.stats.coldBlooded); }
+    }
+    for *player, i in game.players {
+        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        if inCone(player.hero.ground(), ground, aim, range) { player.hero.addStatus(.blind, ability.power, source: caster, time: game.time); }
+    }
+    game.effects.particles.emit(.flash, hero.position + Vector3{0, 2.5, 0} + aim.at() * 1.2, 30, push: aim.at(18));
+    game.effects.addRing(ground + aim * range * 0.5, 0.5, range * 0.5, {255, 255, 230, 255}, 0.25);
+    return true;
+}
+
+castSelfie :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    player := &game.players[caster];
+    victim := game.spellTarget(caster, ability, target);
+    if victim < 0 { return spent(victim); }
+    enemy := &game.players[victim].hero;
+    hero := &player.hero;
+    mine := hero.position;
+    hero.position = enemy.position;
+    enemy.position = mine;
+    hero.stop();
+    enemy.stop();
+    hero.forgetTrail();
+    enemy.forgetTrail();
+    enemy.harmedBy = caster;
+    enemy.harmedAt = game.time;
+    for position in [hero.position, enemy.position] { game.effects.particles.emit(.flash, position + Vector3{0, 2, 0}, 16); }
+    game.announce(victim, {255, 160, 190, 255}, "% took a selfie with % (%), and they swapped places!", hero.info().name, enemy.info().name, game.players[victim].name);
+    return true;
+}
+
+// The camera on a strap round his neck
+drawTobias :: (game: *Game, index: int, bob: f32) {
+    hero := &game.players[index].hero;
+    forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
+    chest := hero.position + Vector3{0, bob + 2.4, 0} + forward * 0.75;
+    DrawCube(chest, 0.7, 0.45, 0.3, {30, 30, 34, 255});
+    DrawCylinderEx(chest + forward * 0.15, chest + forward * 0.4, 0.16, 0.16, 8, {60, 60, 70, 255});
+}

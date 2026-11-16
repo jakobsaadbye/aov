@@ -1,0 +1,229 @@
+namespace core;
+
+// The ways a hero moves besides walking, and what the world gets built on it: riding on a car (Bent), dashing (Mads),
+// getting out of the way of a car by itself (Spring Shoes, Kenji's roll, the perk nimble), and footbridges over the road
+// (Birgit). Leaps and hooks are in heroes.sd and heroes/butcher.sd
+
+import math;
+use raylib;
+
+//
+// Riding a car
+//
+
+RideHopOff :: 4.5;      // How far towards the goal it jumps off the car
+
+// Gets onto the roof of a car, for a while
+startRide :: method (game: *Game, index: int, car: int, duration: f32) {
+    hero := &game.players[index].hero;
+    target := &game.traffic.cars[car];
+    hero.ride = RideState{car: car, timeLeft: duration, offset: math.clamp(hero.position.z - target.z, -target.length() * 0.3, target.length() * 0.3)};
+    hero.stop();
+    hero.hook = null;
+    game.effects.particles.emit(.dust, hero.position, 10);
+}
+
+rideCar :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
+    ride := hero.ride.value();
+    car := &game.traffic.cars[ride.car];
+    ride.timeLeft -= dt;
+    if !car.isActive || ride.timeLeft <= 0 || math.fabsf(car.z) > MapHalfLength - 2 {
+        game.hopOff(index);
+        return;
+    }
+    hero.position = Vector3{laneCenter(car.lane), 0, car.z + ride.offset};
+    hero.walkCycle += dt * 2;
+    hero.ride = ride;
+}
+
+// Jumps off the car, towards the goal
+hopOff :: method (game: *Game, index: int) {
+    hero := &game.players[index].hero;
+    if !hero.ride.hasValue() { return; }
+    car := game.traffic.cars[hero.ride.value().car];
+    hero.ride = null;
+    to := hero.ground() + Vector2{hero.goalSign * RideHopOff, 0};
+    to.y = math.clamp(to.y, -MapHalfLength + 2, MapHalfLength - 2);
+    hero.startLeap(to, 0.45, 2.5 + car.height());
+}
+
+// How high a hero rides, on the roof of its car
+rideHeight :: method (game: *Game, hero: *Hero) -> f32 {
+    if !hero.ride.hasValue() { return 0; }
+    return game.traffic.cars[hero.ride.value().car].height();
+}
+
+//
+// Dashing
+//
+
+moveDash :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
+    dash := hero.dash.value();
+    dash.timeLeft -= dt;
+    before := hero.position;
+    hero.position += dash.velocity.at() * dt;
+    hero.position = game.world.resolveCollisions(hero.ground(), hero.info().hitRadius, hero.walksThroughWalls()).at();
+    hero.walkCycle += dt * 8;
+    if dash.timeLeft <= 0 || Vector3Distance(before, hero.position) < dash.velocity.length() * dt * 0.2 {
+        hero.dash = null;
+        hero.stop();
+        return;
+    }
+    hero.dash = dash;
+}
+
+//
+// What some traits do over time
+//
+
+LostEveryLow  :: 5.0;       // Seconds between Tobias's bursts of speed, at random between these
+LostEveryHigh :: 10.0;
+
+updateTraitsOverTime :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
+
+    // Ditte's bandage heals while she stands still, and stops when she walks
+    if hero.has(.mending) {
+        if hero.isMoving { hero.clearStatus(.mending); }
+        else { hero.health = math.min(hero.maxHealth(), hero.health + hero.maxHealth() * hero.status(.mending).amount * dt); }
+    }
+
+    // Tobias gets lost: now and then he hurries off for no reason
+    if hero.stats.lost {
+        hero.lostIn -= dt;
+        if hero.lostIn <= 0 {
+            hero.lostIn = game.rng.uniform(LostEveryLow, LostEveryHigh) as f32;
+            hero.addStatus(.haste, 1.2, 1.6);
+            game.effects.particles.emit(.dust, hero.position, 8);
+        }
+    }
+}
+
+//
+// Out of the way of a car, by itself
+//
+
+RollKnock :: 3.5;           // How far Kenji rolls out of the way
+NimbleCooldown :: 20.0;
+
+// A car is on the hero: true when something got it out of the way instead of being hit
+dodgedCar :: method (game: *Game, index: int, car: *Car) -> bool {
+    if game.bounced(index) { return true; }
+    hero := &game.players[index].hero;
+    if hero.isAirborne() || hero.displacement.hasValue() { return false; }
+
+    // Out of the lane, to the nearer side of it
+    side: f32 = 1;
+    if hero.position.x < laneCenter(car.lane) { side = -1; }
+    out := Vector2{laneCenter(car.lane) + side * (CarWidth * 0.5 + hero.info().hitRadius + 1.2), hero.position.z};
+
+    if hero.stats.roll && !hero.rolledOnce {
+        hero.rolledOnce = true;
+        hero.displacement = Displacement{to: out.at(), speed: KnockbackSpeed};
+        hero.addStatus(.stun, 0.6);
+        game.effects.particles.emit(.dust, hero.position, 14);
+        game.announce(index, {200, 200, 210, 255}, "% rolled out of the way", game.players[index].name);
+        return true;
+    }
+    if hero.stats.nimble && hero.nimbleLeft <= 0 {
+        hero.nimbleLeft = NimbleCooldown;
+        hero.startLeap(out, 0.3, 1.5);
+        game.effects.particles.emit(.dust, hero.position, 10);
+        return true;
+    }
+    return false;
+}
+
+//
+// Footbridges, that Birgit builds over the road. Anyone on one is safe from the cars under it
+//
+
+Bridge :: struct {
+    center:     Vector2;
+    halfWidth:  f32;        // Across the road
+    halfLength: f32;        // Along it
+    timeLeft:   f32;
+    age:        f32;
+    owner:      int;
+}
+
+BridgeHeight   :: 3.0;
+BridgeRaiseTime :: 0.35;    // Seconds it takes to go up, before it is safe
+
+bridgeRect :: method (bridge: Bridge) -> Rectangle {
+    return {bridge.center.x - bridge.halfWidth, bridge.center.y - bridge.halfLength, bridge.halfWidth * 2, bridge.halfLength * 2};
+}
+
+// On a footbridge that is up
+onBridge :: method (game: *Game, point: Vector2) -> bool {
+    for bridge in game.bridges {
+        if bridge.age >= BridgeRaiseTime && CheckCollisionPointRec(point, bridge.bridgeRect()) { return true; }
+    }
+    return false;
+}
+
+updateBridges :: method (game: *Game, dt: f32) {
+    for *bridge in game.bridges {
+        bridge.timeLeft -= dt;
+        bridge.age += dt;
+    }
+    game.bridges.removeWhere(bridge => bridge.timeLeft <= 0);
+}
+
+// The height of the deck over a point: up on the ramps, flat over the lanes
+bridgeHeightAt :: method (game: *Game, point: Vector2) -> f32 {
+    for bridge in game.bridges {
+        if !CheckCollisionPointRec(point, bridge.bridgeRect()) { continue; }
+        rise := math.min(bridge.age / BridgeRaiseTime, 1);
+        edge := bridge.halfWidth - math.fabsf(point.x - bridge.center.x);
+        return BridgeHeight * rise * math.clamp(edge / RampLength, 0, 1);
+    }
+    return 0;
+}
+
+RampLength :: 2.5;
+
+drawBridges :: (game: *Game) {
+    Wood  :: Color{150, 105, 60, 255};
+    Dark  :: Color{95, 65, 38, 255};
+    Rail  :: Color{230, 200, 60, 255};
+    for bridge in game.bridges {
+        rise := math.min(bridge.age / BridgeRaiseTime, 1);
+        fade: f32 = math.min(bridge.timeLeft / 0.4, 1);
+        h := BridgeHeight * rise;
+        rect := bridge.bridgeRect();
+        flat := bridge.halfWidth - RampLength;
+        center := bridge.center;
+        // The deck, the ramps at both ends, and the posts under it
+        DrawCube(center.at(h), flat * 2, 0.3, rect.height, ColorAlpha(Wood, fade));
+        for side in [-1.0, 1.0] {
+            rampMid := Vector3{center.x + side * (flat + RampLength * 0.5), h * 0.5, center.y};
+            angle := math.atan2f(h, RampLength) * Rad2Deg * -side;
+            rlPushMatrix();
+            rlTranslatef(rampMid.x, rampMid.y, rampMid.z);
+            rlRotatef(angle, 0, 0, 1);
+            DrawCube({0, 0, 0}, math.sqrtf(RampLength * RampLength + h * h), 0.3, rect.height, ColorAlpha(Dark, fade));
+            rlPopMatrix();
+        }
+        x := center.x - flat;
+        while x <= center.x + flat {
+            for z in [rect.y + 0.3, rect.y + rect.height - 0.3] {
+                DrawCube({x, h * 0.5, z}, 0.3, h, 0.3, ColorAlpha(Dark, fade));
+                DrawCube({x, h + 0.6, z}, 0.15, 1.2, 0.15, ColorAlpha(Rail, fade));
+            }
+            x += 3;
+        }
+        for z in [rect.y + 0.3, rect.y + rect.height - 0.3] {
+            DrawCube({center.x, h + 1.15, z}, flat * 2, 0.12, 0.12, ColorAlpha(Rail, fade));
+        }
+    }
+}
+
+extern "raylib.dll" {
+    rlPushMatrix :: () -> void;
+    rlPopMatrix  :: () -> void;
+    rlTranslatef :: (x: f32, y: f32, z: f32) -> void;
+    rlRotatef    :: (angle: f32, x: f32, y: f32, z: f32) -> void;
+}

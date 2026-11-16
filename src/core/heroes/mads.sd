@@ -1,0 +1,54 @@
+namespace core;
+
+// Mads the Skater: the longer he rolls straight on, the faster he gets. He ollies over cars and grinds the lane lines
+
+import math;
+use raylib;
+
+defineMads :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Mads", title: "the Skater", color: {250, 90, 40, 255}, width: 2.2, height: 4.2, moveSpeed: 7.6, hitRadius: 0.7, maxHealth: 25, drawExtras: drawMads};
+    hero.abilities.add(Ability{
+        name: "Ollie", icon: "ollie", sound: "ability.ollie", cooldown: 6, targeting: .point, cast: castLeap, bot: .escape,
+        description: "Pops the board up and jumps to the cursor, up to 7 away, over a car",
+        range: 7, duration: 0.42, power: 2.8, delay: 0.42,
+    });
+    hero.abilities.add(Ability{
+        name: "Grind", icon: "grind", sound: "ability.grind", cooldown: 12, targeting: .point, cast: castGrind, bot: .escape,
+        description: "Grinds along the lane lines towards the cursor, very fast, for 0.8 seconds. The cars can't touch him",
+        range: GrindSpeed * 0.8, duration: 0.8, power: GrindSpeed, delay: 0.8,
+    });
+    hero.abilities.add(passive("Rolling", "rolling", "The longer he goes straight on, the faster he rolls: up to 35%. Turning slows him down", .momentum));
+    return hero;
+}
+
+GrindSpeed :: 24.0;
+
+castGrind :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    toward := target - hero.ground();
+    if toward.length() < 0.5 { return false; }
+    direction := toward.normalize();
+    duration := math.min(ability.duration, toward.length() / ability.power);
+    hero.dash = DashState{velocity: direction * ability.power, timeLeft: math.max(duration, 0.15), untouchable: true};
+    hero.facing = math.atan2f(direction.x, direction.y);
+    hero.momentum = 1;
+    hero.isMoving = false;
+    return true;
+}
+
+// His skateboard, under his feet, with sparks while he grinds
+drawMads :: (game: *Game, index: int, bob: f32) {
+    hero := &game.players[index].hero;
+    forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
+    right := Vector3{forward.z, 0, -forward.x};
+    deck := hero.position + Vector3{0, bob + 0.3, 0};
+    DrawCylinderEx(deck - forward * 0.9, deck + forward * 0.9, 0.42, 0.42, 10, {40, 40, 44, 255});
+    for k in [-0.6, 0.6] {
+        for side in [-0.3, 0.3] {
+            DrawSphere(deck + forward * k + right * side - Vector3{0, 0.18, 0}, 0.13, {250, 230, 120, 255});
+        }
+    }
+    if hero.dash.hasValue() && game.effects.particles.isOn {
+        game.effects.particles.emit(.sparks, deck - forward * 0.8, 1, push: (forward * -6).xz().at(2));
+    }
+}

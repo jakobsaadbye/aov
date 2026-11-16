@@ -5,7 +5,11 @@ use raylib;
 
 // Every time a hero is run over, the player gets a new one at random. A hero has any number of abilities, like in
 // Dota 2. The abilities that are cast are on the keys in order: the first on Q, the second on W, and so on
-// (AbilityKeys). Then they cool down. A passive is always on, and has no key
+// (AbilityKeys). Then they cool down. A passive is always on, and has no key.
+//
+// Each hero is a file in core/heroes/: its definition, and the abilities that are its own. A new hero is a value of
+// HeroKind, its file, its line in defineHero, a model (tools/make_models.py) and the icons of its abilities
+// (tools/make_textures.py)
 
 HeroKind :: enum {
     allan,
@@ -15,6 +19,20 @@ HeroKind :: enum {
     bjorn,
     hilda,
     mira,
+    karl,
+    birgit,
+    bent,
+    sigrid,
+    tobias,
+    mads,
+    ditte,
+    gudrun,
+    magnus,
+    stormy,
+    hugo,
+    twins,
+    kenji,
+    ivar,
 }
 
 // The keys of the abilities that are cast, in order. A hero can have as many of them as there are keys, and passives
@@ -22,68 +40,9 @@ AbilityKeys     :: [KeyboardKey.q, .w, .e, .r, .d, .f];
 AbilityKeyNames :: ["Q", "W", "E", "R", "D", "F"];
 MaxAbilities    :: 8;
 
-// What an ability does
-AbilityEffect :: union {
-    // Cast with the key
-    sprint: struct { speedMultiplier: f32; duration: f32; };     // Runs faster for a while
-    hook:   struct { range: f32; pullSpeed: f32; };              // Hooks the ground at the cursor and pulls the hero there
-    freeze: struct { radius: f32; duration: f32; };              // Freezes the cars around the hero
-    blink:  struct { range: f32; };                              // Jumps to the cursor, at most range away
-    fade:   struct { duration: f32; };                           // The cars drive through the hero for a while
-    leap:   struct { range: f32; duration: f32; };               // Jumps to the cursor through the air, over cars and walls
-    halt:   struct { lanes: int; duration: f32; };               // Stops the lanes around the hero, and their cars queue up
-    timeWarp: struct { slow: f32; duration: f32; };              // Every car on the road drives slower for a while
-    rewind: struct { seconds: f32; };                            // Back to where the hero was, with the health it had
-
-    // Cast on another hero
-    bash:     struct { range: f32; stun: f32; knockback: f32; };  // Stuns the nearest enemy and knocks it away
-    timeLock: struct { range: f32; duration: f32; };             // Stops an enemy at the cursor in time: it can't move
-
-    // Passives: always on
-    phaseWalk;                                                   // Walks through walls
-    quickFeet: struct { speedBonus: f32; };                      // Faster, e.g 0.1 is 10% faster
-    chillAura: ChillAura;                                        // Cars near the hero drive slower
-    ironHide:  struct { reduction: f32; };                       // Takes less damage from the cars, e.g 0.5 is half
-}
-
-ChillAura :: struct {
-    radius: f32;
-    slow:   f32;            // 0.4 is 40% slower
-}
-
-isPassive :: method (effect: AbilityEffect) -> bool {
-    return switch effect.kind {
-        case .phaseWalk
-        case .quickFeet
-        case .chillAura
-        case .ironHide  => true;
-        else            => false;
-    };
-}
-
-Ability :: struct {
-    name:        string;
-    description: string;
-    icon:        string;        // data/icons/<icon>.png
-    cooldown:    f32;           // Seconds. 0 for a passive
-    effect:      AbilityEffect;
-    sound:       string;        // Played when it is cast, e.g "ability.sprint" (see sound.sd)
-    targetsEnemy: bool;         // Cast on another hero. Bots look for one in reach before they cast it
-
-    isPassive :: method () -> bool {
-        return self.effect.isPassive();
-    }
-
-    // Cast at a point the player picks: clicking its icon then waits for a click on the ground. The others are cast
-    // at once
-    aimsAtPoint :: method () -> bool {
-        kind := self.effect.kind;
-        return kind == .hook || kind == .blink || kind == .leap || kind == .timeLock;
-    }
-}
-
 HeroDefinition :: struct {
     name:      string;
+    title:     string;          // What kind of hero it is, e.g "the Mechanic"
     color:     Color;           // Of the portrait and the bits flying when run over
     width:     f32;             // Of the model, for its shadow and the circle under it
     height:    f32;
@@ -91,145 +50,66 @@ HeroDefinition :: struct {
     hitRadius: f32;             // The circle on the ground that the cars hit
     maxHealth: f32;             // A car takes CarDamagePerSecond, so a tanky hero survives a car for a moment
     abilities: [..]Ability;
+    drawExtras: HeroDrawFunction;   // What is drawn of it besides its model, e.g Mads's skateboard. Can be null
 }
+
+// Draws what a hero has besides its model, at its height (bob) over the ground
+HeroDrawFunction :: (game: *Game, index: int, bob: f32);
 
 @private
 heroDefinitions: [HeroKind.count]HeroDefinition;
+@private
+heroesDefined: bool;
 
-// The heroes and their abilities. Made the first time they are asked for
+// The heroes and their abilities, each in its file in core/heroes/. Made the first time they are asked for
 definition :: method (kind: HeroKind) -> *HeroDefinition {
-    if heroDefinitions[0].name.len == 0 { defineHeroes(); }
+    if !heroesDefined {
+        heroesDefined = true;
+        for k in HeroKind.values { heroDefinitions[k] = defineHero(k); }
+    }
     return &heroDefinitions[kind];
 }
 
 @private
-defineHeroes :: () {
-    allan := HeroDefinition{name: "Allan", color: {214, 48, 49, 255}, width: 2.2, height: 4.2, moveSpeed: 9, hitRadius: 0.75, maxHealth: 25};
-    allan.abilities.add(Ability{
-        name: "Sprint", icon: "sprint", sound: "ability.sprint", cooldown: 6,
-        description: "Runs twice as fast for a moment",
-        effect: {sprint: {speedMultiplier: 2.1, duration: 1.4}},
-    });
-    allan.abilities.add(Ability{
-        name: "Quick feet", icon: "quick_feet",
-        description: "Walks 10% faster than he looks",
-        effect: {quickFeet: {speedBonus: 0.1}},
-    });
-
-    ghosty := HeroDefinition{name: "Ghosty", color: {190, 210, 255, 255}, width: 2.2, height: 3.2, moveSpeed: 7.5, hitRadius: 0.7, maxHealth: 15};
-    ghosty.abilities.add(Ability{
-        name: "Fade", icon: "fade", sound: "ability.fade", cooldown: 14,
-        description: "Fades away for 1.5 seconds: the cars drive straight through him",
-        effect: {fade: {duration: 1.5}},
-    });
-    ghosty.abilities.add(Ability{
-        name: "Phase walk", icon: "phase_walk",
-        description: "Floats straight through the walls",
-        effect: .phaseWalk,
-    });
-
-    butcher := HeroDefinition{name: "Butcher", color: {150, 90, 70, 255}, width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15, maxHealth: 100};
-    butcher.abilities.add(Ability{
-        name: "Meat hook", icon: "hook", sound: "ability.hook_throw", cooldown: 7,
-        description: "Throws the hook at the cursor, up to 34 away. It bites into the first car it meets, and he is pulled to the side of the car. He can walk while it flies",
-        effect: {hook: {range: 34, pullSpeed: 40}},
-    });
-    butcher.abilities.add(Ability{
-        name: "Charge", icon: "charge", sound: "ability.charge", cooldown: 10,
-        description: "Charges ahead, very fast, for a short moment",
-        effect: {sprint: {speedMultiplier: 2.8, duration: 0.8}},
-    });
-
-    frosty := HeroDefinition{name: "Frosty", color: {110, 220, 235, 255}, width: 2.2, height: 4.3, moveSpeed: 8, hitRadius: 0.7, maxHealth: 35};
-    frosty.abilities.add(Ability{
-        name: "Cold snap", icon: "freeze", sound: "ability.freeze", cooldown: 10,
-        description: "Freezes the cars around him for 2.5 seconds",
-        effect: {freeze: {radius: 20, duration: 2.5}},
-    });
-    frosty.abilities.add(Ability{
-        name: "Slide", icon: "slide", sound: "ability.blink", cooldown: 8,
-        description: "Slides to the cursor, up to 9 away",
-        effect: {blink: {range: 9}},
-    });
-    frosty.abilities.add(Ability{
-        name: "Chill aura", icon: "chill",
-        description: "Cars near him drive 40% slower",
-        effect: {chillAura: {radius: 12, slow: 0.4}},
-    });
-
-    bjorn := HeroDefinition{name: "Bjørn", color: {176, 120, 70, 255}, width: 3.0, height: 4.8, moveSpeed: 7.5, hitRadius: 1.0, maxHealth: 60};
-    bjorn.abilities.add(Ability{
-        name: "Leap", icon: "leap", sound: "ability.leap", cooldown: 7,
-        description: "Leaps to the cursor, up to 16 away, high over the cars and the walls",
-        effect: {leap: {range: 16, duration: 0.65}},
-    });
-    bjorn.abilities.add(Ability{
-        name: "Shield bash", icon: "shield_bash", sound: "ability.shield_bash", cooldown: 9, targetsEnemy: true,
-        description: "Bashes the nearest enemy within 5 with his shield: stunned for 1.2 seconds, and knocked 9 away",
-        effect: {bash: {range: 5, stun: 1.2, knockback: 9}},
-    });
-    bjorn.abilities.add(Ability{
-        name: "Iron hide", icon: "iron_hide",
-        description: "Takes half the damage from the cars",
-        effect: {ironHide: {reduction: 0.5}},
-    });
-
-    hilda := HeroDefinition{name: "Hilda", color: {240, 214, 40, 255}, width: 2.2, height: 4.4, moveSpeed: 8, hitRadius: 0.75, maxHealth: 30};
-    hilda.abilities.add(Ability{
-        name: "Stop!", icon: "stop_sign", sound: "ability.stop_sign", cooldown: 9,
-        description: "Raises her stop sign: the five lanes around her stop for 3 seconds, and their cars queue up",
-        effect: {halt: {lanes: 2, duration: 3}},
-    });
-    hilda.abilities.add(Ability{
-        name: "Brisk walker", icon: "quick_feet",
-        description: "Forty years of crossing duty: walks 15% faster",
-        effect: {quickFeet: {speedBonus: 0.15}},
-    });
-
-    mira := HeroDefinition{name: "Mira", color: {130, 90, 210, 255}, width: 2.4, height: 5.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 20};
-    mira.abilities.add(Ability{
-        name: "Time warp", icon: "time_warp", sound: "ability.time_warp", cooldown: 13,
-        description: "Bends time over the whole road: every car drives 70% slower for 3 seconds",
-        effect: {timeWarp: {slow: 0.7, duration: 3}},
-    });
-    mira.abilities.add(Ability{
-        name: "Rewind", icon: "rewind", sound: "ability.rewind", cooldown: 10,
-        description: "Goes back to where she was 3 seconds ago, with the health she had",
-        effect: {rewind: {seconds: 3}},
-    });
-    mira.abilities.add(Ability{
-        name: "Time lock", icon: "time_lock", sound: "ability.time_lock", cooldown: 12, targetsEnemy: true,
-        description: "Locks the enemy nearest the cursor, up to 18 away, in time: it can't move or cast for 2 seconds",
-        effect: {timeLock: {range: 18, duration: 2}},
-    });
-
-    heroDefinitions[HeroKind.allan]   = allan;
-    heroDefinitions[HeroKind.ghosty]  = ghosty;
-    heroDefinitions[HeroKind.butcher] = butcher;
-    heroDefinitions[HeroKind.frosty]  = frosty;
-    heroDefinitions[HeroKind.bjorn]   = bjorn;
-    heroDefinitions[HeroKind.hilda]   = hilda;
-    heroDefinitions[HeroKind.mira]    = mira;
+defineHero :: (kind: HeroKind) -> HeroDefinition {
+    return switch kind {
+        case .allan   => defineAllan();
+        case .ghosty  => defineGhosty();
+        case .butcher => defineButcher();
+        case .frosty  => defineFrosty();
+        case .bjorn   => defineBjorn();
+        case .hilda   => defineHilda();
+        case .mira    => defineMira();
+        case .karl    => defineKarl();
+        case .birgit  => defineBirgit();
+        case .bent    => defineBent();
+        case .sigrid  => defineSigrid();
+        case .tobias  => defineTobias();
+        case .mads    => defineMads();
+        case .ditte   => defineDitte();
+        case .gudrun  => defineGudrun();
+        case .magnus  => defineMagnus();
+        case .stormy  => defineStormy();
+        case .hugo    => defineHugo();
+        case .twins   => defineTwins();
+        case .kenji   => defineKenji();
+        case .ivar    => defineIvar();
+    };
 }
 
-// The hook of the butcher: it flies out to the point, then pulls him after it. An enemy it hits on the way is caught
-// and dragged back to him instead
-// The Butcher's hook: it flies out to a point and bites into the first car it meets. Then he is pulled to the side of
-// the car, which drives on. A hook that meets no car is reeled in again. He can walk while it flies
-HookState :: struct {
-    point:    Vector3;
-    from:     Vector3;      // Where it was thrown from
-    flight:   f32;          // 0 to 1, while the hook flies out
-    reeling:  bool;         // It met no car, and comes back
-    car:      int = -1;     // The car it bit into, while he is pulled to it
-    bite:     Vector3;      // Where on the car, from its middle
-    pulled:   f32;          // Seconds he has been pulled
-    stuckFor: f32;          // Seconds the pull hasn't moved him, e.g into a wall
+// On the roof of a car, e.g Bent's hop on: it goes where the car goes, and the cars drive under it
+RideState :: struct {
+    car:      int;
+    timeLeft: f32;
+    offset:   f32;          // Along the car, from its middle
 }
 
-HookSpeed     :: 70.0;      // How fast the hook flies
-HookBiteRadius :: 0.6;      // How close to a car the head has to come to bite into it
-HookMaxPull   :: 2.5;       // Seconds he is pulled at most
+// Moving straight on by itself, fast, e.g Mads grinding a lane line
+DashState :: struct {
+    velocity:    Vector2;
+    timeLeft:    f32;
+    untouchable: bool;      // The cars can't hit it meanwhile
+}
 
 // Moved by something else, e.g knocked away or dragged by a hook. The hero can't act until it is over
 Displacement :: struct {
@@ -237,15 +117,18 @@ Displacement :: struct {
     speed: f32;
 }
 
-// Bjørn's leap through the air
+LeapHeight :: 7.0;
+MomentumBonus :: 0.35;     // How much faster the trait momentum makes it, at the most
+
+// A jump through the air, over cars and walls, e.g Bjørn's leap
 LeapState :: struct {
     from:     Vector3;
     to:       Vector3;
     duration: f32;
     flight:   f32;          // 0 to 1
+    height:   f32 = LeapHeight;
 }
 
-LeapHeight :: 7.0;
 
 // Where the hero was, for Mira's rewind: a sample every RewindInterval seconds, the last RewindSamples of them
 RewindInterval :: 0.1;
@@ -268,7 +151,8 @@ Hero :: struct {
     cooldowns: [MaxAbilities]f32;   // Seconds before each ability can be cast again, in the order of the abilities
     health:    f32;
     hurtFor:   f32;                 // Seconds since a car last hurt the hero. With a First Aid Kit it heals after a while
-    boost:     Boost;               // Of the items in the backpack of its player (items.sd)
+    stats:     HeroStats;               // Of its passives, the items and the perks of its player (traits.sd)
+    statuses:  Statuses;            // Stunned, faded, hasted, ... (status.sd)
     savesLeft: int;                 // Of the clovers: times it still gets away from a car
     slideLeft:     f32;             // On an oil slick: seconds it slides on before it may turn (slicks.sd)
     slowedBy:      f32;             // By the Garlic of an enemy near it: 0.3 is 30% slower
@@ -277,17 +161,20 @@ Hero :: struct {
     slideVelocity: Vector2;
 
     // What the abilities are doing right now
-    sprintLeft:       f32;
-    sprintMultiplier: f32;
-    fadeLeft:         f32;
     hook:             ?HookState;
     leap:             ?LeapState;
+    ride:             ?RideState;
+    dash:             ?DashState;
+    momentum:         f32;          // 0 to 1, how long it has walked straight on (the trait momentum)
+    lostIn:           f32;          // Seconds to its next burst of speed (the trait lost)
+    goalSign:         f32 = 1;      // Which way across is the way to the goal: 1 is +x
+    rolledOnce:       bool;         // A car only knocked it down, once (the trait roll)
+    nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
+    mirrorLeft:       f32;          // Seconds until its mirror sends a spell back again
 
     // What the enemies did to the hero
     harmedBy:     int = -1;             // The player that last hooked, bashed or locked it, who gets the kill if a car
     harmedAt:     f32;                  // gets it soon after: at this time of the game
-    stunLeft:     f32;                  // Seconds it can't move or cast
-    lockedLeft:   f32;                  // Seconds it is locked in time (and stunned): drawn in Mira's color
     displacement: ?Displacement;
 
     // The way back for a rewind: a ring of samples, the newest at trailNext - 1
@@ -309,49 +196,61 @@ Hero :: struct {
     }
 
     speed :: method () -> f32 {
-        speed := self.info().moveSpeed;
-        for ability in self.abilities() {
-            switch v in ability.effect {
-                case .quickFeet { speed *= 1 + v.speedBonus; }
-                else            { }
-            }
+        speed := self.info().moveSpeed * self.stats.speed * self.statusSpeed() * (1 - self.slowedBy);
+        stats := self.stats;
+        if stats.momentum { speed *= 1 + MomentumBonus * self.momentum; }
+        if stats.tailwind != 1 && self.isMoving && (self.target.x - self.position.x) * self.goalSign > 0 { speed *= stats.tailwind; }
+        if stats.berserk != 1 && self.health < self.maxHealth() * 0.5 { speed *= stats.berserk; }
+        if stats.jaywalker != 1 {
+            if math.fabsf(self.position.x) < RoadHalfWidth { speed *= stats.jaywalker; }
+            else                                           { speed /= stats.jaywalker; }
         }
-        if self.sprintLeft > 0 { speed *= self.sprintMultiplier; }
-        return speed * self.boost.speed * (1 - self.slowedBy);
+        return speed;
     }
 
     walksThroughWalls :: method () -> bool {
-        return self.abilities().some(ability => ability.effect.kind == .phaseWalk);
+        return self.stats.throughWalls;
     }
 
-    // Frosty's own, or else the one of a Frost Charm
+    // Its own aura, or else the one of a Frost Charm
     chillAura :: method () -> ?ChillAura {
-        for ability in self.abilities() {
-            switch v in ability.effect {
-                case .chillAura { return v; }
-                else            { }
-            }
-        }
-        if self.boost.chill > 0 { return ChillAura{radius: self.boost.chill, slow: ItemAuraSlow}; }
-        return null;
+        return self.stats.chill;
     }
 
+    // The aura is its own, not of an item
     hasChillAbility :: method () -> bool {
-        return self.abilities().some(ability => ability.effect.kind == .chillAura);
+        return self.abilities().some(ability => ability.trait.kind == .chillAura);
     }
 
     isFaded :: method () -> bool {
-        return self.fadeLeft > 0;
+        return self.has(.fade);
     }
 
-    // In the air, where no car reaches
+    // In the air or on a car, where no car reaches
     isAirborne :: method () -> bool {
-        return self.leap.hasValue();
+        return self.leap.hasValue() || self.ride.hasValue();
+    }
+
+    // Enemies' spells can find it
+    isTargetable :: method () -> bool {
+        return !self.isAirborne() && !self.anyStatus(rules => rules.untargetable);
+    }
+
+    // The cars drive through it
+    carsPass :: method () -> bool {
+        if self.dash.hasValue() && self.dash.value().untouchable { return true; }
+        return self.isAirborne() || self.anyStatus(rules => rules.carsPass);
     }
 
     // If it can be given orders: not stunned, dragged, or in the middle of a hook or a leap
     canAct :: method () -> bool {
-        return self.stunLeft <= 0 && !self.displacement.hasValue() && !self.isPulledByHook() && !self.leap.hasValue();
+        return !self.isStopped() && !self.displacement.hasValue() && !self.isPulledByHook() && !self.leap.hasValue() &&
+            !self.ride.hasValue() && !self.dash.hasValue();
+    }
+
+    // If it can cast: it can act, and isn't silenced, e.g a toad or scared
+    canCast :: method () -> bool {
+        return self.canAct() && !self.isSilenced();
     }
 
     // Pulled to a car by his hook. While the hook flies he can still walk
@@ -361,23 +260,24 @@ Hero :: struct {
 
     // How much of the damage of a car the hero takes: 1 is all of it
     damageTaken :: method () -> f32 {
-        taken: f32 = 1;
-        for ability in self.abilities() {
-            switch v in ability.effect {
-                case .ironHide { taken *= 1 - v.reduction; }
-                else           { }
-            }
-        }
-        return taken * self.boost.damage;
+        return self.stats.damageTaken;
     }
 
     maxHealth :: method () -> f32 {
-        return self.info().maxHealth * self.boost.health;
+        return self.info().maxHealth * self.stats.maxHealth;
     }
 
     // How far an ability with this range reaches
     reach :: method (range: f32) -> f32 {
-        return range * self.boost.reach;
+        return range * self.stats.reach;
+    }
+
+    // Jumps through the air to a point
+    startLeap :: method * (to: Vector2, duration: f32, height: f32) {
+        toTarget := to - self.ground();
+        self.leap = LeapState{from: self.position, to: to.at(), duration: duration * self.stats.airTime, height: height};
+        self.isMoving = false;
+        if toTarget.lengthSqr() > 0.0001 { self.facing = math.atan2f(toTarget.x, toTarget.y); }
     }
 
     // Remembers where the hero is, every RewindInterval seconds
@@ -429,7 +329,7 @@ Hero :: struct {
     abilityReady :: method (slot: int) -> bool {
         abilities := self.abilities();
         if slot < 0 || slot >= abilities.count { return false; }
-        return !abilities[slot].isPassive() && self.cooldowns[slot] <= 0 && self.canAct();
+        return !abilities[slot].isPassive() && self.cooldowns[slot] <= 0 && self.canCast();
     }
 
     // Starts walking to a point on the ground

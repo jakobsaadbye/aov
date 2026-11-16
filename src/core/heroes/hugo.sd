@@ -1,0 +1,42 @@
+namespace core;
+
+// Hugo the Hypnotist: his enemies walk back the way they came, or fall asleep where they stand. Nothing holds his own
+// mind for long
+
+use raylib;
+
+defineHugo :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Hugo", title: "the Hypnotist", color: {120, 50, 140, 255}, width: 2.4, height: 5.0, moveSpeed: 8, hitRadius: 0.75, maxHealth: 26};
+    hero.abilities.add(Ability{
+        name: "Puppet", icon: "puppet", sound: "ability.puppet", cooldown: 12, targeting: .enemy, cast: castPuppet, bot: .disableEnemy,
+        description: "The enemy nearest the cursor, up to 14 away, walks back the way it came for 1.6 seconds, and can't cast",
+        range: 14, duration: 1.6,
+    });
+    hero.abilities.add(Ability{
+        name: "Sleep", icon: "sleep", sound: "ability.sleep", cooldown: 15, targeting: .enemy, cast: castSleep, bot: .disableEnemy,
+        description: "The enemy nearest the cursor, up to 12 away, falls asleep for 4 seconds, until it is shoved or hit",
+        range: 12, duration: 4,
+    });
+    hero.abilities.add(passive("Calm mind", "calm_mind", "Stuns, sleep and the like hold him half as long", Trait{stunTaken: 0.5}));
+    return hero;
+}
+
+castPuppet :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    victim := game.spellTarget(caster, ability, target);
+    if victim < 0 { return spent(victim); }
+    enemy := &game.players[victim].hero;
+    back := enemy.ground() - Vector2{enemy.goalSign * 14, 0};
+    enemy.addStatus(.puppet, ability.duration, point: back, source: caster, time: game.time);
+    game.effects.particles.emit(.wisps, enemy.position + Vector3{0, 3, 0}, 16, tint: {200, 120, 255, 255});
+    game.announce(victim, {200, 120, 255, 255}, "% is Hugo's puppet!", game.players[victim].name);
+    return true;
+}
+
+castSleep :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    victim := game.spellTarget(caster, ability, target);
+    if victim < 0 { return spent(victim); }
+    enemy := &game.players[victim].hero;
+    enemy.addStatus(.sleep, ability.duration, source: caster, time: game.time);
+    game.announce(victim, {170, 170, 255, 255}, "% fell asleep!", game.players[victim].name);
+    return true;
+}

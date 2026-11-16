@@ -1,0 +1,103 @@
+namespace core;
+
+// What the items that are used do, and using them: with 1, 2 or 3, or a click on the item in the backpack, like an
+// ability. Each is an Ability (abilities.sd), so the bots know how to use it by its BotUse, like any other
+
+import math;
+use raylib;
+
+ItemKeys :: [KeyboardKey.one, .two, .three];
+
+// The ability of the item in a slot of a player's backpack, if it is used and ready
+itemReady :: method (game: *Game, index: int, slot: int) -> bool {
+    player := &game.players[index];
+    if slot < 0 || slot >= player.backpack.count { return false; }
+    definition := player.backpack.items[slot].itemDefinition();
+    return definition.isUsed() && player.backpack.cooldowns[slot] <= 0 && player.hero.canCast();
+}
+
+// Uses the item in a slot of the backpack, aimed at a point. One with charges is gone when they are used up
+useItem :: method (game: *Game, index: int, slot: int, target: Vector2) {
+    if !game.itemReady(index, slot) { return; }
+    player := &game.players[index];
+    kind := player.backpack.items[slot];
+    definition := kind.itemDefinition();
+    ability := definition.action;
+    if !ability.cast(game, index, &ability, target) { return; }
+    player.backpack.cooldowns[slot] = ability.cooldown;
+    if ability.sound.len > 0 { game.sounds.playAt(ability.sound, player.hero.position); }
+    if definition.charges > 0 {
+        player.backpack.charges[slot] -= 1;
+        if player.backpack.charges[slot] <= 0 {
+            _ := player.backpack.remove(slot);
+            player.refreshStats();
+        }
+    }
+}
+
+// The cooldowns of the items, once a frame
+coolItems :: method (player: *Player, dt: f32) {
+    for slot in 0..player.backpack.count {
+        player.backpack.cooldowns[slot] = math.max(0, player.backpack.cooldowns[slot] - dt);
+    }
+    player.hero.mirrorLeft = math.max(0, player.hero.mirrorLeft - dt);
+}
+
+castBananaPeel :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    return game.throwProjectile(caster, .banana, target, hero.reach(ability.range), 26, 0);
+}
+
+castEnergyDrink :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    hero.addStatus(.sugarRush, ability.duration, ability.power);
+    game.effects.particles.emit(.sparkles, hero.position + Vector3{0, 2, 0}, 16, tint: {90, 160, 255, 255});
+    return true;
+}
+
+// A cone on the road: the cars near it crawl
+castTrafficCone :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    if math.fabsf(point.x) > RoadHalfWidth { return false; }
+    game.rain.add(Rain{center: point, radius: ability.radius, slow: 0.8, timeLeft: ability.duration + hero.stats.coldBlooded, isCone: true});
+    return true;
+}
+
+castMegaphone :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    for *player, i in game.players {
+        if i as int == caster || !player.isPlaying() { continue; }
+        for *cooldown in player.hero.cooldowns { *cooldown += ability.power; }
+    }
+    game.effects.addRing(game.players[caster].hero.ground(), 1, 30, {255, 255, 255, 255}, 0.5);
+    game.announce(-1, {255, 255, 255, 255}, "% shouted through a megaphone", game.players[caster].name);
+    return true;
+}
+
+castRubberChicken :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    range := hero.reach(ability.range);
+    for *player, i in game.players {
+        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        if player.hero.ground().distance(hero.ground()) > range { continue; }
+        player.hero.addStatus(.taunt, ability.duration, point: hero.ground(), source: caster, time: game.time);
+    }
+    game.effects.addRing(hero.ground(), 0.5, range, {255, 230, 80, 255}, 0.35);
+    return true;
+}
+
+// A random ability of a random hero, that is cast and not a passive, cast as if the hero had it
+castLuckyDice :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    for attempt in 0..20 {
+        kind := game.rng.between(0, HeroKind.count as int - 1) as HeroKind;
+        abilities := kind.definition().abilities;
+        pick := abilities[game.rng.between(0, abilities.count as int - 1)];
+        if pick.isPassive() { continue; }
+        if pick.cast(game, caster, &pick, target) {
+            game.announce(caster, {245, 245, 245, 255}, "The dice rolled %", pick.name);
+            if pick.sound.len > 0 { game.sounds.playAt(pick.sound, game.players[caster].hero.position); }
+            return true;
+        }
+    }
+    return false;
+}

@@ -1,0 +1,30 @@
+namespace core;
+
+// Hilda: forty years as a crossing guard. When she raises her sign, the cars stop
+
+import math;
+use raylib;
+
+defineHilda :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Hilda", title: "the Crossing Guard", color: {240, 214, 40, 255}, width: 2.2, height: 4.4, moveSpeed: 8, hitRadius: 0.75, maxHealth: 30};
+    hero.abilities.add(Ability{
+        name: "Stop!", icon: "stop_sign", sound: "ability.stop_sign", cooldown: 9, cast: castStopSign, bot: .stopCars,
+        description: "Raises her stop sign: the five lanes around her stop for 3 seconds, and their cars queue up",
+        count: 2, duration: 3,
+    });
+    hero.abilities.add(passive("Brisk walker", "quick_feet", "Forty years of crossing duty: walks 15% faster", Trait{speed: 1.15}));
+    return hero;
+}
+
+// The lanes within count of hers stop for duration, before a line just behind her
+castStopSign :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    lane := laneAt(hero.position.x);
+    first := math.max(lane - ability.count, 0);
+    last := math.min(lane + ability.count, LaneCount - 1);
+    line := hero.position.z - 5;
+    game.traffic.halt(first, last, line, ability.duration);
+    game.stopSigns.add(StopSign{position: hero.position, timeLeft: ability.duration, lanes: [first, last], line: line});
+    game.effects.addRing(hero.ground(), 1, 9, {255, 70, 60, 255}, 0.5);
+    return true;
+}

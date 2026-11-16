@@ -52,6 +52,7 @@ Trajectory :: struct {
     halfLength: f32;
     leaveWith:  int = -1;       // A car that isn't spawned yet: when it leaves a cell is by the slowest it could be, in
                                 // Forecast.slowSpawns
+    harmlessUntil: f32;         // Up on Karl's jack until then: it hits nobody
 
     add :: method * (start: f32, z: f32, speed: f32) {
         assert(self.count < MaxPieces);
@@ -89,12 +90,23 @@ ForecastOptions :: struct {
     // heavy traffic there is then seldom a way all the way across. Without it, a new car is seen more than 2 seconds
     // before it can get onto the field, which a bot that plans a few times a second has time for
     fearUnknownCars: bool;
+
+    oilProof:       bool;       // The oil doesn't make the hero slide (Karl)
+    ambulanceProof: bool;       // The ambulances drive round the hero (Ditte)
+}
+
+// A footbridge over the road: the cells under it are safe while it is up, from start to end
+SafeZone :: struct {
+    rect:  Rectangle;
+    start: f32;
+    end:   f32;
 }
 
 Forecast :: struct {
     options:    ForecastOptions;
     blocked:    []bool;                 // For each cell: a wall, or the edge of the field. Never safe. Shared (blockedCells)
     slicks:     [..]Slick;              // The oil slicks, where a hero can't turn. Never safe either
+    safeZones:  [..]SafeZone;           // Footbridges
     firstSafe:  [..]int;                // For each cell: where its safe intervals start in safe, -1 until asked for
     safeCount:  [..]int;
     safe:       [..]TimeInterval;
@@ -133,7 +145,7 @@ Forecast :: struct {
             for *trajectory in self.lanes[lane] {
                 if trajectory.leaveWith >= 0 { continue; }
                 reach := trajectory.halfLength + self.options.radius + extraMargin;
-                enter := trajectory.timeAt(point.y - reach, from);
+                enter := math.max(trajectory.timeAt(point.y - reach, from), trajectory.harmlessUntil);
                 if enter >= first { continue; }
                 // Already past the point
                 if trajectory.timeAt(point.y + reach, from) <= from { continue; }
@@ -158,6 +170,7 @@ Forecast :: struct {
         self.firstSafe[cell] = self.safe.count as int;
         center := cellCenter(cell);
         for slick in self.slicks {
+            if self.options.oilProof { break; }
             if slick.contains(center) {
                 self.safeCount[cell] = 0;
                 return;
@@ -189,7 +202,7 @@ Forecast :: struct {
                 for *trajectory in self.lanes[lane] {
                     // On the cell from when its front gets to it until its back has left it
                     reach := trajectory.halfLength + reachZ;
-                    enter := trajectory.timeAt(center.y - reach);
+                    enter := math.max(trajectory.timeAt(center.y - reach), trajectory.harmlessUntil);
                     if enter >= ForecastHorizon { continue; }
                     leave: f32 = 0;
                     if trajectory.leaveWith >= 0 {
@@ -220,6 +233,47 @@ Forecast :: struct {
         }
         if free < Forever { self.safe.add(TimeInterval{free, Forever}); }
         self.safeCount[cell] = self.safe.count as int - self.firstSafe[cell];
+        for zone in self.safeZones {
+            if CheckCollisionPointRec(center, zone.rect) { self.addSafe(cell, zone.start, zone.end); }
+        }
+    }
+
+    // Makes a cell safe from start to end too, whatever its cars: its intervals and this one, joined. The cell's
+    // intervals must be the last of safe
+    @private
+    addSafe :: method * (cell: int, start: f32, end: f32) {
+        first := self.firstSafe[cell];
+        count := self.safeCount[cell];
+        merged: [MaxHitsPerCell + 2]TimeInterval;
+        n := 0;
+        added := false;
+        for i in first..first + count {
+            interval := self.safe[i];
+            if !added && start < interval.start {
+                merged[n] = TimeInterval{start, end};
+                n += 1;
+                added = true;
+            }
+            if n >= merged.count { break; }
+            merged[n] = interval;
+            n += 1;
+        }
+        if !added && n < merged.count {
+            merged[n] = TimeInterval{start, end};
+            n += 1;
+        }
+        // Join the ones that overlap
+        self.safe.count = first;
+        for k in 0..n {
+            interval := merged[k];
+            last := self.safe.count as int - 1;
+            if last >= first && interval.start <= self.safe[last].end {
+                self.safe[last].end = math.max(self.safe[last].end, interval.end);
+            } else {
+                self.safe.add(interval);
+            }
+        }
+        self.safeCount[cell] = self.safe.count as int - first;
     }
 }
 
@@ -252,11 +306,20 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
     forecast.safe.reserve(4096);
 
     for car in game.traffic.cars {
-        if car.isActive { forecast.lanes[car.lane].add(trajectoryOf(game, car, 0)); }
+        if !car.isActive || (options.ambulanceProof && car.kind == .ambulance) { continue; }
+        forecast.lanes[car.lane].add(trajectoryOf(game, car, 0));
+    }
+    for bridge in game.bridges {
+        // Safe a little after it starts to go up, and a little before it is gone
+        inner := bridge.bridgeRect();
+        inner.x += RampLength;
+        inner.width -= RampLength * 2;
+        start := math.max(BridgeRaiseTime - bridge.age, 0) + 0.1;
+        forecast.safeZones.add(SafeZone{inner, start, bridge.timeLeft - 0.3});
     }
     // An ambulance that was heard: it is on the road after its siren
     traffic := &game.traffic;
-    if traffic.emergencyLane >= 0 {
+    if traffic.emergencyLane >= 0 && !options.ambulanceProof {
         first, last := traffic.emergencyLanes();
         for lane in first...last {
             ambulance := Car{isActive: true, kind: .ambulance, lane: lane, z: traffic.emergencyStart(lane), speed: traffic.emergencySpeed()};
@@ -326,18 +389,22 @@ trajectoryOf :: (game: *Game, car: Car, appears: f32) -> Trajectory {
 
     t := appears;
     z := car.z;
+    if car.liftedLeft > 0 {
+        trajectory.add(t, z, 0);
+        t += car.liftedLeft;
+        trajectory.harmlessUntil = t;
+    }
     if car.frozenLeft > 0 {
         trajectory.add(t, z, 0);
         t += car.frozenLeft;
     }
 
-    // Slower near a hero with a chill aura, as long as it is near it now
+    // Slower near a hero with a chill aura, in rain, ..., as long as it is in there now
     speed := car.speed;
-    for player in game.players {
-        aura := player.hero.chillAura();
-        if aura.hasValue() && player.isPlaying() && CheckCollisionCircleRec(player.hero.ground(), aura.value().radius, car.rect()) {
-            speed *= 1 - aura.value().slow;
-        }
+    zones := game.slowZones();
+    defer zones.free();
+    for zone in zones {
+        if CheckCollisionCircleRec(zone.center, zone.radius, car.rect()) { speed *= 1 - zone.slow; }
     }
 
     // Held before Hilda's line until her sign comes down

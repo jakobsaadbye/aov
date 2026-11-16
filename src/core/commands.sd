@@ -138,3 +138,66 @@ watch :: (game: *Game, player: int) {
     }
     game.watch(player);
 }
+
+@console.command("Casts an ability (0 is Q) of a player's hero at a point x z, or where it stands. You when no player is given, e.g cast 0 -80 10. It is an order, so it is recorded")
+cast :: (game: *Game, slot: int, x: ?f32, z: ?f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    hero := &game.players[index].hero;
+    abilities := hero.abilities();
+    if slot < 0 || slot >= abilities.count {
+        console.fail("% has abilities 0 to %", hero.info().name, abilities.count - 1);
+        return;
+    }
+    target := hero.ground();
+    if x.hasValue() && z.hasValue() { target = Vector2{x.value(), z.value()}; }
+    if !hero.abilityReady(slot) { console.fail("% isn't ready", abilities[slot].name); }
+    game.players[index].order(Command{cast: {slot: slot, target: target}});
+}
+
+@console.command("Walks a player's hero to a point x z, you when no player is given")
+walk :: (game: *Game, x: f32, z: f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    game.players[index].order(Command{move: Vector2{x, z}});
+}
+
+@console.command("Uses the item in a slot of the backpack (0 is the first) at a point x z, or where the hero stands. You when no player is given")
+useItemNow :: (game: *Game, slot: int, x: ?f32, z: ?f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    target := game.players[index].hero.ground();
+    if x.hasValue() && z.hasValue() { target = Vector2{x.value(), z.value()}; }
+    if !game.itemReady(index, slot) { console.fail("There is no item to use in slot %, or it isn't ready", slot); }
+    game.players[index].order(Command{useItem: {slot: slot, target: target}});
+}
+
+@console.command("Offers every player three perks to pick one of, as after a crossing")
+offerPerksNow :: (game: *Game) {
+    game.offerPerks();
+}
+
+@console.command("The perks there are, and the ones each player has")
+perks :: (game: *Game) {
+    for kind in PerkKind.values {
+        definition := kind.perkDefinition();
+        console.print("    %  -  %: %", PerkKind.names[kind], definition.name, definition.description);
+    }
+    for player, i in game.players {
+        names := "none";
+        for perk, k in player.perks {
+            if k == 0 { names = perk.perkDefinition().name; }
+            else      { names = tprint("%, %", names, perk.perkDefinition().name); }
+        }
+        console.print("    %. %: %", i, player.name, names);
+    }
+}

@@ -1,0 +1,42 @@
+namespace core;
+
+// Ivar the Berserker: his battle cry sends his enemies running, his axe stuns whoever it hits, and he gets faster the
+// more he is hurt
+
+use raylib;
+
+defineIvar :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Ivar", title: "the Berserker", color: {190, 70, 30, 255}, width: 3.0, height: 4.6, moveSpeed: 7.5, hitRadius: 0.95, maxHealth: 50};
+    hero.abilities.add(Ability{
+        name: "Battle cry", icon: "battle_cry", sound: "ability.battle_cry", cooldown: 12, cast: castBattleCry, bot: .disableEnemy,
+        description: "Roars: the enemies within 9 of him run away from him for 1.4 seconds, wherever that takes them",
+        range: 9, duration: 1.4,
+    });
+    hero.abilities.add(Ability{
+        name: "Axe throw", icon: "axe_throw", sound: "ability.axe_throw", cooldown: 8, targeting: .point, cast: castAxeThrow, bot: .disableEnemy,
+        description: "Throws his axe towards the cursor, 22 far: the first enemy it hits is stunned for 1.3 seconds",
+        range: 22, power: 1.3,
+    });
+    hero.abilities.add(passive("Berserk", "berserk", "Below half his health, he runs 30% faster", Trait{berserk: 1.3}));
+    return hero;
+}
+
+castBattleCry :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    ground := hero.ground();
+    range := hero.reach(ability.range);
+    for *player, i in game.players {
+        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+        if player.hero.ground().distance(ground) > range { continue; }
+        player.hero.addStatus(.fear, ability.duration, point: ground, source: caster, time: game.time);
+    }
+    game.effects.addRing(ground, 1, range, {255, 120, 60, 255}, 0.4);
+    return true;
+}
+
+castAxeThrow :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    return game.throwProjectile(caster, .axe, target, hero.reach(ability.range), AxeSpeed, ability.power);
+}
+
+AxeSpeed :: 40.0;

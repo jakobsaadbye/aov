@@ -105,6 +105,7 @@ slickAt :: method (game: *Game, point: Vector2) -> bool {
 
 // While a hero is on the oil: on in the way it was going, without turning. False when it isn't sliding
 slide :: method (game: *Game, hero: *Hero, dt: f32) -> bool {
+    if hero.stats.oilProof { return false; }
     if hero.slideLeft <= 0 {
         if !hero.isMoving || !game.slickAt(hero.ground()) { return false; }
         toTarget := hero.target.xz() - hero.ground();

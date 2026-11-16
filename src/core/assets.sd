@@ -98,6 +98,10 @@ loadAssets :: () -> Assets {
         icon := kind.itemDefinition().icon;
         assets.icons[icon] = loadTexture(tprint("icons/%.png", icon));
     }
+    for kind in PerkKind.values {
+        icon := kind.perkDefinition().icon;
+        assets.icons[icon] = loadTexture(tprint("icons/%.png", icon));
+    }
     for kind in ParticleTexture.values {
         assets.particleTextures[kind] = loadTexture(tprint("textures/particles/%.png", ParticleTexture.names[kind]));
     }

@@ -58,6 +58,13 @@ BlinkFlash :: ParticleStyle{
     colors: [Color{220, 180, 255, 255}, Color{160, 100, 255, 200}, Color{100, 60, 220, 0}],
 };
 
+// Tobias's camera flash: a burst of white light that flies off where it points
+CameraFlash :: ParticleStyle{
+    texture: .soft, blend: .additive, lifetime: {0.15, 0.35}, shape: .sphere, radius: 0.5, speed: {1, 4}, outward: true,
+    drag: 4, size: {1.2, 2.4}, grow: 1.5,
+    colors: [Color{255, 255, 255, 255}, Color{255, 250, 220, 200}, Color{255, 240, 200, 0}],
+};
+
 // The Frost Charm and Frosty's chill aura: snow that drifts in the cold around the hero
 Snow :: ParticleStyle{
     texture: .star, lifetime: {1.4, 2.4}, shape: .disc, radius: 7, speed: {0.2, 0.6},
@@ -122,6 +129,7 @@ Fx :: enum {
     oil,
     shove,
     glow,
+    flash,
 }
 
 @private
@@ -147,6 +155,7 @@ styleOf :: (fx: Fx) -> *ParticleStyle {
         fxStyles[Fx.oil]      = OilDrips;
         fxStyles[Fx.shove]    = ShovePuff;
         fxStyles[Fx.glow]     = ItemGlow;
+        fxStyles[Fx.flash]    = CameraFlash;
     }
     return &fxStyles[fx];
 }
@@ -162,8 +171,8 @@ emitEffects :: method (game: *Game, dt: f32) {
         ground := hero.ground().at(0.3);
         aura := hero.chillAura();
         if aura.hasValue() { particles.emitRate(.snow, ground, aura.value().radius * 2.5, dt, radius: aura.value().radius); }
-        if hero.boost.stench > 0 { particles.emitRate(.stench, ground, 7, dt, radius: hero.boost.stench * 0.8); }
-        if hero.boost.regen > 0 && hero.health < hero.maxHealth() && hero.hurtFor > HealDelay {
+        if hero.stats.stench > 0 { particles.emitRate(.stench, ground, 7, dt, radius: hero.stats.stench * 0.8); }
+        if hero.stats.regen > 0 && hero.health < hero.maxHealth() && hero.hurtFor > HealDelay {
             particles.emitRate(.heal, ground, 14, dt);
         }
         if hero.isFaded() { particles.emitRate(.wisps, hero.position + Vector3{0, 1.5, 0}, 30, dt); }

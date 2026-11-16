@@ -1,0 +1,43 @@
+namespace core;
+
+import math;
+use raylib;
+
+// Bjørn: a heavy viking that leaps over the traffic and bashes his enemies into it
+
+defineBjorn :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Bjørn", title: "the Shieldbearer", color: {176, 120, 70, 255}, width: 3.0, height: 4.8, moveSpeed: 7.5, hitRadius: 1.0, maxHealth: 60};
+    hero.abilities.add(Ability{
+        name: "Leap", icon: "leap", sound: "ability.leap", cooldown: 7, targeting: .point, cast: castLeap, bot: .escape,
+        description: "Leaps to the cursor, up to 16 away, high over the cars and the walls",
+        range: 16, duration: 0.65, delay: 0.65,
+    });
+    hero.abilities.add(Ability{
+        name: "Shield bash", icon: "shield_bash", sound: "ability.shield_bash", cooldown: 9, cast: castShieldBash, bot: .knockEnemy,
+        description: "Bashes the nearest enemy within 5 with his shield: stunned for 1.2 seconds, and knocked 9 away",
+        range: 5, duration: 1.2, power: 9,
+    });
+    hero.abilities.add(passive("Iron hide", "iron_hide", "Takes half the damage from the cars", Trait{damageTaken: 0.5}));
+    return hero;
+}
+
+// The nearest enemy within range: stunned for duration, and knocked power away
+castShieldBash :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    player := &game.players[caster];
+    hero := &player.hero;
+    ground := hero.ground();
+    victim := game.enemyNear(caster, ground, hero.reach(ability.range));
+    if victim < 0 { return false; }
+    enemy := &game.players[victim].hero;
+    away := enemy.ground() - ground;
+    if away.lengthSqr() < 0.01 { away = Vector2{player.startSide.opposite().sign(), 0}; }
+    away = away.normalize();
+    hero.facing = math.atan2f(away.x, away.y);
+    enemy.addStatus(.stun, ability.duration, source: caster, time: game.time);
+    game.knockAway(victim, ground, ability.power, caster);
+    game.effects.addRing(enemy.ground(), 0.5, 3.5, {255, 230, 150, 255}, 0.35);
+    game.effects.particles.emit(.sparks, enemy.position + Vector3{0, 2.5, 0}, 16, push: away.at(4));
+    game.effects.particles.emit(.shove, enemy.position + Vector3{0, 1.5, 0}, 8);
+    game.announce(victim, {255, 200, 120, 255}, "% was bashed by % (%)!", enemy.info().name, hero.info().name, player.name);
+    return true;
+}

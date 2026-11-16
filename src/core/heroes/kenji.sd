@@ -1,0 +1,48 @@
+namespace core;
+
+// Kenji the Ninja: he vanishes in smoke, steps out of the shadow of a passing car, and rolls away from the one that
+// gets him first
+
+import math;
+use raylib;
+
+defineKenji :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Kenji", title: "the Ninja", color: {40, 40, 48, 255}, width: 2.2, height: 4.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 24};
+    hero.abilities.add(Ability{
+        name: "Smoke bomb", icon: "smoke_bomb", sound: "ability.smoke", cooldown: 12, cast: castSmokeBomb, bot: .speedUp,
+        description: "Vanishes in smoke for 3 seconds: enemies can't target him, and he runs 25% faster",
+        duration: 3, power: 1.25,
+    });
+    hero.abilities.add(Ability{
+        name: "Shadow step", icon: "shadow_step", sound: "ability.shadow_step", cooldown: 9, targeting: .point, cast: castShadowStep, bot: .escape,
+        description: "Steps into the shadow right behind the car nearest the cursor, up to 12 away",
+        range: 12,
+    });
+    hero.abilities.add(passive("Roll", "roll", "The first car that gets each of him only knocks him down: he rolls out of the way", .roll));
+    return hero;
+}
+
+castSmokeBomb :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    hero.addStatus(.hidden, ability.duration);
+    hero.addStatus(.haste, ability.duration, ability.power);
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 30, tint: {170, 170, 180, 255});
+    game.effects.particles.emit(.dust, hero.position, 30);
+    return true;
+}
+
+castShadowStep :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    hero := &game.players[caster].hero;
+    aim := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
+    index := game.traffic.carNear(aim, 6);
+    if index < 0 { return false; }
+    car := &game.traffic.cars[index];
+    behind := Vector2{laneCenter(car.lane), car.z - car.length() * 0.5 - hero.info().hitRadius - 0.8};
+    if behind.distance(hero.ground()) > hero.reach(ability.range) + 6 { return false; }
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 14, tint: {60, 40, 80, 255});
+    hero.position = game.world.resolveCollisions(behind, hero.info().hitRadius, false).at();
+    hero.facing = 0;
+    hero.stop();
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1, 0}, 14, tint: {60, 40, 80, 255});
+    return true;
+}

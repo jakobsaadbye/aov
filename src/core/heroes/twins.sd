@@ -1,0 +1,46 @@
+namespace core;
+
+// Tim & Tom: twins, and nobody can tell them apart. One walks on ahead as a decoy, spells hit him first, and they swap
+// places in a blink
+
+import math;
+use raylib;
+
+defineTwins :: () -> HeroDefinition {
+    hero := HeroDefinition{name: "Tim & Tom", title: "the Twins", color: {245, 200, 50, 255}, width: 2.8, height: 3.3, moveSpeed: 8, hitRadius: 0.8, maxHealth: 30};
+    hero.abilities.add(Ability{
+        name: "Split up", icon: "split", sound: "ability.split", cooldown: 10, cast: castSplit, bot: .speedUp,
+        description: "The other twin walks on towards the far side by himself, for 5 seconds",
+        duration: 5,
+    });
+    hero.abilities.add(Ability{
+        name: "Swap", icon: "swap", sound: "ability.swap", cooldown: 5, cast: castSwapTwin, bot: .untouchable,
+        description: "Swaps places with the other twin, while he is out",
+    });
+    hero.abilities.add(passive("Double take", "double_take", "Spells cast on them hit the other twin first, while he is out", .decoysFirst));
+    return hero;
+}
+
+castSplit :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    player := &game.players[caster];
+    hero := &player.hero;
+    velocity := Vector2{hero.goalSign * hero.speed(), 0};
+    player.decoy = Decoy{position: hero.ground() + Vector2{0, 1.6}, velocity: velocity, timeLeft: ability.duration, facing: math.atan2f(velocity.x, velocity.y)};
+    game.effects.particles.emit(.wisps, hero.position + Vector3{0, 1.5, 0}, 16, tint: {255, 220, 120, 255});
+    return true;
+}
+
+castSwapTwin :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+    player := &game.players[caster];
+    if !player.decoy.hasValue() { return false; }
+    hero := &player.hero;
+    decoy := player.decoy.value();
+    was := hero.ground();
+    hero.position = decoy.position.at();
+    hero.stop();
+    hero.forgetTrail();
+    decoy.position = was;
+    player.decoy = decoy;
+    game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 16);
+    return true;
+}

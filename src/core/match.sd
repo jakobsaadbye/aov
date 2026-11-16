@@ -39,6 +39,7 @@ endRound :: method (game: *Game, index: int) {
         player.hero.stop();
         player.phase = Phase{regroup: {timeLeft: RegroupTime}};
     }
+    game.offerPerks();
 }
 
 win :: method (game: *Game, index: int) {
@@ -85,7 +86,7 @@ weight :: method (hero: *Hero) -> f32 {
 shove :: method (game: *Game, from: int, to: int) -> bool {
     attacker := &game.players[from].hero;
     victim := &game.players[to].hero;
-    if !attacker.isMoving || attacker.shoveLeft > 0 || victim.displacement.hasValue() || victim.isFaded() || attacker.isFaded() { return false; }
+    if !attacker.isMoving || attacker.shoveLeft > 0 || victim.displacement.hasValue() || victim.isFaded() || attacker.isFaded() || victim.stats.unshovable { return false; }
     offset := victim.ground() - attacker.ground();
     heading := attacker.target.xz() - attacker.ground();
     if offset.length() < 0.001 || heading.length() < 0.001 { return false; }
@@ -95,9 +96,12 @@ shove :: method (game: *Game, from: int, to: int) -> bool {
     ratio := math.clamp(math.sqrtf(attacker.weight() / victim.weight()), 0.6, 2.0);
     victim.displacement = Displacement{to: (victim.ground() + direction * ShoveDistance * ratio).at(), speed: ShoveSpeed};
     victim.isMoving = false;
+    victim.clearStatus(.sleep);
     victim.harmedBy = from;
     victim.harmedAt = game.time;
     attacker.shoveLeft = ShoveCooldown;
+    if victim.stats.secondWind { victim.addStatus(.haste, SecondWindTime, 1.3); }
+    if attacker.stats.hotPotato { game.swapItems(from, to); }
     game.effects.addRing(victim.ground(), 0.3, 2.5, {255, 255, 255, 255}, 0.25);
     game.effects.particles.emit(.shove, (attacker.position + victim.position) * 0.5 + Vector3{0, 1.2, 0}, 10);
     game.sounds.playAt("ability.shield_bash", victim.position, 0.45, 0.1);
@@ -162,4 +166,21 @@ winGame :: (game: *Game, player: ?int) {
         return;
     }
     game.win(index);
+}
+
+// Hot Potato: the shover and the shoved swap their oldest items that aren't locked
+swapItems :: method (game: *Game, a: int, b: int) {
+    first := &game.players[a];
+    second := &game.players[b];
+    slotA := first.backpack.oldestUnlocked();
+    slotB := second.backpack.oldestUnlocked();
+    if slotA < 0 || slotB < 0 { return; }
+    kind := first.backpack.items[slotA];
+    first.backpack.items[slotA] = second.backpack.items[slotB];
+    first.backpack.charges[slotA] = first.backpack.items[slotA].itemDefinition().charges;
+    second.backpack.items[slotB] = kind;
+    second.backpack.charges[slotB] = kind.itemDefinition().charges;
+    first.refreshStats();
+    second.refreshStats();
+    game.announce(b, {255, 140, 60, 255}, "% swapped items with %", first.name, second.name);
 }

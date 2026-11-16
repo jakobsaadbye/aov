@@ -1,0 +1,161 @@
+namespace core;
+
+// What is happening to a hero for a while: stunned, faded, hasted, turned into a toad, asleep, scared... Each kind has
+// one slot on the hero; a new one of a kind that is already there lasts for the longer of the two. What each kind does
+// is said once, in statusRules, and the game asks the hero (canAct, canCast, isTargetable, ...) instead of checking each
+// kind itself. A new kind of status is a value of StatusKind, a line in statusRules, and where its amount or point is
+// read, if it has one.
+
+import math;
+use raylib;
+
+StatusKind :: enum {
+    stun,           // Can't move or cast
+    timeLock,       // Stunned, frozen in time (Mira)
+    sleep,          // Stunned until it is shoved or hit, or the time is up (Hugo)
+    fade,           // The cars drive through it, and enemies can't target it (Ghosty)
+    hidden,         // In smoke: enemies can't target it (Kenji)
+    haste,          // amount times as fast
+    slow,           // amount slower, e.g 0.5 is half as fast
+    hex,            // A toad: slow, and can't cast (Sigrid)
+    blind,          // The screen is white; a bot can't see the cars (Tobias)
+    fear,           // Runs away from point (Ivar)
+    taunt,          // Walks towards point (a rubber chicken)
+    puppet,         // Walks to point, which the puppeteer picks (Hugo)
+    tangled,        // In yarn: amount slower (Gudrun)
+    windedDown,     // After an energy drink: amount slower
+    mending,        // Heals amount of its most health a second while it stands still (Ditte)
+    sugarRush,      // amount times as fast, then winded down when it is over (an energy drink)
+}
+
+Status :: struct {
+    timeLeft: f32;
+    amount:   f32;
+    point:    Vector2;
+    source:   int = -1;        // The player that did it, or -1
+}
+
+StatusRules :: struct {
+    stops:        bool;     // Can't be given orders, and stands still
+    silences:     bool;     // Can't cast
+    untargetable: bool;     // Enemies' spells don't find it
+    carsPass:     bool;     // The cars drive through it
+    steers:       bool;     // Walks by itself, to or from its point
+    harms:        bool;     // Done by an enemy: a car that gets it soon after gives that enemy the kill
+}
+
+statusRules :: (kind: StatusKind) -> StatusRules {
+    return switch kind {
+        case .stun       => StatusRules{stops: true, silences: true, harms: true};
+        case .timeLock   => StatusRules{stops: true, silences: true, harms: true};
+        case .sleep      => StatusRules{stops: true, silences: true, harms: true};
+        case .fade       => StatusRules{untargetable: true, carsPass: true};
+        case .hidden     => StatusRules{untargetable: true};
+        case .haste      => StatusRules{};
+        case .slow       => StatusRules{harms: true};
+        case .hex        => StatusRules{silences: true, harms: true};
+        case .blind      => StatusRules{harms: true};
+        case .fear       => StatusRules{silences: true, steers: true, harms: true};
+        case .taunt      => StatusRules{steers: true, harms: true};
+        case .puppet     => StatusRules{silences: true, steers: true, harms: true};
+        case .tangled    => StatusRules{harms: true};
+        case .windedDown => StatusRules{};
+        case .mending    => StatusRules{};
+        case .sugarRush  => StatusRules{};
+    };
+}
+
+// The statuses of a hero: a slot for each kind
+Statuses :: struct {
+    slots: [StatusKind.count]Status;
+}
+
+has :: method (hero: Hero, kind: StatusKind) -> bool {
+    return hero.statuses.slots[kind].timeLeft > 0;
+}
+
+timeLeft :: method (hero: Hero, kind: StatusKind) -> f32 {
+    return math.max(hero.statuses.slots[kind].timeLeft, 0);
+}
+
+status :: method (hero: Hero, kind: StatusKind) -> Status {
+    return hero.statuses.slots[kind];
+}
+
+// Puts a status on the hero, for the longer of what is left and the new duration. An enemy's status is shorter on a hero
+// with the trait stunTaken, and gives the enemy the kill if a car gets the hero soon after
+addStatus :: method (hero: *Hero, kind: StatusKind, duration: f32, amount: f32 = 0, point := Vector2{0, 0}, source: int = -1, time: f32 = 0) {
+    rules := statusRules(kind);
+    if rules.stops || rules.steers || kind == .hex { duration *= hero.stats.stunTaken; }
+    slot := &hero.statuses.slots[kind];
+    if slot.timeLeft <= 0 || duration >= slot.timeLeft {
+        slot.timeLeft = duration;
+        slot.amount = amount;
+        slot.point = point;
+        slot.source = source;
+    }
+    if rules.harms && source >= 0 {
+        hero.harmedBy = source;
+        hero.harmedAt = time;
+    }
+    if rules.stops || rules.steers {
+        hero.stop();
+        hero.hook = null;
+    }
+}
+
+clearStatus :: method (hero: *Hero, kind: StatusKind) {
+    hero.statuses.slots[kind].timeLeft = 0;
+}
+
+updateStatuses :: method (hero: *Hero, dt: f32) {
+    rushing := hero.has(.sugarRush);
+    for *slot in hero.statuses.slots { slot.timeLeft = math.max(0, slot.timeLeft - dt); }
+    // The sugar rush is over: now it is tired
+    if rushing && !hero.has(.sugarRush) { hero.addStatus(.windedDown, EnergyCrash, 0.35); }
+}
+
+EnergyCrash :: 2.0;     // Seconds it is slower after an energy drink
+
+// Any of its statuses does this
+anyStatus :: method (hero: Hero, test: (StatusRules) -> bool) -> bool {
+    for kind in StatusKind.values {
+        if hero.statuses.slots[kind].timeLeft > 0 && test(statusRules(kind)) { return true; }
+    }
+    return false;
+}
+
+isStopped :: method (hero: Hero) -> bool {
+    return hero.anyStatus(rules => rules.stops);
+}
+
+isSilenced :: method (hero: Hero) -> bool {
+    return hero.anyStatus(rules => rules.silences);
+}
+
+// Walking by itself, to a point: away from what scares it, to what taunts it, or where its puppeteer says. Or nothing
+steeredTo :: method (hero: Hero) -> ?Vector2 {
+    if hero.has(.puppet) { return hero.status(.puppet).point; }
+    if hero.has(.taunt)  { return hero.status(.taunt).point; }
+    if hero.has(.fear) {
+        away := hero.ground() - hero.status(.fear).point;
+        if away.length() < 0.01 { away = Vector2{1, 0}; }
+        return hero.ground() + away.normalize() * 10;
+    }
+    return null;
+}
+
+// How much its statuses make it faster or slower
+statusSpeed :: method (hero: Hero) -> f32 {
+    speed: f32 = 1;
+    if hero.has(.haste)      { speed *= hero.status(.haste).amount; }
+    if hero.has(.sugarRush)  { speed *= hero.status(.sugarRush).amount; }
+    if hero.has(.slow)       { speed *= 1 - hero.status(.slow).amount; }
+    if hero.has(.tangled)    { speed *= 1 - hero.status(.tangled).amount; }
+    if hero.has(.windedDown) { speed *= 1 - hero.status(.windedDown).amount; }
+    if hero.has(.hex)        { speed *= HexSpeed; }
+    if hero.has(.fear)       { speed *= 1.1; }
+    return speed;
+}
+
+HexSpeed :: 0.55;

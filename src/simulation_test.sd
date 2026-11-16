@@ -11,6 +11,7 @@ import math;
 import random;
 import json;
 import time;
+import os;
 use raylib;
 
 Dt :: 1.0 / 60.0;
@@ -18,16 +19,27 @@ Dt :: 1.0 / 60.0;
 noZones: [..]core.SlowZone;
 
 main :: () {
+    fmt.print("start");
     testPushOutOfRect();
+    fmt.print("rect");
     testWalls();
+    fmt.print("testWalls");
     testTraffic();
+    fmt.print("testTraffic");
     testNoGapBetweenLanes();
+    fmt.print("testNoGapBetweenLanes");
     testFrozenCars();
+    fmt.print("testFrozenCars");
     testRunOver();
+    fmt.print("testRunOver");
     testHealth();
+    fmt.print("testHealth");
     testCrossing();
+    fmt.print("testCrossing");
     testAbilities();
+    fmt.print("testAbilities");
     testNewHeroes();
+    fmt.print("testNewHeroes");
     testCommands();
     testEnemySpells();
     testForecast();
@@ -42,6 +54,9 @@ main :: () {
     testItemAuras();
     testMatch();
     testParticles();
+    testEveryAbility();
+    testEveryItem();
+    testPerks();
     fmt.print("All simulation tests passed");
 }
 
@@ -457,7 +472,7 @@ testCommands :: () {
     assert(you.hero.ground().distance({-108, 0}) < 0.5 && you.commands.count == 0);
 
     // A stunned hero doesn't move, and doesn't cast
-    you.hero.stunLeft = 1;
+    you.hero.addStatus(.stun, 1);
     you.order(core.Command{move: {-118, 0}});
     game.simulate(Dt);
     for 0..30 { game.simulate(Dt); }
@@ -485,10 +500,10 @@ testEnemySpells :: () {
     game.spawnHero(0, .bjorn);
     game.you().hero.position = Vector3{-118, 0, 0};
     enemy.hero.position = Vector3{-115, 0, 0};
-    enemy.hero.stunLeft = 0;
+    enemy.hero.clearStatus(.stun);
     bashSlot := 1;
     game.cast(0, bashSlot, {-115, 0});
-    assert(enemy.hero.stunLeft > 1);
+    assert(enemy.hero.timeLeft(.stun) > 1);
     for 0..60 { game.simulate(Dt); }
     assert(near(enemy.hero.position.x, -115 + 9, 0.3));
 
@@ -500,11 +515,11 @@ testEnemySpells :: () {
 
     // Mira locks the enemy nearest the point in time
     game.spawnHero(0, .mira);
-    enemy.hero.stunLeft = 0;
+    enemy.hero.clearStatus(.stun);
     game.you().hero.position = Vector3{-118, 0, 0};
     enemy.hero.position = Vector3{-108, 0, 5};
     game.cast(0, 2, {-109, 4});
-    assert(enemy.hero.lockedLeft > 1.9 && !enemy.hero.canAct());
+    assert(enemy.hero.timeLeft(.timeLock) > 1.9 && !enemy.hero.canAct());
     enemy.order(core.Command{move: {-118, 20}});
     for 0..60 { game.simulate(Dt); }
     assert(near(enemy.hero.position.x, -108) && near(enemy.hero.position.z, 5));
@@ -836,7 +851,7 @@ testHazards :: () {
     for 0..60 { game.simulate(Dt); }
     assert(near(you.hero.health, health + most * 0.1, 1));
     you.backpack = core.Backpack{};
-    you.applyBoost();
+    you.refreshStats();
 
     // Rush hour: a warning, then the cars come closer after each other, then calm again
     traffic := &game.traffic;
@@ -1049,4 +1064,85 @@ testParticles :: () {
     perFrame := (time.clock() - started) / 10 * 1000;
     fmt.print("Particles: an update of % takes % ms", count, fmt.fixed(perFrame as f32, 3));
     assert(count > 10000 && perFrame < 8);
+}
+
+// Every ability of every hero, cast on the road with an enemy next to it and at a point on the road: none of them
+// crashes, and the game goes on
+testEveryAbility :: () {
+    for kind in core.HeroKind.values {
+        abilities := kind.definition().abilities;
+        for ability, slot in abilities {
+            if ability.isPassive() { continue; }
+            game := bots.newGame(31, bots: 1);
+            defer game.free();
+            game.spawnHero(0, kind);
+            game.spawnHero(1, .allan);
+            you := game.you();
+            you.hero.position = Vector3{-88, 0, 0};
+            game.players[1].hero.position = Vector3{-86, 0, 1};
+            game.players[1].brain = null;          // It stands still where it is put
+            game.cast(0, slot as int, Vector2{-86, 1});
+            for 0..(3 * 60) { game.simulate(Dt); }
+            // A second time, at the road ahead
+            you.hero.cooldowns[slot] = 0;
+            if you.isPlaying() { game.cast(0, slot as int, Vector2{-75, 4}); }
+            for 0..(3 * 60) { game.simulate(Dt); }
+        }
+        // Its model and the icons of its abilities are there
+        assert(os.fileExists(core.tprint("%models/%.obj", core.dataFolder(), core.HeroKind.names[kind])));
+        for ability in abilities { assert(os.fileExists(core.tprint("%icons/%.png", core.dataFolder(), ability.icon))); }
+    }
+}
+
+// Every item: picked up, and used when it is used, until its charges are gone
+testEveryItem :: () {
+    for kind in core.ItemKind.values {
+        game := bots.newGame(32, bots: 1);
+        defer game.free();
+        game.players[1].brain = null;
+        you := game.you();
+        you.hero.position = Vector3{-88, 0, 0};
+        game.players[1].hero.position = Vector3{-86, 0, 1};
+        game.pickUp(0, kind);
+        assert(you.backpack.count == 1 && you.backpack.items[0] == kind);
+        definition := kind.itemDefinition();
+        assert(os.fileExists(core.tprint("%icons/%.png", core.dataFolder(), definition.icon)));
+        if !definition.isUsed() { continue; }
+        uses := math.max(definition.charges, 1);
+        for 0..uses {
+            you.backpack.cooldowns[0] = 0;
+            if you.backpack.count == 0 || !you.isPlaying() { break; }
+            game.useItem(0, 0, Vector2{-86, 1});
+            for 0..(2 * 60) { game.simulate(Dt); }
+        }
+        // One with charges is gone once they are used
+        if definition.charges > 0 && you.isPlaying() && kind != .busTicket && kind != .trafficCone { assert(you.backpack.count == 0); }
+    }
+}
+
+// Perks: three are offered after a crossing, and the one picked is the player's, with what it does
+testPerks :: () {
+    game := bots.newGame(33, bots: 1);
+    defer game.free();
+    you := game.you();
+    game.offerPerks();
+    assert(you.perkOffer.isOpen && game.players[1].perkOffer.isOpen);
+    a := you.perkOffer.perk(0);
+    b := you.perkOffer.perk(1);
+    c := you.perkOffer.perk(2);
+    assert(a != b && b != c && a != c);
+    game.choosePerk(0, 1);
+    assert(!you.perkOffer.isOpen && you.perks.count == 1 && you.perks[0] == b);
+
+    // Deep Pockets: a third slot in the backpack
+    you.perks.add(.pocket);
+    you.refreshStats();
+    assert(you.backpack.size == 3);
+
+    // The bot picks one too, by itself, and nobody has to: the time runs out
+    for 0..(14 * 60) { game.simulate(Dt); }
+    assert(game.players[1].perks.count == 1);
+    game.offerPerks();
+    for 0..(13 * 60) { game.simulate(Dt); }
+    assert(!you.perkOffer.isOpen && you.perks.count == 3);
 }

@@ -1,26 +1,27 @@
 {
   "best": {
-    "replanEvery": 0.22436224,
+    "replanEvery": 0.25746396,
     "reactionTime": 0.12880819,
-    "margin": 0,
+    "margin": 0.14493588,
     "leadTime": 0.1,
     "trailTime": 0,
-    "dodgeTime": 1.6935899,
+    "dodgeTime": 0.96859896,
     "waitOnRoad": 7.6900764,
-    "planSlack": 0.02,
+    "planSlack": 0.042221576,
     "castBar": 0.1,
     "dangerTime": 0.2,
     "escape": 0,
     "stopCars": 0.39932477,
-    "stopCarsWaiting": 0.30156177,
+    "stopCarsWaiting": 0.23508586,
     "speedUp": 1,
     "speedUpDanger": 0.8720517,
-    "shortcut": 0.8884414,
-    "rewindHealth": 0.34966636,
+    "shortcut": 0.9997464,
+    "rewindHealth": 0.33654663,
     "aggression": 0.4302385,
-    "punishAhead": 0.83769083
+    "punishAhead": 0.6609927,
+    "itemDetour": 29.637232
   },
-  "fitness": 12.289118,
-  "generations": 20,
-  "trained": "2026-11-15 23:38"
+  "fitness": 1.3043988,
+  "generations": 1,
+  "trained": "2026-11-16 16:01"
 }
