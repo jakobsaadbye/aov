@@ -1,4 +1,6 @@
-namespace aov;
+namespace bots;
+
+use core;
 
 // The bots. A bot is a Brain: something that looks at the game and gives its player's hero orders, with the same
 // Commands that your keys and mouse give (game.sd). So a bot can't do anything you can't, and a new kind of bot, e.g one
@@ -21,27 +23,6 @@ import time;
 import fmt;
 use raylib;
 
-Brain :: interface {
-    // Looks at the game and gives the hero of player me its orders for this frame, with player.order(command)
-    think :: method * (game: *Game, me: int, dt: f32);
-
-    // Forgets what it was doing, e.g for a new game
-    reset :: method * ();
-
-    // Gives back its memory, when the game is over
-    free :: method * ();
-
-    // What it means to do, for the debug overlay (F4): the points of its way
-    plannedPath :: method () -> []Waypoint;
-
-    // What its thinking has cost so far
-    profile :: method () -> BotProfile;
-
-    // For the inspector (F4, inspector.sd): draws what it knows in the world, in 3D, e.g where it is safe and where it is
-    // going, and adds lines of text that say what it is doing and why
-    drawInspection :: method * (game: *Game, me: int);
-    describe :: method * (game: *Game, me: int, lines: *[..]InspectorLine);
-}
 
 // What a bot is doing this frame, for the inspector
 BotMode :: enum {
@@ -72,9 +53,6 @@ BotPersonality :: struct {
     genome: Genome;
 }
 
-BotNames :: ["Lars", "Mette", "Søren", "Freja", "Jens", "Ida", "Bo", "Karen"];
-
-DefaultBots :: 3;
 
 Bot :: struct {
     personality: BotPersonality;
@@ -131,6 +109,32 @@ free :: method (bot: *Bot) {
     bot.arena.free();
     bot.plan.free();
     mem.delete(bot);
+}
+
+// Plays with the genes of another difficulty, from now on
+setDifficulty :: method (bot: *Bot, difficulty: Difficulty) {
+    bot.personality = personalityFor(difficulty, &bot.rng);
+    bot.reset();
+}
+
+// The bots take turns to search for a way across, so a frame doesn't take long when many of them want to at once.
+// Counted for each game and each thread, so games can run on many threads at once
+SearchesPerFrame :: 1;
+
+@private @threadLocal searchGame: *Game;
+@private @threadLocal searchTime: f32 = -1;
+@private @threadLocal searchesLeft: int;
+
+// Whether a bot of the game may search this frame, which takes the search
+takeSearch :: (game: *Game) -> bool {
+    if searchGame != game || searchTime != game.time {
+        searchGame = game;
+        searchTime = game.time;
+        searchesLeft = SearchesPerFrame;
+    }
+    if searchesLeft <= 0 { return false; }
+    searchesLeft -= 1;
+    return true;
 }
 
 gene :: method (bot: *Bot, gene: Gene) -> f32 {
@@ -283,11 +287,10 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
 
     // Another bot searched this frame: its turn is next frame. Unless it is by the road, where a plan that doesn't hold
     // any more can't wait
-    if game.searchesLeft <= 0 && !isNearRoad(game.players[me].hero.ground()) {
+    if !takeSearch(game) && !isNearRoad(game.players[me].hero.ground()) {
         bot.mustSearch = true;
         return;
     }
-    game.searchesLeft -= 1;
     bot.mustSearch = false;
     bot.searchedAt = game.time;
 
@@ -602,8 +605,8 @@ progressOf :: (point: Vector2, startSide: Side) -> f32 {
 // With bot_arena.sd --hits: what a bot was doing when a car got it, to find out why
 debugHits := false;
 
-reportHit :: (game: *Game, index: int, car: *Car) {
-    bot := game.players[index].brain as *Bot;
+wasHit :: method (bot: *Bot, game: *Game, index: int, car: *Car) {
+    if !debugHits { return; }
     hero := game.players[index].hero;
     rel := game.time - bot.forecastAt;
     newCar := car.age < game.time - bot.searchedAt;

@@ -1,4 +1,4 @@
-namespace aov;
+namespace core;
 
 use raylib;
 
@@ -16,11 +16,7 @@ AmbientColor :: Vector3{0.42, 0.45, 0.52};
 HazeColor    :: Vector3{0.36, 0.46, 0.38};
 
 newLighting :: () -> Lighting {
-    vsPath := dataPath("shaders/lighting.vs");
-    fsPath := dataPath("shaders/lighting.fs");
-    defer vsPath.free();
-    defer fsPath.free();
-    shader := LoadShader(vsPath, fsPath);
+    shader := LoadShader(dataPath("shaders/lighting.vs"), dataPath("shaders/lighting.fs"));
 
     // DrawMesh sets these when the shader has them
     shader.locs[ShaderLocationIndex.shaderLocMatrixModel as int]  = GetShaderLocation(shader, "matModel");
@@ -35,9 +31,7 @@ newLighting :: () -> Lighting {
 }
 
 setVector :: method (lighting: *Lighting, name: string, value: Vector3) {
-    cName := name.toCString();
-    defer cName.free();
-    SetShaderValue(lighting.shader, GetShaderLocation(lighting.shader, cName), &value, .vec3);
+    SetShaderValue(lighting.shader, GetShaderLocation(lighting.shader, tempCString(name)), &value, .vec3);
 }
 
 // Once a frame, before drawing, for the shine and the haze
@@ -56,9 +50,7 @@ newMaterial :: method (lighting: *Lighting, color: Color) -> Material {
 
 // A model of the data folder, e.g models/car.obj, with all of its materials lit by the sun
 loadModel :: method (lighting: *Lighting, file: string) -> Model {
-    path := dataPath(file);
-    defer path.free();
-    model := LoadModel(path);
+    model := LoadModel(dataPath(file));
     for i in 0..model.materialCount {
         model.materials[i].shader = lighting.shader;
     }

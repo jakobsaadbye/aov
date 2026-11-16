@@ -1,4 +1,4 @@
-namespace aov;
+namespace core;
 
 import fmt;
 import math;
@@ -59,12 +59,8 @@ load :: method (player: *SoundPlayer, dataFolder: string) {
     player.isReady = true;
     player.rng = random.newRandom(1234);
 
-    soundsPath := fmt.sprint("%sounds", dataFolder);
-    defer soundsPath.free();
-    for file in soundFiles(soundsPath) {
-        cPath := file.path.toCString();
-        defer cPath.free();
-        source := LoadSound(cPath);
+    for file in soundFiles(tprint("%sounds", dataFolder)) {
+        source := LoadSound(tempCString(file.path));
 
         variant: SoundVariant;
         variant.voices[0] = source;
@@ -74,12 +70,8 @@ load :: method (player: *SoundPlayer, dataFolder: string) {
         player.bank[file.key].variants.add(variant);
     }
 
-    musicPath := fmt.sprint("%music", dataFolder);
-    defer musicPath.free();
-    for file in soundFiles(musicPath) {
-        cPath := file.path.toCString();
-        defer cPath.free();
-        music := LoadMusicStream(cPath);
+    for file in soundFiles(tprint("%music", dataFolder)) {
+        music := LoadMusicStream(tempCString(file.path));
         music.looping = true;
         // The key of music is its name alone, e.g "theme" for music/theme.ogg
         name := file.key.slice(file.key.indexOf(".") + 1);
@@ -98,9 +90,7 @@ SoundFile :: struct {
 // The sound files in a folder and below
 @private
 soundFiles :: (folder: string) -> [..]SoundFile {
-    cFolder := folder.toCString();
-    defer cFolder.free();
-    files := LoadDirectoryFilesEx(cFolder, ".wav;.ogg;.mp3", true);
+    files := LoadDirectoryFilesEx(tempCString(folder), ".wav;.ogg;.mp3", true);
     defer UnloadDirectoryFiles(files);
 
     result: [..]SoundFile;

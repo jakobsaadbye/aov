@@ -1,4 +1,6 @@
-namespace aov;
+namespace bots;
+
+use core;
 
 // The genome of a bot: every number that says how it plays, as genes that bot_train.sd can evolve. The planner, the
 // reflex and the tactics of bot.sd read them instead of numbers of their own, so a trained genome changes how careful

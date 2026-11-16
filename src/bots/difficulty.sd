@@ -1,4 +1,6 @@
-namespace aov;
+namespace bots;
+
+use core;
 
 // How good the bots are. Every level starts from the best genome training found (bot_train.sd), in
 // data/bots/genomes.json, or the hand tuned genes when there is none. Expert plays it as it is; the others play it with
@@ -9,13 +11,6 @@ import fmt;
 import json;
 import os;
 import random;
-
-Difficulty :: enum {
-    easy,
-    normal,
-    hard,
-    expert,
-}
 
 // What a level takes away from the best genome
 Handicap :: struct {
@@ -64,10 +59,7 @@ bestGenome: ?Genome;
 trainedGenome :: () -> Genome {
     if bestGenome.hasValue() { return bestGenome.value(); }
     genome := defaultGenome();
-    folder := dataFolder();
-    path := fmt.sprint("%%", folder, TrainedGenomesFile);
-    folder.free();
-    defer path.free();
+    path := tprint("%%", dataFolder(), TrainedGenomesFile);
     if os.fileExists(path) {
         text, err := os.readFile(path);
         if err == null {

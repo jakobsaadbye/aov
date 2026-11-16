@@ -1,0 +1,47 @@
+namespace core;
+
+// The temporary allocator: memory for what is only needed for a moment, e.g a text that is drawn this frame, or the path
+// of a file while it is loaded. Nothing of it is freed on its own: main.sd frees all of it at once at the end of each
+// frame, with freeTemp. So it stays close together, and there is no free to forget. What must live longer, e.g the text
+// of the banner, is allocated as before.
+//
+//     text := tprint("% s", seconds);              // A string of this frame
+//     DrawText(tempCString(text), ...);            // A C string of this frame, e.g for raylib
+//
+//     previous := useTemp();                       // Everything that is allocated, until the allocator is set back
+//     defer mem.setAllocator(previous);
+//
+// Each thread has its own, e.g the threads of bot_train.sd.
+
+import allocators;
+import c;
+import fmt;
+import mem;
+
+@private @threadLocal
+tempArena: allocators.Arena;
+
+// The text of the format, until the end of the frame
+tprint :: (format: string, args: ...any) -> string {
+    previous := mem.setAllocator(&tempArena);
+    defer mem.setAllocator(previous);
+    return fmt.sprint(format, ...args);
+}
+
+// The text as a C string, until the end of the frame
+tempCString :: (text: string) -> c.string {
+    data := tempArena.allocate(text.len + 1, 1) as *u8;
+    c.memcpy(data, text.data, text.len);
+    data[text.len] = 0;
+    return c.string{data};
+}
+
+// Makes the temporary allocator the allocator of the thread, and gives the one before, to set it back
+useTemp :: () -> Allocator {
+    return mem.setAllocator(&tempArena);
+}
+
+// Frees all that was allocated temporarily, at the end of a frame
+freeTemp :: () {
+    tempArena.clear();
+}

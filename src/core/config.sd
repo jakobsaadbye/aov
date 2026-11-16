@@ -1,4 +1,4 @@
-namespace aov;
+namespace core;
 
 // The numbers that tune the game. The world is laid out on the ground plane: x runs from left to right across the road,
 // z from the far end of the road (negative) towards the camera (positive), and y is up.

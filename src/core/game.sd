@@ -1,4 +1,4 @@
-namespace aov;
+namespace core;
 
 import fmt;
 import math;
@@ -9,7 +9,7 @@ use raylib;
 // The game: a few players, each with a hero, racing across the same road. One player is you, the others are bots.
 //
 // Everything a player does is a Command: walk somewhere, stop, or cast an ability at a point. Your keys and mouse make
-// commands (readInput), and so does the brain of a bot (bot.sd), so a bot can do exactly what you can and nothing
+// commands (readInput), and so does the brain of a bot (src/bots), so a bot can do exactly what you can and nothing
 // more. Game.simulate moves the world on and reads no input, so it runs without a window, e.g in simulation_test.sd
 
 MaxPlayers :: 6;
@@ -94,6 +94,41 @@ DebugToggles :: struct {
     overlay:    bool;
 }
 
+// What gives the orders of a bot: something that looks at the game and gives its player's hero orders, with the same
+// Commands that your keys and mouse give. So a bot can't do anything you can't, and the game knows nothing of how it
+// thinks: the bots of the bots namespace (src/bots) are one kind of Brain, and a new kind is a new struct with these
+// methods, without changing the game
+Brain :: interface {
+    // Looks at the game and gives the hero of player me its orders for this frame, with player.order(command)
+    think :: method * (game: *Game, me: int, dt: f32);
+
+    // Forgets what it was doing, e.g for a new game
+    reset :: method * ();
+
+    // Gives back its memory, when the game is over
+    free :: method * ();
+
+    // Plays at another difficulty, from the next game, which is chosen on the pause screen
+    setDifficulty :: method * (difficulty: Difficulty);
+
+    // A car hit its hero, e.g to find out why (bot_arena.sd --hits)
+    wasHit :: method * (game: *Game, me: int, car: *Car);
+
+    // For the inspector (F4, inspector.sd): its plan, faintly, which is drawn for every bot; what it knows in the world,
+    // in 3D, e.g where it is safe and where it is going; and lines of text that say what it is doing and why
+    drawPlan :: method (game: *Game, me: int);
+    drawInspection :: method * (game: *Game, me: int);
+    describe :: method * (game: *Game, me: int, lines: *[..]InspectorLine);
+}
+
+// How good the bots are, which is chosen on the pause screen and kept in recordings. What it means is up to the Brain
+Difficulty :: enum {
+    easy,
+    normal,
+    hard,
+    expert,
+}
+
 Game :: struct {
     rng:         random.Random;
     world:       World;
@@ -120,11 +155,7 @@ Game :: struct {
     restartPending:  bool;                  // Keys of this frame, carried out by advance
     nextHeroPending: bool;
     stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
-    searchesLeft: int;                      // Searches for a way across the bots may still do this frame (bot.sd)
 }
-
-// The bots take turns to search for a way across, so a frame doesn't take long when many of them want to at once
-SearchesPerFrame :: 1;
 
 // The sign Hilda holds up, where she raised it
 StopSign :: struct {
@@ -134,31 +165,18 @@ StopSign :: struct {
     line:     f32;                          // Where the cars stop
 }
 
-// A game with you and a number of bots of a difficulty. Without you (humans: 0), the bots play on their own, e.g in
-// bot_arena.sd, and the camera follows the first of them
-newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
-    rng := random.newRandom(seed ^ 0x5bd1e995);
-    personalities: [..]BotPersonality;
-    defer personalities.free();
-    for 0..bots { personalities.add(personalityFor(difficulty, &rng)); }
-    game := newGameWith(seed, personalities, humans);
-    game.recording.difficulty = difficulty;
-    game.difficulty = difficulty;
-    return game;
-}
-
-// A game with bots of these personalities, e.g of genomes that are being trained (bot_train.sd)
-newGameWith :: (seed: u64, personalities: []BotPersonality, humans: int = 1) -> *Game {
+// A game with you (or no one at the keyboard with humans: 0) and bots with these brains, named by the names. The bots
+// namespace makes the brains, e.g with bots.newGame
+newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
     game := new(Game);
     game.rng = random.newRandom(seed);
     game.world = newWorld();
-
-    game.recording = Recording{seed: seed, bots: personalities.count as int, humans: humans};
+    game.difficulty = difficulty;
+    game.recording = Recording{seed: seed, bots: brains.count as int, humans: humans, difficulty: difficulty};
     if humans > 0 { game.addPlayer("You", null); }
-    for personality, i in personalities {
+    for brain, i in brains {
         if game.players.count >= MaxPlayers { break; }
-        name := BotNames[i % BotNames.count];
-        game.addPlayer(name, newBot(seed + 101 * (i as u64 + 1), personality));
+        game.addPlayer(names[i], brain);
     }
     game.restart();
     return game;
@@ -353,7 +371,6 @@ readInput :: method (game: *Game) {
 // Moves the world on by dt seconds: the bots think, the orders are carried out, the heroes and the cars move
 simulate :: method (game: *Game, dt: f32) {
     game.time += dt;
-    game.searchesLeft = SearchesPerFrame;
 
     for *player, i in game.players {
         if player.isBot() { player.brain.think(game, i as int, dt); }
@@ -440,7 +457,7 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
             car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius);
             if car.hasValue() && !hero.isFaded() && !hero.isAirborne() {
                 if hero.hurtFor > 0.3 { game.sounds.playAt("hero.hurt", hero.position, 0.8, 0.06); }
-                if hero.hurtFor > 0.3 && debugHits && player.isBot() { reportHit(game, index, car.value()); }
+                if hero.hurtFor > 0.3 && player.isBot() { player.brain.wasHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
                 hero.hurtFor = 0;
                 if hero.health <= 0 {
@@ -875,17 +892,12 @@ heroCrossed :: method (game: *Game, index: int) {
     player.phase = Phase{crossed: {timeLeft: 1.6}};
 }
 
-// Gives the bots the personalities of a difficulty, e.g for a new game
+// The bots play at a difficulty, e.g for a new game
 setDifficulty :: method (game: *Game, difficulty: Difficulty) {
     game.difficulty = difficulty;
     game.nextDifficulty = null;
-    rng := random.newRandom(game.recording.seed ^ 0x5bd1e995 + game.recording.frames.count as u64);
     for *player in game.players {
-        if !player.isBot() { continue; }
-        bot, isBot := player.brain as *Bot;
-        if !isBot { continue; }
-        bot.personality = personalityFor(difficulty, &rng);
-        bot.reset();
+        if player.isBot() { player.brain.setDifficulty(difficulty); }
     }
 }
 

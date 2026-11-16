@@ -1,4 +1,6 @@
-namespace aov;
+namespace bots;
+
+use core;
 
 // The way a bot crosses: Safe Interval Path Planning (SIPP, Phillips and Likhachev, 2011) on a Forecast.
 //

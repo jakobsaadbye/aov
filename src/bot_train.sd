@@ -1,7 +1,7 @@
-// Trains the bots with a genetic algorithm: a population of genomes (aov/genome.sd) plays games against each other and
-// against the best of earlier generations (the hall of fame), and the fitter ones (aov.fitnessOf: crossings, deaths,
+// Trains the bots with a genetic algorithm: a population of genomes (bots/genome.sd) plays games against each other and
+// against the best of earlier generations (the hall of fame), and the fitter ones (bots.fitnessOf: crossings, deaths,
 // kills, progress, speed) have the children of the next generation. The best genome is written to
-// data/bots/genomes.json after each generation, which the game plays with (aov/difficulty.sd).
+// data/bots/genomes.json after each generation, which the game plays with (bots/difficulty.sd).
 //
 //     saad build bot_train.sd --llvm             the bots think about 10 times as fast with LLVM
 //     build/out.exe --generations 40 --threads 4
@@ -9,7 +9,8 @@
 // Options: --generations N, --population N, --games N (games each genome plays a generation), --seconds N (of a game),
 // --threads N, --seed N, --playoff N (games each finalist plays at the end), --from-default (start from the hand tuned genes instead of the trained ones), --out FILE
 
-import aov;
+import core;
+import bots;
 import fmt;
 import json;
 import math;
@@ -33,7 +34,7 @@ Config :: struct {
 }
 
 Candidate :: struct {
-    genome:    aov.Genome;
+    genome:    bots.Genome;
     fitness:   f32;
     games:     int;
     crossings: int;
@@ -47,7 +48,7 @@ PerGame :: 4;
 Candidates :: 3;
 
 GameJob :: struct {
-    genomes:    [PerGame]aov.Genome;
+    genomes:    [PerGame]bots.Genome;
     candidates: [PerGame]int;       // The candidate of each bot, -1 for the one of the hall of fame
     seed:       u64;
     seconds:    int;
@@ -72,17 +73,17 @@ Dt :: 1.0 / 60.0;
 
 // Plays a game of a job, on a thread of its own
 playGame :: (job: *GameJob) {
-    personalities: [..]aov.BotPersonality;
+    personalities: [..]bots.BotPersonality;
     defer personalities.free();
-    for genome in job.genomes { personalities.add(aov.BotPersonality{label: "trained", genome: genome}); }
-    game := aov.newGameWith(job.seed, personalities, humans: 0);
+    for genome in job.genomes { personalities.add(bots.BotPersonality{label: "trained", genome: genome}); }
+    game := bots.newGameWith(job.seed, personalities, humans: 0);
     defer game.free();
 
     steps := (job.seconds as f32 / Dt) as int;
     for 0..steps { game.simulate(Dt); }
 
     for i in 0..PerGame {
-        job.fitness[i] = aov.fitnessOf(game, i as int);
+        job.fitness[i] = bots.fitnessOf(game, i as int);
         job.crossings[i] = game.players[i].stats.crossings;
         job.deaths[i] = game.players[i].stats.deaths;
         job.kills[i] = game.players[i].stats.kills;
@@ -142,23 +143,23 @@ readConfig :: () -> Config {
 main :: () {
     config := readConfig();
     if config.out.len == 0 {
-        folder := aov.dataFolder();
-        config.out = fmt.sprint("%%", folder, aov.TrainedGenomesFile);
+        folder := core.dataFolder();
+        config.out = fmt.sprint("%%", folder, bots.TrainedGenomesFile);
     }
     rng := random.newRandom(config.seed);
-    _ := aov.HeroKind.allan.definition();      // Made before the threads start, which only read it
+    _ := core.HeroKind.allan.definition();      // Made before the threads start, which only read it
 
     // The first generation: the best genome there is, and variations of it
-    start := aov.defaultGenome();
-    if !config.fromDefault { start = aov.trainedGenome(); }
+    start := bots.defaultGenome();
+    if !config.fromDefault { start = bots.trainedGenome(); }
     population: [..]Candidate;
     population.add(Candidate{genome: start});
     for i in 1..config.population {
         strength: f32 = 0.15;
-        if i > config.population * 2 / 3 { population.add(Candidate{genome: aov.randomGenome(&rng)}); continue; }
-        population.add(Candidate{genome: aov.mutate(start, &rng, 0.6, strength)});
+        if i > config.population * 2 / 3 { population.add(Candidate{genome: bots.randomGenome(&rng)}); continue; }
+        population.add(Candidate{genome: bots.mutate(start, &rng, 0.6, strength)});
     }
-    hallOfFame: [..]aov.Genome;
+    hallOfFame: [..]bots.Genome;
     hallOfFame.add(start);
 
     fmt.print("Training % generations of %, % games of % s each, on % threads", config.generations, config.population, config.games, config.seconds, config.threads);
@@ -222,8 +223,8 @@ main :: () {
         while next.count < population.count {
             a := tournament(population, config.tournament, &rng);
             b := tournament(population, config.tournament, &rng);
-            child := aov.crossover(a, b, &rng);
-            child = aov.mutate(child, &rng, 0.25, strength);
+            child := bots.crossover(a, b, &rng);
+            child = bots.mutate(child, &rng, 0.25, strength);
             next.add(Candidate{genome: child});
         }
         population.free();
@@ -232,9 +233,9 @@ main :: () {
 
     // The playoff: the best of each generation is the one that was luckiest in a few games, so the hall of fame, the
     // elite and the hand tuned genes play many games against each other, and the best of those is the one that is kept
-    finalists: [..]aov.Genome;
+    finalists: [..]bots.Genome;
     defer finalists.free();
-    finalists.add(aov.defaultGenome());
+    finalists.add(bots.defaultGenome());
     for genome in hallOfFame { finalists.add(genome); }
     for i in 0..config.elite { finalists.add(population[i].genome); }
     results := playoff(finalists, config.playoff, config, &rng);
@@ -252,7 +253,7 @@ main :: () {
 }
 
 // Each finalist plays games against three others, picked at random, and their fitness is the mean of their games
-playoff :: (finalists: []aov.Genome, games: int, config: Config, rng: *random.Random) -> [..]Candidate {
+playoff :: (finalists: []bots.Genome, games: int, config: Config, rng: *random.Random) -> [..]Candidate {
     jobs: [..]GameJob;
     defer jobs.free();
     order: [..]int;
@@ -295,7 +296,7 @@ operator < :: (a: Candidate, b: Candidate) -> bool {
 }
 
 // The fittest of a few candidates picked at random
-tournament :: (population: []Candidate, size: int, rng: *random.Random) -> aov.Genome {
+tournament :: (population: []Candidate, size: int, rng: *random.Random) -> bots.Genome {
     best := rng.choice(population);
     for 1..size {
         other := rng.choice(population);
@@ -305,7 +306,7 @@ tournament :: (population: []Candidate, size: int, rng: *random.Random) -> aov.G
 }
 
 save :: (path: string, best: Candidate, generations: int) {
-    trained := aov.TrainedGenomes{
+    trained := bots.TrainedGenomes{
         best:        best.genome.toJson(),
         fitness:     best.fitness,
         generations: generations,

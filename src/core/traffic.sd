@@ -1,4 +1,4 @@
-namespace aov;
+namespace core;
 
 import math;
 import random;
