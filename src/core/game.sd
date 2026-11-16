@@ -495,9 +495,9 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
                 }
             } else {
                 hero.hurtFor += dt;
-                // Only off the road: a scrape on the road stays until the hero is across or back
-                if hero.hurtFor > HealDelay && !isOnRoad(hero.ground()) {
-                    hero.health = math.min(hero.maxHealth(), hero.health + HealPerSecond * hero.boost.heal * dt);
+                // Only a First Aid Kit heals, a while after a car was on the hero
+                if hero.hurtFor > HealDelay && hero.boost.regen > 0 {
+                    hero.health = math.min(hero.maxHealth(), hero.health + hero.maxHealth() * hero.boost.regen * dt);
                 }
             }
 

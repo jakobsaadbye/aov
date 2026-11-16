@@ -48,8 +48,7 @@ MaxLevel        :: 15;
 ClickReachedDistance :: 0.3;
 RespawnDelay         :: 1.25;   // Seconds from being run over to the next hero
 CarDamagePerSecond   :: 100.0;  // The health a car takes while it is on a hero. Vans and trucks take more
-HealDelay            :: 1.5;    // Seconds without being hit before a hero heals
-HealPerSecond        :: 20.0;
+HealDelay            :: 1.5;    // Seconds without being hit before a hero with a First Aid Kit heals
 
 // Effects
 MaxParticles :: 256;

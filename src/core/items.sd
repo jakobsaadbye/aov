@@ -34,7 +34,7 @@ itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
         case .hardHat   => ItemDefinition{"Hard Hat", "The cars do 35% less damage", "item_hard_hat", {255, 200, 30, 255}};
         case .hourglass => ItemDefinition{"Hourglass", "The abilities cool down 30% faster", "item_hourglass", {230, 190, 120, 255}};
         case .spyglass  => ItemDefinition{"Spyglass", "The abilities reach 30% further", "item_spyglass", {120, 170, 255, 255}};
-        case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals 50% faster", "item_first_aid", {235, 60, 60, 255}};
+        case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals 10% of it a second when no car is on it. Nothing else heals", "item_first_aid", {235, 60, 60, 255}};
         case .clover    => ItemDefinition{"Four-Leaf Clover", "Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment", "item_clover", {80, 220, 90, 255}};
     };
 }
@@ -46,7 +46,7 @@ Boost :: struct {
     cooldown: f32 = 1;      // Times the cooldowns
     reach:    f32 = 1;      // Times the range of the abilities
     health:   f32 = 1;      // Times the most health
-    heal:     f32 = 1;      // Times how fast it heals
+    regen:    f32;          // The share of its most health it heals a second. Only items heal
     saves:    int;          // Times a hero gets away when a car would run it over
 }
 
@@ -58,7 +58,7 @@ boostOf :: (items: []ItemKind) -> Boost {
             case .hardHat   { boost.damage *= 0.65; }
             case .hourglass { boost.cooldown *= 0.7; }
             case .spyglass  { boost.reach *= 1.3; }
-            case .firstAid  { boost.health *= 1.4; boost.heal *= 1.5; }
+            case .firstAid  { boost.health *= 1.4; boost.regen += 0.1; }
             case .clover    { boost.saves += 1; }
         }
     }

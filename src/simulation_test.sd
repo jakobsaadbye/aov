@@ -214,12 +214,12 @@ testHealth :: () {
     assert(game.you().phase.kind == .playing);
     assert(game.you().hero.health < maxHealth * 0.6 && game.you().hero.health > 0);
 
-    // On the road it doesn't heal, on the grass it does
+    // Nothing heals him, on the road or off it
     for 0..(3 * 60) { game.simulate(Dt); }
     assert(game.you().hero.health < maxHealth * 0.6);
     game.you().hero.position = Vector3{-60, 0, 0};
     for 0..(6 * 60) { game.simulate(Dt); }
-    assert(game.you().hero.health == maxHealth);
+    assert(game.you().hero.health < maxHealth * 0.6);
 
     // Faded, the cars do nothing
     game.spawnHero(0, .ghosty);
@@ -784,15 +784,23 @@ testHazards :: () {
     you := game.you();
     game.spawnHero(game.local, .butcher);
 
-    // Healing: on the road it doesn't, on the grass it does
+    // Only a First Aid Kit heals: 10% of the most health a second, from a while after a car was on the hero
     you.hero.position = Vector3{core.laneCenter(2), 0, 0};
     you.hero.stop();
     you.hero.health = 50;
+    you.hero.hurtFor = 0;
     for 0..(4 * 60) { game.simulate(Dt); }
     assert(near(you.hero.health, 50));
-    you.hero.position = Vector3{-60, 0, 0};
-    for 0..(4 * 60) { game.simulate(Dt); }
-    assert(you.hero.health > 60);
+    game.pickUp(game.local, .firstAid);
+    most := you.hero.maxHealth();
+    health := you.hero.health;
+    you.hero.hurtFor = 0;
+    for 0..(core.HealDelay * 60) as int { game.simulate(Dt); }
+    assert(near(you.hero.health, health, 0.5));
+    for 0..60 { game.simulate(Dt); }
+    assert(near(you.hero.health, health + most * 0.1, 1));
+    you.backpack = core.Backpack{};
+    you.applyBoost();
 
     // Rush hour: a warning, then the cars come closer after each other, then calm again
     traffic := &game.traffic;
