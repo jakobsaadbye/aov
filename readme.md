@@ -94,6 +94,7 @@ A font is a `.ttf` in `data/fonts`, loaded in `loadFonts()` in `hud.sd`.
 | H | Hide the help |
 | F1 | The console (twice quickly: over all of the screen). Esc or F1 closes it |
 | F4 | The inspector: what a bot thinks. Tab picks the next bot |
+| Tab, 1 to 6 | When spectating (`spectate` in the console) or in a replay: watch another player. The camera, the hero card and the banners follow them, and the inspector shows them. Only the view: it isn't recorded, so each viewer of a networked game could watch someone else |
 | F8 | Save a recording of the game so far to `src/recordings/` |
 
 ### The console

@@ -50,7 +50,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     game.effects.draw();
     drawItem(game, assets);
 
-    if game.you().isPlaying() { drawAbilityHints(game); }
+    if game.hasLocal() && game.watched == game.local && game.you().isPlaying() { drawAbilityHints(game); }
     for player, i in game.players {
         if player.phase.kind == .runOver { continue; }
         drawHero(assets, game, i as int);
@@ -135,7 +135,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     player := &game.players[index];
     hero := &player.hero;
     info := hero.info();
-    isYou := index == game.local;
+    isYou := index == game.watched;
 
     // Bobbing while walking, jumping when across
     bob: f32 = 0;

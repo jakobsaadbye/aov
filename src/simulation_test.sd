@@ -37,6 +37,7 @@ main :: () {
     testConsole();
     testItems();
     testHazards();
+    testSpectating();
     fmt.print("All simulation tests passed");
 }
 
@@ -857,4 +858,22 @@ testHazards :: () {
     forecast2 := bots.newForecast(game, bots.ForecastOptions{radius: 1});
     assert(forecast2.safeFor(Vector2{-30, 0}, 0) == 0);
     assert(forecast2.safeFor(Vector2{-30, 20}, 0) > 0);
+}
+
+// Spectating: nobody at the keyboard, and the view follows any player, which the game doesn't record
+testSpectating :: () {
+    game := bots.newGame(16, bots: 3, humans: 0);
+    defer game.free();
+    assert(!game.hasLocal() && game.canSwitchView() && game.watched == 0);
+    game.watch(2);
+    assert(game.you() == &game.players[2] && game.inspector.player == 2);
+    game.watch(7);                                  // No such player: stays
+    assert(game.watched == 2);
+    for 0..120 { game.step(Dt); }
+    for frame in game.recording.frames { assert(!frame.hero.hasValue()); }
+
+    // Playing, the view stays on you
+    playing := bots.newGame(16, bots: 3, humans: 1);
+    defer playing.free();
+    assert(playing.hasLocal() && !playing.canSwitchView() && playing.you() == &playing.players[0]);
 }

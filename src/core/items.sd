@@ -209,7 +209,7 @@ spawnItem :: (game: *Game, kind: ?ItemKind, z: ?f32) {
 
 @console.command("Puts an item in the backpack of a player, you when no player is given. In a full backpack it takes the place of the oldest")
 giveItem :: (game: *Game, kind: ItemKind, player: ?int) {
-    index := player ?? game.local;
+    index := player ?? game.watched;
     if index < 0 || index >= game.players.count {
         console.fail("There is no player %. status lists them", index);
         return;
