@@ -36,12 +36,14 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | `data/shaders/` | `lighting.vs` and `lighting.fs`: the sun, ambient light and the haze in the distance |
 | `data/window_icon.png` | |
 
-The models were made by `tools/make_models.py` (`city` for the buildings, lamps, trees, benches, hydrants and bins), the
-pavement, the asphalt and the icons by `tools/make_textures.py`, and
-the sounds and the music by `tools/make_sounds.py`
+The models were made by `tools/make_models.py` (`city` for the buildings, lamps, trees, benches, hydrants and bins) and
+`tools/make_heroes.py` (the heroes after the first seven), the pavement, the asphalt and the first icons by
+`tools/make_textures.py`, the other icons by `tools/make_icons.py`, and the sounds and the music by
+`tools/make_sounds.py` and `tools/make_hero_sounds.py`
 (run them with python3 to write the files again), but they are plain files that can just as well be edited in Blender or
 painted over. `Grass_02.png` and `Ground_03.png` aren't used any more. The game expects a model to look towards +z and stand on y = 0, in the units
-of the game. The body of a vehicle, the part that gets the color of the car, is the material that is pure white
+of the game. Mind the names of the materials: raylib's OBJ loader hangs on some sets of them, so `Model.write()` checks
+them against a copy of its table of names and gives a suffix to one that would make it hang. The body of a vehicle, the part that gets the color of the car, is the material that is pure white
 (`Kd 1 1 1`), and the sizes of the vehicles are those of `config.sd` (`CarWidth`, `CarLength`, ...).
 
 ## Sounds
@@ -85,6 +87,7 @@ A font is a `.ttf` in `data/fonts`, loaded in `loadFonts()` in `hud.sd`.
 | Right click | Walk there. On an item in the backpack: lock it, or unlock it |
 | Left click on an ability's icon | Cast it. One that is cast at a point (hook, blink, leap, time lock) waits for a left click on the ground; a right click calls it off |
 | Q, W, E, R, D, F | The abilities of the hero: the first is on Q, the second on W, ... Passives have no key |
+| 1, 2, 3 | Use the item in that slot of the backpack (a left click on it does too). After a crossing, while your hero waits: pick that perk |
 | S | Stop |
 | Y | Lock or unlock the camera. Locked (at the start), it follows the hero |
 | Space (hold) | The camera to the hero |
@@ -134,23 +137,56 @@ The mouse on the icon of an ability shows what it does, and how far it reaches.
 
 ## Heroes
 
+Twenty-one heroes, each with its own way across and its own way of getting in the way of the others. Every time a
+hero is run over, the player gets another at random.
+
 | Hero | Abilities |
 | --- | --- |
-| Allan | **Sprint** (Q): runs twice as fast for a moment. **Quick feet** (passive): 10% faster |
-| Ghosty | **Fade** (Q): the cars drive through him for 1.5 seconds. **Phase walk** (passive): floats through the walls |
-| Butcher | **Meat hook** (Q): a hook on a chain, up to 34 away. It bites into the first car it meets, and he is pulled to the side of the car as it drives on; a hook that meets no car is reeled back in. He can walk while it flies. **Charge** (W): very fast for a short moment |
-| Frosty | **Cold snap** (Q): freezes the cars around him. **Slide** (W): slides to the cursor. **Chill aura** (passive): cars near him drive 40% slower |
-| Bjørn | A viking. **Leap** (Q): jumps to the cursor, high over the cars and the walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away, e.g into the traffic. **Iron hide** (passive): half the damage from the cars |
-| Hilda | A crossing guard. **Stop!** (Q): raises her stop sign, and the five lanes around her stop for 3 seconds while their cars queue up. **Brisk walker** (passive): 15% faster |
-| Mira | A chronomancer. **Time warp** (Q): every car on the road drives 70% slower for 3 seconds. **Rewind** (W): back to where she was 3 seconds ago, with the health she had. A ring shows where that is. **Time lock** (E): the enemy nearest the cursor can't move or cast for 2 seconds |
+| Allan, the Runner | **Sprint** (Q): twice as fast for a moment. **Quick feet** (passive): 10% faster |
+| Ghosty, the Restless | **Fade** (Q): the cars drive through him for 1.5 seconds. **Phase walk** (passive): floats through the walls |
+| The Butcher | **Meat hook** (Q): bites into the first car it meets, up to 34 away, and he is pulled to the side of the car as it drives on. He can walk while it flies. **Charge** (W): very fast for a moment |
+| Frosty, the Snowman | **Cold snap** (Q): freezes the cars around him. **Slide** (W): to the cursor. **Chill aura** (passive): cars near him drive 40% slower |
+| Bjørn, the Shieldbearer | **Leap** (Q): high over cars and walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away. **Iron hide** (passive): half the damage |
+| Hilda, the Crossing Guard | **Stop!** (Q): the five lanes around her stop for 3 seconds. **Brisk walker** (passive): 15% faster |
+| Mira, the Timekeeper | **Time warp** (Q): every car 70% slower for 3 seconds. **Rewind** (W): back to where she was 3 seconds ago. **Time lock** (E): an enemy can't move or cast for 2 seconds |
+| Karl, the Mechanic | **Jack** (Q): jacks up a car for 3 seconds; anyone can walk under it. **Oil change** (W): a puddle of oil at the cursor. **Grease monkey** (passive): doesn't slide on oil |
+| Birgit, the Builder | **Footbridge** (Q): a bridge over three lanes for 5 seconds, safe for anyone on it, enemies too. **Barricade** (W): two lanes stop before it for 4 seconds. **Overtime** (passive): 15% shorter cooldowns |
+| Bent, the Bus Driver | **Hop on** (Q): rides on the roof of a car for up to 2.5 seconds, then jumps off towards the far side. **Honk** (W): the enemies near him jump away. **Timetable** (passive): the lanes light up before a car comes |
+| Sigrid, the Witch | **Broom** (Q): flies to the cursor over the cars, without turning. **Hex** (W): turns an enemy into a toad: slow, and it can't cast. **Nine lives** (passive): once a life, a car leaves her alive |
+| Tobias, the Tourist | **Flash photo** (Q): the cars in a cone brake, and the enemies in it are blinded (their screen goes white; a bot walks on blind). **Selfie** (W): swaps places with an enemy. **Lost** (passive): bursts of speed, for no reason |
+| Mads, the Skater | **Ollie** (Q): jumps over a car. **Grind** (W): grinds the lane lines towards the cursor, very fast, untouchable. **Rolling** (passive): up to 35% faster going straight on, slower when he turns |
+| Ditte, the Paramedic | **Call it in** (Q): an ambulance down the lane at the cursor. **Bandage** (W): heals 36% over 3 seconds while she stands still. **Colleague** (passive): the ambulances never hit her |
+| Gudrun, the Grandmother | **Cane trip** (Q): an enemy next to her falls over. **Knitting** (W): an enemy is tangled in yarn, half as fast. **Respect your elders** (passive): the cars slow right down behind her. Slow, but 80 health |
+| Magnus, the Magnet | **Repel** (Q): the cars coming at him are pushed 7 back. **Attract** (W): an enemy is pulled right up to him. **Steel frame** (passive): nobody shoves him or knocks him away |
+| Stormy, the Weather Girl | **Lightning** (Q): a car stops dead, and the ones behind it queue up. **Downpour** (W): rain around her slows the cars and the enemies. **Tailwind** (passive): faster towards the far side |
+| Hugo, the Hypnotist | **Puppet** (Q): an enemy walks back the way it came. **Sleep** (W): an enemy sleeps until it is shoved or hit. **Calm mind** (passive): stuns hold him half as long |
+| Tim & Tom, the Twins | **Split up** (Q): the other twin walks on ahead. **Swap** (W): they swap places. **Double take** (passive): spells cast on them hit the other twin first |
+| Kenji, the Ninja | **Smoke bomb** (Q): can't be targeted, and faster, for 3 seconds. **Shadow step** (W): into the shadow right behind a car. **Roll** (passive): the first car only knocks him down |
+| Ivar, the Berserker | **Battle cry** (Q): the enemies near him run away from him, wherever that takes them. **Axe throw** (W): stuns the first enemy it hits. **Berserk** (passive): 30% faster below half his health |
 
-Every hero has health. A car on a hero takes 100 a second (vans and trucks more), and a hero heals after 1.5 seconds without
-one. Allan (25), Ghosty (15) and Mira (20) don't last long, but the Butcher (100) and Bjørn (60, at half the damage) survive a car driving over them.
+A car on a hero takes 100 health a second (vans and trucks more), so a fragile hero (Ghosty, 15) dies at once and a
+tough one (the Butcher, 100) survives a car driving over it.
 
-A hero can have any number of abilities, as many cast ones as there are keys, and passives. They are defined in `defineHeroes()` in `heroes.sd`: a
-name, a description, an icon, a cooldown and an effect. A new kind of effect is a variant of `AbilityEffect`, what it does
-is in `cast()` in `game.sd` (or, for a passive, where it has its effect), and when the bots use it is its case in
-`scoreAbility()` in `bot.sd`. Both are switches over every effect, so the compiler says where a new one is missing.
+### Making a hero
+
+Each hero is a file in `src/core/heroes/`: its definition (`defineKarl()`), and the casts of the abilities that are its
+own. A new hero is a value of `HeroKind`, its file, its line in `defineHero()` (`heroes.sd`), a model
+(`tools/make_heroes.py`), the icons of its abilities (`tools/make_icons.py`) and their sounds
+(`tools/make_hero_sounds.py`).
+
+* **An ability** is an `Ability` (`abilities.sd`) with the function that casts it, and numbers whose meaning its cast says
+  (range, duration, radius, power, count). Abilities that several heroes share (sprint, blink, fade, leap, freeze) are in
+  `abilities.sd`. A cast that fails, e.g with no enemy in range, returns false and doesn't cool down.
+* **A passive** is a `Trait` (`traits.sd`). Passives, items and perks are all traits, which add up to the `HeroStats` of the
+  hero: its speed, the damage it takes, its auras, what it is immune to. A new kind of trait is a case of `Trait`, what it
+  does to the stats, and where the game reads that.
+* **What happens to a hero for a while** (stunned, faded, hexed, asleep, scared, a puppet, blinded, ...) is a status
+  (`status.sd`): what each kind does is said once, in `statusRules`, and the game asks the hero `canAct()`, `canCast()`,
+  `isTargetable()` and `carsPass()`.
+* **What an ability leaves in the world** is in `motions.sd` (riding cars, dashes, footbridges) and `world_effects.sd`
+  (thrown things, rain, decoys, banana peels).
+* **The bots** know an ability by its `BotUse` (speed up, stop the cars, escape, disable an enemy, ...), so they play a new
+  ability of a kind they know without new code. The forecast knows the bridges, lifted cars and the immunities.
 
 ## A game
 
@@ -191,10 +227,10 @@ then on), and see the oil as never safe, so they walk around it. To try them: `r
 ## Items
 
 Now and then an item lies in the middle of the road, with a beam over it that is seen from far. The first hero that
-walks over it puts it in the backpack of its player, which holds two. An item boosts every hero of that player for the
-rest of the game, also the heroes after the one that picked it up; with a full backpack a hero leaves an item for the
-others. The first comes 10 seconds into a game, and the next 15 to 30 seconds after one is picked up. The scoreboard
-shows the backpacks and when the next item comes, and the hero card yours (the mouse on an item says what it does).
+walks over it puts it in the backpack of its player, which holds two (three with the perk Deep Pockets). An item is for
+every hero of that player for the rest of the game; with a full backpack a new item takes the place of the oldest one,
+unless it is locked (right click on it). Some items are used, like abilities: with 1, 2 or 3 (the slot), or a left
+click on them; the number in their corner is how many uses they have left.
 
 | Item | |
 | --- | --- |
@@ -202,18 +238,53 @@ shows the backpacks and when the next item comes, and the hero card yours (the m
 | Hard Hat | The cars do 35% less damage |
 | Hourglass | The abilities cool down 30% faster |
 | Spyglass | The abilities reach 30% further |
-| First Aid Kit | 40% more health (the grey part of the health bar), and heals 10% of it a second, 1.5 seconds after a car was on it. The only thing that heals |
-| Four-Leaf Clover | Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment |
+| First Aid Kit | 40% more health, and heals 10% of it a second, 1.5 seconds after a car. The only thing that heals, besides Ditte |
+| Four-Leaf Clover | Once each hero: a car that would run it over leaves it with a bit of health |
 | Frost Charm | An aura of cold: the cars near the hero drive 30% slower |
 | Garlic | A stench: enemy heroes near the hero walk 30% slower |
-| Spring Shoes | A car that hits the hero bounces it over the car, towards the far side. Every 12 seconds |
+| Spring Shoes | A car that hits the hero bounces it over the car. Every 12 seconds |
+| Bubble Wrap | The first car that hits each hero only knocks it out of the way |
+| Mirror | The next spell cast on the hero goes back to whoever cast it. Every 15 seconds |
+| Rollerblades | 30% faster, but the cars do 15% more damage |
+| Reflective Vest | The cars slow down for the hero when it is on the road in front of them |
+| Umbrella | Leaps and flights stay up 40% longer, and the hero is knocked half as far |
+| Banana Peel (used, 3) | Thrown at the cursor: the first enemy that steps on it slips |
+| Energy Drink (used, 2) | 70% faster for 3 seconds, then 35% slower for 2 |
+| Traffic Cone (used, 3) | On the road at the cursor: the cars near it crawl for 5 seconds |
+| Megaphone (used) | 3 seconds more on every cooldown of every enemy |
+| Rubber Chicken (used) | The enemies near the hero walk towards it for a moment |
+| Decoy Balloon (used) | A balloon like the hero walks on ahead; spells cast on the hero hit it first |
+| Bus Ticket (used, 2) | Rides the nearest car for 2.5 seconds |
+| Lucky Dice (used) | Casts a random ability of a random hero |
 
-Two of the same do it twice. With a full backpack a new item takes the place of the oldest one, unless it is locked
-(right click on it); with both locked, a hero walks over items. The backpack shows the cooldown of Spring Shoes, and a
-used clover darkened until the next hero. An item is a value of `ItemKind`, its definition, and what it does in `boostOf`
-(`core/items.sd`); its icon is drawn by `tools/make_textures.py items`. The bots go for an item when the way past it
-isn't more than the gene `itemDetour` longer than the way across. To try one: `spawnItem hourglass` or
-`giveItem clover` in the console, and `items` says what everyone has.
+An item is a value of `ItemKind` and its definition (`core/items.sd`): its traits, and for one that is used, an `Ability`
+with its charges (`core/item_abilities.sd`). The bots go for an item when the way past it isn't much longer than the way
+across, and use items by their `BotUse`, like abilities. To try one: `giveItem bananaPeel`, then `useItemNow 0 x z`;
+`items` says what everyone has.
+
+## Perks
+
+After each crossing, every player is offered three perks, at random, and keeps the one it picks for the rest of the
+game: a click on its card, or 1, 2 or 3 while the hero waits for the next round. After 12 seconds one is picked for it.
+They are traits, like the items, so two players with the same hero play it differently.
+
+| Perk | |
+| --- | --- |
+| Second Wind | 30% faster for 2 seconds after being shoved or knocked away |
+| Thick Skin | 20% more health |
+| Scavenger | Picks items up from 3 further away |
+| Revenge | Whoever got it run over has 3 seconds more on all cooldowns |
+| Jaywalker | 15% faster on the road, 15% slower off it |
+| Deep Pockets | One more slot in the backpack |
+| Nimble | Steps aside by itself when a car is about to hit it. Every 20 seconds |
+| Cold Blooded | Cars it freezes, stops or slows stay so 1 second longer |
+| Hot Potato | Shoving an enemy swaps an item with it |
+| Fleet Foot | 6% faster |
+| Focus | 12% shorter cooldowns |
+| Long Arms | The abilities reach 15% further |
+
+A perk is a value of `PerkKind` and its definition (`core/perks.sd`). In the console, `offerPerksNow` offers perks at once,
+and `perks` lists them and who has which.
 
 ## The look of the UI
 
@@ -374,7 +445,10 @@ window and runs the loop.
 | File | |
 | --- | --- |
 | `config.sd` | The numbers that tune the game: the size of the field, the road, the traffic |
-| `heroes.sd` | The heroes, their stats and their abilities |
+| `heroes.sd`, `heroes/` | The heroes: what they all have, and a file for each with its abilities |
+| `abilities.sd`, `traits.sd`, `status.sd` | Abilities and casting them, the traits that add up to the stats of a hero, and statuses |
+| `motions.sd`, `world_effects.sd` | Riding cars, dashes, footbridges; thrown things, rain, decoys, banana peels |
+| `perks.sd`, `item_abilities.sd` | The perks, and the items that are used |
 | `world.sd` | The walls with their openings, and the collisions of the heroes with them |
 | `traffic.sd` | The lanes and the cars |
 | `game.sd` | The game itself: the players, their commands, the heroes, being run over, crossing, the next hero |
