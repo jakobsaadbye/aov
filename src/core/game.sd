@@ -136,7 +136,10 @@ Game :: struct {
     world:       World;
     traffic:     Traffic;
     players:     [..]Player;                // Added before the game starts, so a *Player stays where it is
-    local:       int;                       // The player at the keyboard, which the camera and the HUD follow
+    local:       int;                       // The player at the keyboard, or -1 for none: a spectator
+    watched:     int;                       // The player the camera and the HUD follow: the one at the keyboard, or
+                                            // when spectating, the one picked with Tab or 1 to 6. Only what is shown,
+                                            // not what is played, so it isn't recorded and each viewer has their own
     time:        f32;                       // Seconds since the game started
     camera:      RtsCamera;
     effects:     Effects;
@@ -159,6 +162,24 @@ Game :: struct {
     keyboardTaken: bool;                    // The console (F1) is open: the game reads no keys or mouse
     stopSigns:   [..]StopSign;              // Hilda's signs, while their lanes are stopped
     items:       Items;                     // The item on the road, and when the next one comes (items.sd)
+    slicks:      Slicks;                    // The oil on the road (slicks.sd)
+    restarts:    int;                       // Games started, the first one too
+}
+
+// Says when a rush hour is coming, starts and ends, and sounds the siren of an ambulance
+announceTraffic :: method (game: *Game, rushBefore: RushPhase, sirenBefore: int) {
+    traffic := &game.traffic;
+    if traffic.rush != rushBefore {
+        switch traffic.rush {
+            case .coming { game.showBanner({255, 170, 60, 255}, "Rush hour in % seconds!", RushWarning as int); }
+            case .rush   { game.showBanner({255, 90, 60, 255}, "Rush hour!"); }
+            case .calm   { game.showBanner({140, 220, 140, 255}, "The rush is over"); }
+        }
+    }
+    if traffic.emergencyLane >= 0 && sirenBefore < 0 {
+        game.sounds.playAt("traffic.siren", Vector3{laneCenter(traffic.emergencyLane), 0, -MapHalfLength}, 1.0);
+        game.announce(-1, {255, 80, 80, 255}, "An ambulance is coming!");
+    }
 }
 
 // The sign Hilda holds up, where she raised it
@@ -178,6 +199,7 @@ newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, diffic
     game.difficulty = difficulty;
     game.recording = Recording{seed: seed, bots: brains.count as int, humans: humans, difficulty: difficulty};
     if humans > 0 { game.addPlayer("You", null); }
+    else          { game.local = -1; }       // Spectating: the view starts on the first bot
     for brain, i in brains {
         if game.players.count >= MaxPlayers { break; }
         game.addPlayer(names[i], brain);
@@ -196,7 +218,11 @@ restart :: method (game: *Game) {
     game.traffic = newTraffic(0, &game.rng);
     game.effects.clear();
     game.stopSigns.clear();
-    game.items = newItems(game.recording.seed + game.recording.frames.count as u64);
+    // Seeded by the games so far, so a replay has the same items and oil as the game it recorded
+    game.restarts += 1;
+    game.items = newItems(game.recording.seed + game.restarts as u64);
+    game.slicks.list.free();
+    game.slicks = newSlicks(game.recording.seed + game.restarts as u64);
 
     for *player, i in game.players {
         player.stats = Stats{};
@@ -215,6 +241,7 @@ free :: method (game: *Game) {
     for line in game.feed { line.text.free(); }
     game.feed.free();
     game.stopSigns.free();
+    game.slicks.list.free();
     for *player in game.players {
         player.commands.free();
         if player.isBot() { player.brain.free(); }
@@ -227,9 +254,26 @@ free :: method (game: *Game) {
     mem.delete(game);
 }
 
-// The player at the keyboard
+// The player the screen shows: the one at the keyboard, or the one watched when spectating
 you :: method (game: *Game) -> *Player {
-    return &game.players[game.local];
+    return &game.players[game.watched];
+}
+
+// Whether someone plays at this keyboard, or only watches
+hasLocal :: method (game: *Game) -> bool {
+    return game.local >= 0;
+}
+
+// When the view can go to another player: when spectating, and in a replay, where the keyboard plays nothing
+canSwitchView :: method (game: *Game) -> bool {
+    return !game.hasLocal() || game.replay != null;
+}
+
+// Watches another player
+watch :: method (game: *Game, index: int) {
+    if index < 0 || index >= game.players.count { return; }
+    game.watched = index;
+    if game.players[index].isBot() { game.inspector.player = index; }
 }
 
 // The traffic gets faster with the crossings of the player that is ahead
@@ -246,7 +290,7 @@ showBanner :: method (game: *Game, color: Color, format: string, args: ...any) {
 
 // Tells what happened: to you in the banner, to the others in the feed
 announce :: method (game: *Game, player: int, color: Color, format: string, args: ...any) {
-    if player == game.local {
+    if player == game.watched {
         game.showBanner(color, format, ...args);
         return;
     }
@@ -312,7 +356,7 @@ step :: method (game: *Game, dt: f32) {
         step = frame.dt;
         restart = frame.restart;
         hero = frame.hero;
-        if frame.nextHero { hero = ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind; }    // Older recordings
+        if frame.nextHero && game.hasLocal() { hero = ((game.players[game.local].hero.kind as int + 1) % HeroKind.count) as HeroKind; }    // Older recordings
         difficulty = frame.difficulty;
     } else {
         game.recordFrame(step, restart, hero);
@@ -324,7 +368,7 @@ step :: method (game: *Game, dt: f32) {
         game.restart();
         game.showBanner(White, "New game");
     }
-    if hero.hasValue() && game.you().isPlaying() && !game.you().isBot() { game.spawnHero(game.local, hero.value()); }
+    if hero.hasValue() && game.hasLocal() && game.players[game.local].isPlaying() { game.spawnHero(game.local, hero.value()); }
 
     game.isStepping = true;
     game.simulate(step);
@@ -344,8 +388,9 @@ updateCamera :: method (game: *Game, dt: f32) {
 
 // The keys and the mouse, as commands of the player at the keyboard
 readInput :: method (game: *Game) {
-    player := game.you();
-    if !player.isPlaying() || player.isBot() { return; }      // A bot when you spectate
+    if !game.hasLocal() { return; }                         // Spectating
+    player := &game.players[game.local];
+    if !player.isPlaying() { return; }
     if game.keyboardTaken { return; }
 
     if (IsMouseButtonPressed(.right) || IsMouseButtonPressed(.left)) && game.mouseGround.hasValue() {
@@ -383,6 +428,7 @@ simulate :: method (game: *Game, dt: f32) {
 
     game.separateHeroes();
     game.updateItems(dt);
+    game.updateSlicks(dt);
 
     // Frosty's chill aura slows the cars around him
     slowZones: [..]SlowZone;
@@ -393,7 +439,10 @@ simulate :: method (game: *Game, dt: f32) {
             slowZones.add(SlowZone{player.hero.ground(), aura.value().radius, aura.value().slow});
         }
     }
+    rushBefore := game.traffic.rush;
+    sirenBefore := game.traffic.emergencyLane;
     game.traffic.update(dt, &game.rng, slowZones);
+    game.announceTraffic(rushBefore, sirenBefore);
 
     for i in 0..game.stopSigns.count {
         game.stopSigns[i].timeLeft -= dt;
@@ -468,8 +517,9 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
                 }
             } else {
                 hero.hurtFor += dt;
-                if hero.hurtFor > HealDelay {
-                    hero.health = math.min(hero.maxHealth(), hero.health + HealPerSecond * hero.boost.heal * dt);
+                // Only a First Aid Kit heals, a while after a car was on the hero
+                if hero.hurtFor > HealDelay && hero.boost.regen > 0 {
+                    hero.health = math.min(hero.maxHealth(), hero.health + hero.maxHealth() * hero.boost.regen * dt);
                 }
             }
 
@@ -522,7 +572,9 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     if hero.stunLeft > 0 { return; }
 
     before := hero.position;
-    if hero.isMoving {
+    if game.slide(hero, dt) {
+        // On the oil: it can't turn
+    } else if hero.isMoving {
         toTarget := hero.target.xz() - hero.position.xz();
         distance := toTarget.length();
         step := hero.speed() * dt;
@@ -565,7 +617,7 @@ flyLeap :: method (game: *Game, index: int, dt: f32) {
     hero.forgetTrail();
     game.effects.addRing(hero.ground(), 0.5, 6, {230, 200, 150, 255}, 0.45);
     game.effects.burst(hero.position, {150, 130, 100, 255}, 18, {0, -4, 0}, &game.rng);
-    if index == game.local { game.camera.shake = math.max(game.camera.shake, 0.15); }
+    if index == game.watched { game.camera.shake = math.max(game.camera.shake, 0.15); }
     game.sounds.playAt("ability.land", hero.position, 1, 0.05);
 }
 
@@ -825,7 +877,8 @@ towards :: (from: Vector2, target: Vector2, range: f32) -> ?Vector2 {
 
 // Casts an ability of the player at the keyboard, aimed at the mouse, at once. For tests and debugging
 useAbility :: method (game: *Game, slot: int) {
-    target := game.you().hero.ground();
+    if !game.hasLocal() { return; }
+    target := game.players[game.local].hero.ground();
     if game.mouseGround.hasValue() { target = game.mouseGround.value().xz(); }
     game.cast(game.local, slot, target);
 }
@@ -849,18 +902,19 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
     push := Vector3{0, 0, car.speed * 0.6};
     game.effects.burst(hero.position + Vector3{0, info.height * 0.5, 0}, ColorAlpha(info.color, 1), 70, push, &game.rng);
     game.effects.addSplat(hero.ground(), info.width * 0.9, Color{150, 20, 25, 255});
-    if index == game.local { game.camera.shake = 0.35; }
+    if index == game.watched { game.camera.shake = 0.35; }
     game.sounds.playAt("hero.death", hero.position);
 
     vehicle := switch car.kind {
         case .car   => "a car";
         case .van   => "a van";
         case .truck => "a truck";
+        case .ambulance => "an ambulance";
     };
     if killer >= 0 {
         game.announce(index, {255, 90, 80, 255}, "% (%) was run over by %, thanks to %", info.name, player.name, vehicle, game.players[killer].name);
         if killer == game.local && index != game.local { game.showBanner({255, 210, 90, 255}, "You got % run over!", player.name); }
-    } else if index == game.local {
+    } else if index == game.watched {
         game.showBanner({255, 90, 80, 255}, "% was run over by %!", info.name, vehicle);
     } else {
         game.announce(index, {255, 90, 80, 255}, "% (%) was run over by %", info.name, player.name, vehicle);
@@ -878,7 +932,7 @@ heroCrossed :: method (game: *Game, index: int) {
     isRecord := !player.stats.bestTime.hasValue() || time < player.stats.bestTime.value();
     if isRecord { player.stats.bestTime = time; }
 
-    if index == game.local {
+    if index == game.watched {
         if isRecord {
             game.showBanner({120, 255, 140, 255}, "% made it across in % s. A new record!", hero.info().name, fmt.fixed(time, 1));
         } else {
@@ -925,7 +979,7 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
     player.hero.boost = boostOf(player.backpack.list());
     player.hero.savesLeft = player.hero.boost.saves;
     player.hero.health = player.hero.maxHealth();
-    if index == game.local { game.sounds.play("hero.spawn", 0.6); }
+    if index == game.watched { game.sounds.play("hero.spawn", 0.6); }
 }
 
 SpawnSpacing :: 7.0;

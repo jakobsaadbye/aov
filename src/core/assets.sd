@@ -71,7 +71,9 @@ loadAssets :: () -> Assets {
 
     // The models, lit by the sun like the rest
     for kind in CarKind.values {
-        assets.vehicles[kind] = assets.lighting.loadModel(tprint("models/%.obj", CarKind.names[kind]));
+        model := CarKind.names[kind];
+        if kind == .ambulance { model = "van"; }        // A white van, with lights on its roof
+        assets.vehicles[kind] = assets.lighting.loadModel(tprint("models/%.obj", model));
         assets.vehicleBody[kind] = findBodyMaterial(assets.vehicles[kind]);
     }
     for kind in HeroKind.values {

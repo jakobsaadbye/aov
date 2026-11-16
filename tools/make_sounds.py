@@ -536,6 +536,18 @@ def item_sounds():
     save_sound("item", "pickup", out, level=0.6, room=1.2, wet=0.25)
 
 
+def traffic_sounds():
+    # The siren of an ambulance: the European two tones, hi and lo, getting louder as it comes
+    seconds = 2.6
+    t = t_of(seconds)
+    freq = np.where((t * 1.6) % 1 < 0.5, 950.0, 720.0)
+    freq = lowpass(freq, 30, 1)                         # Not quite a jump from one tone to the other
+    siren = osc(freq, "pulse") * 0.5 + osc(freq * 2, "sine") * 0.2
+    siren = bandpass(siren, 400, 4000) * np.minimum(1, t / 0.4) * (0.5 + 0.5 * t / seconds)
+    siren *= adsr(seconds, 0.05, 0.3)
+    save_sound("traffic", "siren", siren, level=0.7, room=1.6, wet=0.25)
+
+
 #
 # Music, rendered as loops that start again without a seam: what rings past the end is added to the start
 #
@@ -785,7 +797,7 @@ def make_traffic():
 if __name__ == "__main__":
     import sys
     only = set(sys.argv[1:])
-    for name, make in (("hero", hero_sounds), ("ability", ability_sounds), ("ui", ui_sounds), ("item", item_sounds),
+    for name, make in (("hero", hero_sounds), ("ability", ability_sounds), ("ui", ui_sounds), ("item", item_sounds), ("traffic_sounds", traffic_sounds),
                        ("theme", make_theme), ("traffic", make_traffic)):
         if not only or name in only:
             make()

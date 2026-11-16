@@ -56,6 +56,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
     drawScoreboard(game, assets);
     drawFeed(game);
     drawHeroCard(game, assets);
+    if game.canSwitchView() { drawWatching(game); }
     drawBanner(game);
     if game.showHelp       { drawHelp(); }
     if game.debug.overlay  { drawDebug(game); }
@@ -96,7 +97,7 @@ drawScoreboard :: (game: *Game, assets: *Assets) {
     for index, row in order {
         player := game.players[index];
         rowY := headerY + 20 + row as int * rowHeight;
-        if index == game.local { DrawRectangle(panel.x as int + 4, rowY - 3, panel.width as int - 8, rowHeight, {255, 255, 255, 22}); }
+        if index == game.watched { DrawRectangle(panel.x as int + 4, rowY - 3, panel.width as int - 8, rowHeight, {255, 255, 255, 22}); }
         DrawRectangle(x, rowY + 3, 10, 10, player.color);
         name := player.name;
         if player.isPlaying() || player.phase.kind == .crossed { name = fmt.sprint("%  ·  %", player.name, player.hero.info().name); }
@@ -145,7 +146,7 @@ drawHealthOverHero :: (game: *Game, index: int) {
     width: f32 = 60;
     bar := Rectangle{head.x - width * 0.5, head.y, width, 8};
     drawHealthBar(bar, hero);
-    if index != game.local {
+    if index != game.watched {
         nameWidth := textWidth(player.name, 15);
         drawText(player.name, head.x as int - nameWidth / 2 + 1, head.y as int - 18, 15, ColorAlpha(Black, 0.8));
         drawText(player.name, head.x as int - nameWidth / 2, head.y as int - 19, 15, player.color);
@@ -270,6 +271,18 @@ drawBackpack :: (game: *Game, assets: *Assets, panel: Rectangle) {
         DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, box, {0, 0}, 0, White);
         if CheckCollisionPointRec(mouse, box) { drawItemTooltip(item, box); }
     }
+}
+
+// Over the hero card when spectating: whom the view follows, and how to watch another
+drawWatching :: (game: *Game) {
+    player := game.you();
+    text := tprint("Watching %   ·   Tab or 1 to % for another player", player.name, game.players.count);
+    width := textWidth(text, 17) + 60;
+    x := (GetScreenWidth() - width) / 2;
+    y := GetScreenHeight() - 150 - 16 - 44;
+    drawPanel({x as f32, y as f32, width as f32, 32});
+    DrawRectangle(x + 12, y + 11, 10, 10, player.color);
+    drawText(text, x + 28, y + 6, 17, TextColor);
 }
 
 drawItemTooltip :: (item: ItemDefinition, box: Rectangle) {
@@ -411,6 +424,7 @@ drawHelp :: () {
         HelpLine{"P", "Pause"},
         HelpLine{"F5", "New game"},
         HelpLine{"F4", "Inspect the bots (Tab: next)"},
+        HelpLine{"Tab, 1-6", "Watch another (spectating)"},
         HelpLine{"F1", "Console"},
         HelpLine{"H", "Hide this"},
     ];

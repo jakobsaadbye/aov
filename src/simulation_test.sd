@@ -36,6 +36,8 @@ main :: () {
     testKills();
     testConsole();
     testItems();
+    testHazards();
+    testSpectating();
     fmt.print("All simulation tests passed");
 }
 
@@ -213,8 +215,12 @@ testHealth :: () {
     assert(game.you().phase.kind == .playing);
     assert(game.you().hero.health < maxHealth * 0.6 && game.you().hero.health > 0);
 
+    // Nothing heals him, on the road or off it
+    for 0..(3 * 60) { game.simulate(Dt); }
+    assert(game.you().hero.health < maxHealth * 0.6);
+    game.you().hero.position = Vector3{-60, 0, 0};
     for 0..(6 * 60) { game.simulate(Dt); }
-    assert(game.you().hero.health == maxHealth);
+    assert(game.you().hero.health < maxHealth * 0.6);
 
     // Faded, the cars do nothing
     game.spawnHero(0, .ghosty);
@@ -574,7 +580,10 @@ testRecording :: () {
     // A replay of a game that has changed doesn't match, and says so
     changed := bots.newReplay(recording);
     defer changed.free();
+    // Moved, which a bot walking to the same place can make up for, and hurt, which lasts
     changed.players[1].hero.position.x += 3;
+    changed.players[1].hero.health = 1;
+    changed.players[1].hero.hurtFor = 0;
     while !changed.replay.isFinished() { changed.step(0); }
     assert(changed.replay.diverged.hasValue());
 }
@@ -636,9 +645,14 @@ testKills :: () {
 //
 
 // Takes every car off the road, and keeps new ones away for a long time
+// No cars, and nothing that brings any: no rush hour, no ambulance, no oil
 clearRoad :: (game: *core.Game) {
     for *car in game.traffic.cars { car.isActive = false; }
     for *lane in game.traffic.lanes { lane.spawnTimer = 100000; }
+    game.traffic.hasEvents = false;
+    game.traffic.emergencyLane = -1;
+    game.slicks.list.clear();
+    game.slicks.nextIn = 100000;
 }
 
 walkTo :: (game: *core.Game, point: Vector3) {
@@ -761,4 +775,105 @@ testItems :: () {
         if bot.backpack.count > 0 { break; }
     }
     assert(bot.backpack.count == 1 && bot.backpack.items[0] == .hourglass);
+}
+
+// No healing on the road, rush hour, ambulances and oil slicks
+testHazards :: () {
+    game := bots.newGame(15, bots: 0);
+    defer game.free();
+    clearRoad(game);
+    you := game.you();
+    game.spawnHero(game.local, .butcher);
+
+    // Only a First Aid Kit heals: 10% of the most health a second, from a while after a car was on the hero
+    you.hero.position = Vector3{core.laneCenter(2), 0, 0};
+    you.hero.stop();
+    you.hero.health = 50;
+    you.hero.hurtFor = 0;
+    for 0..(4 * 60) { game.simulate(Dt); }
+    assert(near(you.hero.health, 50));
+    game.pickUp(game.local, .firstAid);
+    most := you.hero.maxHealth();
+    health := you.hero.health;
+    you.hero.hurtFor = 0;
+    for 0..(core.HealDelay * 60) as int { game.simulate(Dt); }
+    assert(near(you.hero.health, health, 0.5));
+    for 0..60 { game.simulate(Dt); }
+    assert(near(you.hero.health, health + most * 0.1, 1));
+    you.backpack = core.Backpack{};
+    you.applyBoost();
+
+    // Rush hour: a warning, then the cars come closer after each other, then calm again
+    traffic := &game.traffic;
+    traffic.hasEvents = true;
+    traffic.nextEmergency = 100000;
+    traffic.rush = .calm;
+    traffic.rushLeft = 0.01;
+    game.simulate(Dt);
+    assert(traffic.rush == .coming);
+    calmGap := core.minSpawnGap(traffic, 20);
+    for 0..((core.RushWarning + 0.1) * 60) as int { game.simulate(Dt); }
+    assert(traffic.rush == .rush && traffic.rushGap() < 1);
+    assert(core.minSpawnGap(traffic, 20) < calmGap + 0.01);
+    for 0..((core.RushLengthHigh + 0.1) * 60) as int { game.simulate(Dt); }
+    assert(traffic.rush == .calm);
+
+    // An ambulance: its siren, then it comes down its lane much faster than the cars of the lane
+    clearRoad(game);
+    traffic.hasEvents = true;
+    traffic.rushLeft = 1000;
+    traffic.sirenFor(9);
+    for 0..((core.EmergencyWarning + 0.1) * 60) as int { game.simulate(Dt); }
+    ambulance: ?core.Car = null;
+    for car in traffic.cars { if car.isActive && car.kind == .ambulance { ambulance = car; } }
+    assert(ambulance.hasValue() && ambulance.value().lane == 9);
+    assert(near(ambulance.value().speed, traffic.emergencySpeed()));
+    for lane in traffic.lanes { assert(ambulance.value().speed > lane.speed * core.MaxSpawnSpeed); }
+    fmt.print("An ambulance in lane 9 drives % m/s, at the middle % s after its siren", fmt.fixed(ambulance.value().speed, 1),
+        fmt.fixed(core.EmergencyWarning + (core.RoadEnd + core.VanLength * 0.5) / ambulance.value().speed, 1));
+
+    // The bots know of it from its siren on
+    traffic.sirenFor(4);
+    forecast := bots.newForecast(game, bots.ForecastOptions{radius: 1});
+    point := Vector2{core.laneCenter(4), 0};
+    hit := forecast.hitTime(point, 0);
+    assert(hit < core.EmergencyWarning + (core.RoadEnd + 8) / traffic.emergencySpeed());
+
+    // An oil slick: a hero that walks onto it slides on the way it went, and can't turn until it is off
+    clearRoad(game);
+    traffic.emergencyLane = -1;
+    game.slicks.list.clear();
+    game.spawnHero(game.local, .allan);
+    game.addSlick(Vector2{-30, 0}, 6);
+    you.hero.position = Vector3{-40, 0, 0};
+    you.hero.moveTo(Vector3{-20, 0, 0});
+    for 0..(0.8 * 60) as int { game.simulate(Dt); }
+    assert(you.hero.slideLeft > 0);
+    you.hero.moveTo(Vector3{-30, 0, 30});            // Turning on the oil doesn't work
+    z := you.hero.position.z;
+    for 0..10 { game.simulate(Dt); }
+    assert(near(you.hero.position.z, z, 0.01));
+
+    // The bots see the oil as never safe
+    forecast2 := bots.newForecast(game, bots.ForecastOptions{radius: 1});
+    assert(forecast2.safeFor(Vector2{-30, 0}, 0) == 0);
+    assert(forecast2.safeFor(Vector2{-30, 20}, 0) > 0);
+}
+
+// Spectating: nobody at the keyboard, and the view follows any player, which the game doesn't record
+testSpectating :: () {
+    game := bots.newGame(16, bots: 3, humans: 0);
+    defer game.free();
+    assert(!game.hasLocal() && game.canSwitchView() && game.watched == 0);
+    game.watch(2);
+    assert(game.you() == &game.players[2] && game.inspector.player == 2);
+    game.watch(7);                                  // No such player: stays
+    assert(game.watched == 2);
+    for 0..120 { game.step(Dt); }
+    for frame in game.recording.frames { assert(!frame.hero.hasValue()); }
+
+    // Playing, the view stays on you
+    playing := bots.newGame(16, bots: 3, humans: 1);
+    defer playing.free();
+    assert(playing.hasLocal() && !playing.canSwitchView() && playing.you() == &playing.players[0]);
 }

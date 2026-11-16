@@ -46,7 +46,7 @@ setHero :: (game: *Game, hero: HeroKind) {
         console.fail("A replay plays what was recorded");
         return;
     }
-    if game.you().isBot() {
+    if !game.hasLocal() {
         console.fail("You have no hero: you are spectating");
         return;
     }
@@ -55,7 +55,11 @@ setHero :: (game: *Game, hero: HeroKind) {
 
 @console.command("Your hero becomes the next one")
 nextHero :: (game: *Game) {
-    setHero(game, ((game.you().hero.kind as int + 1) % HeroKind.count) as HeroKind);
+    if !game.hasLocal() {
+        console.fail("You have no hero: you are spectating");
+        return;
+    }
+    setHero(game, ((game.players[game.local].hero.kind as int + 1) % HeroKind.count) as HeroKind);
 }
 
 @console.command("Opens the inspector (F4) on a player, e.g inspect 1 for the first bot of a game with you. Without one, opens or closes it")
@@ -120,4 +124,17 @@ cameraTo :: (game: *Game, x: f32, z: f32, distance: ?f32) {
     game.camera.isLocked = false;
     game.camera.focus = Vector3{x, 0, z};
     if distance.hasValue() { game.camera.targetDistance = math.clamp(distance.value(), CameraMinDistance, CameraMaxDistance); }
+}
+
+@console.command("Watches a player, when spectating or in a replay (Tab, 1 to 6)")
+watch :: (game: *Game, player: int) {
+    if !game.canSwitchView() {
+        console.fail("You are playing: spectate to watch the others");
+        return;
+    }
+    if player < 0 || player >= game.players.count {
+        console.fail("There is no player %. status lists them", player);
+        return;
+    }
+    game.watch(player);
 }

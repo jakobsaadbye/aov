@@ -93,6 +93,7 @@ ForecastOptions :: struct {
 Forecast :: struct {
     options:    ForecastOptions;
     blocked:    [..]bool;               // For each cell: a wall, or the edge of the field. Never safe
+    oily:       [..]bool;               // For each cell: an oil slick, where a hero can't turn. Never safe either
     firstSafe:  [..]int;                // For each cell: where its safe intervals start in safe, -1 until asked for
     safeCount:  [..]int;
     safe:       [..]TimeInterval;
@@ -154,6 +155,10 @@ Forecast :: struct {
     @private
     work :: method * (cell: int) {
         self.firstSafe[cell] = self.safe.count as int;
+        if self.oily[cell] {
+            self.safeCount[cell] = 0;
+            return;
+        }
         center := cellCenter(cell);
 
         // The cars on the cell, sorted by when they come, in a buffer of the stack
@@ -246,12 +251,20 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
             }
         }
         forecast.blocked.add(isBlocked);
+        forecast.oily.add(game.slickAt(center));
         forecast.firstSafe.add(-1);
         forecast.safeCount.add(0);
     }
 
     for car in game.traffic.cars {
         if car.isActive { forecast.lanes[car.lane].add(trajectoryOf(game, car, 0)); }
+    }
+    // An ambulance that was heard: it is on the road after its siren
+    traffic := &game.traffic;
+    if traffic.emergencyLane >= 0 {
+        lane := traffic.emergencyLane;
+        ambulance := Car{isActive: true, kind: .ambulance, lane: lane, z: -RoadEnd - VanLength * 0.5, speed: traffic.emergencySpeed()};
+        forecast.lanes[lane].add(trajectoryOf(game, ambulance, traffic.emergencyIn));
     }
     for lane, i in game.traffic.lanes {
         // The next car of the lane, from when it is spawned. It gets to the cells as soon as a truck as fast as a car of
@@ -269,7 +282,7 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
         forecast.lanes[i].add(fast);
 
         // The one after it can't come sooner than the shortest gap
-        forecast.unknownFrom[i] = lane.spawnTimer + minSpawnGap(game.traffic.level, lane.speed);
+        forecast.unknownFrom[i] = lane.spawnTimer + minSpawnGap(&game.traffic, lane.speed);
         forecast.fastest[i] = lane.speed * MaxSpawnSpeed;
     }
     return forecast;

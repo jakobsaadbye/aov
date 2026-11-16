@@ -169,7 +169,7 @@ loadRecording :: (path: string) -> Recording, error {
 // Makes a new game play a recording back: a game of the seed, players and difficulty of the recording (bots.newReplay
 // makes one)
 startReplay :: method (game: *Game, recording: Recording) {
-    if recording.firstHero >= 0 && recording.humans > 0 {
+    if recording.firstHero >= 0 && game.hasLocal() {
         game.spawnHero(game.local, recording.firstHero as HeroKind);
     }
     game.recording.firstHero = recording.firstHero;
