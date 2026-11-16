@@ -268,7 +268,7 @@ it in the color of how long they stay free of cars (red now, yellow soon, green 
 with a yellow ball where it waits for a gap, and a ring around it in the color of how soon a car is on it. The panel says
 what it is doing (waiting for a gap and for how long, walking, dodging, casting, stunned), when a car gets to it, its
 plan, what its last search cost, and the score of each of its abilities against the bar it casts at. The plans of the
-other bots are drawn too. When you spectate, the camera follows the bot that is inspected; otherwise hold space.
+other bots are drawn too. When you spectate, the inspector shows the player you watch (Tab); otherwise hold space to follow the inspected bot.
 
 What the inspector shows comes from the brain (`drawInspection` and `describe` of `Brain`), so another kind of bot
 shows what it thinks with.
