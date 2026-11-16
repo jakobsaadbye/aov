@@ -1,0 +1,158 @@
+namespace core;
+
+// The look of the UI, in the style of Warcraft 3: dark stone panels in beveled bronze frames with gold, sunken slots,
+// gold frames around icons, bars in sunken troughs, title plaques and gold dividers. Every panel, slot, button, bar and
+// tooltip of the HUD is drawn with these, so they all look alike. The frames are textures (tools/make_textures.py ui),
+// drawn as nine patches: the corners as they are, the edges and the middle stretched to any size.
+
+import math;
+use raylib;
+
+// The colors of the UI
+UiGold    :: Color{255, 210, 110, 255};    // Titles, and what is chosen
+UiGoldDim   :: Color{190, 150, 80, 255};     // Headers
+Parchment :: Color{238, 228, 205, 255};    // Text
+
+UiPart :: enum {
+    panel,
+    slot,
+    iconFrame,
+    bar,
+    plaque,
+    divider,
+}
+
+UiSkin :: struct {
+    textures: [UiPart.count]Texture;
+}
+
+// The borders of each texture that aren't stretched, in pixels of the texture
+@private
+UiBorders :: [24, 8, 8, 5, 18, 0];
+
+@private
+uiSkin: ?UiSkin;
+
+loadUi :: () {
+    skin: UiSkin;
+    for part in UiPart.values {
+        texture := LoadTexture(dataPath(tprint("textures/ui/%.png", uiFileName(part))));
+        SetTextureFilter(texture, .bilinear);
+        skin.textures[part] = texture;
+    }
+    uiSkin = skin;
+}
+
+@private
+uiFileName :: (part: UiPart) -> string {
+    return switch part {
+        case .panel     => "panel";
+        case .slot      => "slot";
+        case .iconFrame => "icon_frame";
+        case .bar       => "bar";
+        case .plaque    => "plaque";
+        case .divider   => "divider";
+    };
+}
+
+unloadUi :: () {
+    if !uiSkin.hasValue() { return; }
+    for texture in uiSkin.value().textures { UnloadTexture(texture); }
+}
+
+// A part stretched over a rectangle. scale makes the borders bigger or smaller on the screen
+@private
+drawPart :: (part: UiPart, rect: Rectangle, tint: Color = White, scale: f32 = 1) -> bool {
+    if !uiSkin.hasValue() { return false; }
+    texture := uiSkin.value().textures[part];
+    border := UiBorders[part];
+    if border == 0 {
+        DrawTexturePro(texture, {0, 0, texture.width as f32, texture.height as f32}, rect, {0, 0}, 0, tint);
+        return true;
+    }
+    // A nine patch whose borders are drawn scaled: stretch the texture's middle, keep its corners
+    info := NPatchInfo{source: {0, 0, texture.width as f32, texture.height as f32}, left: border, top: border, right: border, bottom: border, layout: 0};
+    if scale == 1 {
+        DrawTextureNPatch(texture, info, rect, {0, 0}, 0, tint);
+        return true;
+    }
+    // Scaled: drawn at the size it would have unscaled, then that is what is stretched
+    b := border as f32 * scale;
+    w := texture.width as f32;
+    h := texture.height as f32;
+    sb := border as f32;
+    xs := [0.0, sb, w - sb, w];
+    ys := [0.0, sb, h - sb, h];
+    dx := [rect.x, rect.x + b, rect.x + rect.width - b, rect.x + rect.width];
+    dy := [rect.y, rect.y + b, rect.y + rect.height - b, rect.y + rect.height];
+    for row in 0..3 {
+        for column in 0..3 {
+            source := Rectangle{xs[column], ys[row], xs[column + 1] - xs[column], ys[row + 1] - ys[row]};
+            dest := Rectangle{dx[column], dy[row], dx[column + 1] - dx[column], dy[row + 1] - dy[row]};
+            if dest.width > 0 && dest.height > 0 { DrawTexturePro(texture, source, dest, {0, 0}, 0, tint); }
+        }
+    }
+    return true;
+}
+
+// A panel: dark stone in a bronze frame
+uiPanel :: (rect: Rectangle, scale: f32 = 0.75) {
+    if drawPart(.panel, rect, scale: scale) { return; }
+    DrawRectangleRec(rect, {20, 24, 28, 220});
+}
+
+// A sunken slot, e.g for an item or the portrait
+uiSlot :: (rect: Rectangle) {
+    if drawPart(.slot, rect) { return; }
+    DrawRectangleRec(rect, {12, 12, 14, 255});
+}
+
+// The gold frame around an icon, drawn over it. A highlight color frames it once more, e.g when it is aimed
+uiIconFrame :: (rect: Rectangle, highlight: ?Color = null) {
+    drawPart(.iconFrame, rect);
+    if highlight.hasValue() {
+        DrawRectangleLinesEx({rect.x - 3, rect.y - 3, rect.width + 6, rect.height + 6}, 3, highlight.value());
+    }
+}
+
+// A bar in a sunken trough: the fill from the left, in a color that goes from top to bottom a little darker, with a
+// shine on its top
+uiBar :: (rect: Rectangle, fraction: f32, color: Color) {
+    if !drawPart(.bar, rect, scale: 0.8) { DrawRectangleRec(rect, Black); }
+    inner := Rectangle{rect.x + 3, rect.y + 3, (rect.width - 6) * math.clamp(fraction, 0, 1), rect.height - 6};
+    if inner.width <= 0 { return; }
+    DrawRectangleGradientV(inner.x as int, inner.y as int, inner.width as int, inner.height as int, ColorBrightness(color, 0.15), ColorBrightness(color, -0.35));
+    DrawRectangleRec({inner.x, inner.y, inner.width, inner.height * 0.35}, {255, 255, 255, 45});
+}
+
+// A title on a plaque, centered on x
+uiPlaque :: (text: string, centerX: int, y: int, size: int, color: Color = UiGold) {
+    width := titleWidth(text, size) + size * 2;
+    height := size + 14;
+    rect := Rectangle{(centerX - width / 2) as f32, y as f32, width as f32, height as f32};
+    if !drawPart(.plaque, rect) { DrawRectangleRec(rect, {20, 24, 28, 220}); }
+    drawTitle(text, centerX - titleWidth(text, size) / 2, y + 7, size, color);
+}
+
+// A gold line with a gem in the middle, centered on x
+uiDivider :: (centerX: int, y: int, width: int) {
+    if drawPart(.divider, {(centerX - width / 2) as f32, (y - 8) as f32, width as f32, 16}) { return; }
+    DrawRectangle(centerX - width / 2, y, width, 1, UiGoldDim);
+}
+
+// A tooltip above a rectangle: a title, and lines under it
+uiTooltip :: (anchor: Rectangle, title: string, titleColor: Color, lines: []string, sub: string = "") {
+    width := titleWidth(title, 20);
+    for line in lines { width = math.max(width, textWidth(line, 16)); }
+    if sub.len > 0 { width = math.max(width, titleWidth(title, 20) + textWidth(sub, 15) + 20); }
+    width += 36;
+    height := 50 + lines.count as int * 21;
+    x := math.clamp(anchor.x as int + anchor.width as int / 2 - width / 2, 8, GetScreenWidth() - width - 8);
+    y := anchor.y as int - height - 10;
+    uiPanel({x as f32, y as f32, width as f32, height as f32}, 0.6);
+    drawTitle(title, x + 18, y + 13, 20, titleColor);
+    if sub.len > 0 { drawText(sub, x + width - 18 - textWidth(sub, 15), y + 16, 15, UiGoldDim); }
+    for line, i in lines {
+        drawText(line, x + 18, y + 40 + i as int * 21, 16, Parchment);
+    }
+}

@@ -207,6 +207,15 @@ used clover darkened until the next hero. An item is a value of `ItemKind`, its 
 isn't more than the gene `itemDetour` longer than the way across. To try one: `spawnItem hourglass` or
 `giveItem clover` in the console, and `items` says what everyone has.
 
+## The look of the UI
+
+Every panel, slot, icon, bar, banner, tooltip and menu is drawn with the few pieces of `core/ui.sd`, in the style of
+Warcraft 3, so they all look alike: `uiPanel` (dark stone in a beveled bronze frame with gold studs), `uiSlot` (a sunken
+slot, for the portrait and the items), `uiIconFrame` (the gold frame of an icon, lit up when it is active or aimed),
+`uiBar` (a bar in a sunken trough), `uiPlaque` (a title on a plaque, e.g the name of the hero and the banners),
+`uiDivider` (a gold line with a gem) and `uiTooltip`. The colors are `UiGold`, `UiGoldDim` and `Parchment`. The frames are
+textures drawn as nine patches, so they fit any size; `tools/make_textures.py ui` makes them.
+
 ## Particles
 
 Blood, dust, sparks, snow, stench, sparkles and the like are particles (`core/particles.sd`). What an effect looks like is
@@ -351,6 +360,7 @@ window and runs the loop.
 | `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
 | `items.sd` | The items on the road and in the backpacks, and what they boost |
 | `traffic_events.sd`, `slicks.sd` | Rush hour and the ambulances, and the oil slicks |
+| `ui.sd` | The pieces every part of the UI is drawn with, in the style of Warcraft 3 |
 | `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
 | `commands.sd`, `console_view.sd` | The console commands of the game, and the console on the screen (F1) |
 

@@ -9,6 +9,7 @@ Writes the textures and the ability icons of the game to data/:
 
     python3 tools/make_textures.py items      only the icons of the items
     python3 tools/make_textures.py particles  only the textures of the particles (data/textures/particles/)
+    python3 tools/make_textures.py ui         only the frames of the UI (data/textures/ui/)
 
     python3 tools/make_textures.py
 
@@ -503,6 +504,117 @@ def make_particles():
     save_rgba(np.clip(stain * (0.8 + 0.1 * noise + thick), 0, 1), "stain")
 
 
+#
+# The UI (core/ui.sd): frames in the style of Warcraft 3, dark stone inside, beveled bronze and gold around. Each is drawn
+# as a nine patch: the corners as they are, the edges and the middle stretched
+#
+
+GOLD_LIGHT = np.array([255, 226, 140])
+GOLD = np.array([200, 150, 60])
+GOLD_DARK = np.array([95, 62, 22])
+
+
+def rgba(rgb, alpha):
+    return Image.fromarray(np.dstack([np.clip(rgb, 0, 255).astype(np.uint8), (np.clip(alpha, 0, 1) * 255).astype(np.uint8)]), "RGBA")
+
+
+def bevel(size, border, light, base, dark, inset=0):
+    """A frame of the width border around an image of size: lit on the top and left, dark on the bottom and right"""
+    h, w = size
+    y, x = np.mgrid[0:h, 0:w].astype(float)
+    d_left, d_top, d_right, d_bottom = x - inset, y - inset, w - 1 - x - inset, h - 1 - y - inset
+    d = np.minimum(np.minimum(d_left, d_top), np.minimum(d_right, d_bottom))
+    inside = (d >= 0) & (d < border)
+    t = np.clip(d / max(border - 1, 1), 0, 1)
+    # Which side is nearest: top or left are lit, bottom or right are dark
+    lit = np.minimum(d_left, d_top) <= np.minimum(d_right, d_bottom)
+    profile = np.sin(t * np.pi)                         # Rounded: brightest along the middle of the frame
+    color = np.where(lit[..., None], base + (light - base) * profile[..., None], dark + (base - dark) * profile[..., None])
+    return color, inside
+
+
+def stone(h, w, seed_size=64):
+    noise = fractal(max(h, w), 4)[:h, :w]
+    grain = rng.random((h, w)) * 0.08
+    v = 0.75 + 0.25 * noise + grain
+    return np.dstack([v * 30, v * 28, v * 26])
+
+
+def make_ui():
+    # The panel: stone inside, a dark rim, a beveled bronze frame with a fine gold line, and a stud in each corner
+    S, B = 96, 22
+    color = stone(S, S)
+    y, x = np.mgrid[0:S, 0:S].astype(float)
+    vignette = np.clip(np.minimum(np.minimum(x, y), np.minimum(S - 1 - x, S - 1 - y)) / 30, 0, 1)
+    color = color * (0.7 + 0.3 * vignette[..., None])
+    alpha = np.ones((S, S)) * 0.94
+    frame, inside = bevel((S, S), 9, GOLD_LIGHT * 0.7, GOLD * 0.62, GOLD_DARK * 0.7, inset=2)
+    color = np.where(inside[..., None], frame, color)
+    rim = (np.minimum(np.minimum(x, y), np.minimum(S - 1 - x, S - 1 - y)) < 2)
+    color = np.where(rim[..., None], np.array([12, 10, 8]), color)
+    alpha = np.where(rim, 1.0, alpha)
+    line = (np.abs(np.minimum(np.minimum(x, y), np.minimum(S - 1 - x, S - 1 - y)) - 13) < 0.8)
+    color = np.where(line[..., None], GOLD * 0.9, color)
+    alpha = np.where(line, 1.0, alpha)
+    for cx, cy in ((7, 7), (S - 8, 7), (7, S - 8), (S - 8, S - 8)):    # The studs
+        r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+        stud = r < 5
+        shade = np.clip(1 - (x - cx + y - cy) / 10, 0.4, 1.4)
+        color = np.where(stud[..., None], GOLD_LIGHT * shade[..., None] * 0.9, color)
+        color = np.where((np.abs(r - 5) < 0.8)[..., None], np.array([30, 20, 8]), color)
+    rgba(color, alpha).save(os.path.join(DATA, "textures", "ui", "panel.png"))
+
+    # A slot: sunken, dark on the top and left and lit on the bottom and right, with a thin gold edge
+    S = 64
+    y, x = np.mgrid[0:S, 0:S].astype(float)
+    color = np.dstack([np.full((S, S), 10.0), np.full((S, S), 10.0), np.full((S, S), 12.0)])
+    frame, inside = bevel((S, S), 5, GOLD_DARK * 0.6, GOLD_DARK * 0.4, GOLD * 0.7, inset=1)
+    color = np.where(inside[..., None], frame, color)
+    edge = np.minimum(np.minimum(x, y), np.minimum(S - 1 - x, S - 1 - y)) < 1
+    color = np.where(edge[..., None], GOLD * 0.8, color)
+    rgba(color, np.ones((S, S))).save(os.path.join(DATA, "textures", "ui", "slot.png"))
+
+    # The frame of an icon: gold, raised, open in the middle so the icon shows through
+    frame, inside = bevel((S, S), 6, GOLD_LIGHT, GOLD, GOLD_DARK)
+    edge = np.minimum(np.minimum(x, y), np.minimum(S - 1 - x, S - 1 - y)) < 1
+    color = np.where(edge[..., None], np.array([20, 14, 6]), frame)
+    alpha = np.where(inside | edge, 1.0, 0.0)
+    inner = np.abs(np.minimum(np.minimum(x, y), np.minimum(S - 1 - x, S - 1 - y)) - 6) < 0.8
+    color = np.where(inner[..., None], np.array([25, 18, 8]), color)
+    alpha = np.where(inner, 1.0, alpha)
+    rgba(color, alpha).save(os.path.join(DATA, "textures", "ui", "icon_frame.png"))
+
+    # The trough of a bar: sunken and dark, with a gold edge
+    H, W = 24, 64
+    y, x = np.mgrid[0:H, 0:W].astype(float)
+    color = np.dstack([np.full((H, W), 8.0)] * 3)
+    frame, inside = bevel((H, W), 3, GOLD_DARK * 0.5, GOLD_DARK * 0.4, GOLD * 0.6, inset=1)
+    color = np.where(inside[..., None], frame, color)
+    edge = np.minimum(np.minimum(x, y), np.minimum(W - 1 - x, H - 1 - y)) < 1
+    color = np.where(edge[..., None], GOLD * 0.85, color)
+    rgba(color, np.ones((H, W))).save(os.path.join(DATA, "textures", "ui", "bar.png"))
+
+    # A plaque for a title: a dark band with gold edges top and bottom, ending in points
+    H, W = 40, 128
+    y, x = np.mgrid[0:H, 0:W].astype(float)
+    point = np.minimum(x, W - 1 - x)
+    inside = np.abs(y - H / 2) < np.minimum(H / 2 - 1, point * 0.9)
+    band = np.abs(y - H / 2) < np.minimum(H / 2 - 4, point * 0.9 - 3)
+    shade = 1 - np.abs(y - H / 2) / H
+    color = np.where(band[..., None], np.dstack([40 * shade, 30 * shade, 22 * shade]), (GOLD * shade[..., None] * 1.1))
+    rgba(color, np.where(inside, 0.97, 0.0)).save(os.path.join(DATA, "textures", "ui", "plaque.png"))
+
+    # A divider: a gold line that fades out at the ends, with a gem in the middle
+    H, W = 16, 256
+    y, x = np.mgrid[0:H, 0:W].astype(float)
+    fade = np.clip(1 - np.abs(x - W / 2) / (W / 2), 0, 1) ** 0.5
+    line = np.clip(1 - np.abs(y - H / 2) / 1.5, 0, 1) * fade
+    gem = np.clip(1 - (np.abs(x - W / 2) + np.abs(y - H / 2)) / 7, 0, 1)
+    color = np.where((gem > 0)[..., None], np.array([220, 60, 40]) * (0.6 + 0.6 * gem[..., None]), GOLD_LIGHT * 0.9)
+    rgba(color, np.maximum(line, np.clip(gem * 3, 0, 1))).save(os.path.join(DATA, "textures", "ui", "divider.png"))
+    print("textures/ui/: panel, slot, icon_frame, bar, plaque, divider")
+
+
 if __name__ == "__main__":
     import sys
     if sys.argv[1:] == ["items"]:
@@ -510,6 +622,10 @@ if __name__ == "__main__":
         sys.exit(0)
     if sys.argv[1:] == ["particles"]:
         make_particles()
+        sys.exit(0)
+    if sys.argv[1:] == ["ui"]:
+        os.makedirs(os.path.join(DATA, "textures", "ui"), exist_ok=True)
+        make_ui()
         sys.exit(0)
     make_grass()
     make_asphalt()
@@ -532,3 +648,5 @@ if __name__ == "__main__":
     icon_time_lock()
     item_icons()
     make_particles()
+    os.makedirs(os.path.join(DATA, "textures", "ui"), exist_ok=True)
+    make_ui()

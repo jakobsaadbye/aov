@@ -102,6 +102,7 @@ loadAssets :: () -> Assets {
     assets.scenery = newScenery(77);
 
     loadFonts();
+    loadUi();
 
     assets.cursor = loadTexture("textures/cursor/human.png");
 
@@ -125,6 +126,7 @@ unload :: method (assets: *Assets) {
     for model in assets.sceneryModels { UnloadModel(model); }
     assets.scenery.free();
     unloadFonts();
+    unloadUi();
     for _, icon in assets.icons  { UnloadTexture(icon); }
 
     UnloadMesh(assets.cube);
