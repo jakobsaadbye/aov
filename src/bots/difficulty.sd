@@ -59,10 +59,7 @@ bestGenome: ?Genome;
 trainedGenome :: () -> Genome {
     if bestGenome.hasValue() { return bestGenome.value(); }
     genome := defaultGenome();
-    folder := dataFolder();
-    path := fmt.sprint("%%", folder, TrainedGenomesFile);
-    folder.free();
-    defer path.free();
+    path := tprint("%%", dataFolder(), TrainedGenomesFile);
     if os.fileExists(path) {
         text, err := os.readFile(path);
         if err == null {

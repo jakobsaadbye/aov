@@ -3,7 +3,6 @@ namespace core;
 import fmt;
 import math;
 import mem;
-import allocators;
 use raylib;
 
 // The 2D overlay: the score, the card of the hero with its ability, the banner, the help and the debug numbers.
@@ -13,9 +12,6 @@ PanelColor  :: Color{20, 24, 28, 200};
 BorderColor :: Color{255, 255, 255, 40};
 TextColor   :: Color{235, 235, 235, 255};
 DimColor    :: Color{160, 165, 170, 255};
-
-@threadLocal
-frameArena: allocators.Arena;
 
 // The fonts: Cinzel for titles and names, in the style of the titles of Dota 2, and Fira Sans for the rest. Both are
 // in data/fonts, under the SIL Open Font License
@@ -36,9 +32,7 @@ loadFonts :: () {
     defer codepoints.free();
 
     load :: (file: string, codepoints: [..]int) -> Font {
-        path := dataPath(file);
-        defer path.free();
-        font := LoadFontEx(path, FontLoadSize, codepoints.data, codepoints.count as int);
+        font := LoadFontEx(dataPath(file), FontLoadSize, codepoints.data, codepoints.count as int);
         GenTextureMipmaps(&font.texture);
         SetTextureFilter(font.texture, .trilinear);
         return font;
@@ -53,8 +47,7 @@ unloadFonts :: () {
 }
 
 drawHud :: method (game: *Game, assets: *Assets) {
-    previous := mem.setAllocator(&frameArena);
-    defer frameArena.clear();
+    previous := useTemp();      // The texts of the HUD are for this frame
     defer mem.setAllocator(previous);
 
     for player, i in game.players {
@@ -436,8 +429,7 @@ titleWidth :: (text: string, size: int) -> int {
 
 @private
 drawWith :: (title: bool, text: string, x: int, y: int, size: int, color: Color) {
-    cText := text.toCString();
-    defer cText.free();
+    cText := tempCString(text);
     if !fonts.hasValue() {
         DrawText(cText, x, y, size, color);     // raylib's own, before the fonts are loaded
         return;
@@ -449,8 +441,7 @@ drawWith :: (title: bool, text: string, x: int, y: int, size: int, color: Color)
 
 @private
 measureWith :: (title: bool, text: string, size: int) -> int {
-    cText := text.toCString();
-    defer cText.free();
+    cText := tempCString(text);
     if !fonts.hasValue() { return MeasureText(cText, size); }
     font := fonts.value().text;
     if title { font = fonts.value().title; }

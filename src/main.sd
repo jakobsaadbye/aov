@@ -132,9 +132,7 @@ main :: () {
     }
 
     if !options.mute {
-        folder := core.dataFolder();
-        game.sounds.load(folder);
-        folder.free();
+        game.sounds.load(core.dataFolder());
         game.sounds.playMusic("theme", 0.5);
         game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
     }
@@ -171,11 +169,10 @@ main :: () {
         game.drawScene(&assets);
         game.drawHud(&assets);
         EndDrawing();
+        core.freeTemp();            // What was allocated for this frame only (core/temp.sd)
 
         if nextShot < options.shots.count && game.time >= options.shots[nextShot].at {
-            file := options.shots[nextShot].file.toCString();
-            TakeScreenshot(file);
-            file.free();
+            TakeScreenshot(core.tempCString(options.shots[nextShot].file));
             nextShot += 1;
         }
         if options.quitAt.hasValue() && game.time >= options.quitAt.value() { break; }

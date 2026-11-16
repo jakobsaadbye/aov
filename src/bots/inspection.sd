@@ -72,19 +72,19 @@ describe :: method (bot: *Bot, game: *Game, me: int, lines: *[..]InspectorLine) 
     player := &game.players[me];
     hero := &player.hero;
     decision := bot.decision;
-    lines.add(InspectorLine{fmt.sprint("% (%) · %", player.name, bot.personality.label, hero.info().name), player.color});
+    lines.add(InspectorLine{tprint("% (%) · %", player.name, bot.personality.label, hero.info().name), player.color});
 
     doing := switch decision.mode {
         case .waiting    => "Waiting for a gap";
         case .walking    => "Walking its plan";
         case .dodging    => "Dodging a car it didn't plan for";
-        case .casting    => fmt.sprint("Casting %", decision.lastCast);
+        case .casting    => tprint("Casting %", decision.lastCast);
         case .noPlan     => "No plan: standing still";
         case .cantAct    => "Can't act: stunned, dragged or in the air";
         case .notPlaying => "Not on the field";
     };
     if decision.mode == .waiting && bot.next < bot.plan.count {
-        doing = fmt.sprint("Waiting for a gap: leaves in % s", fmt.fixed(bot.plan[bot.next].depart - game.time, 1));
+        doing = tprint("Waiting for a gap: leaves in % s", fmt.fixed(bot.plan[bot.next].depart - game.time, 1));
     }
     lines.add(InspectorLine{text: doing});
 
@@ -92,18 +92,18 @@ describe :: method (bot: *Bot, game: *Game, me: int, lines: *[..]InspectorLine) 
         now := game.time - bot.forecastAt;
         hit := bot.forecast.hitTime(hero.ground(), now, 0) - now;
         text := "No car coming";
-        if hit < ForecastHorizon { text = fmt.sprint("A car is on it in % s", fmt.fixed(hit, 1)); }
+        if hit < ForecastHorizon { text = tprint("A car is on it in % s", fmt.fixed(hit, 1)); }
         lines.add(InspectorLine{text, safetyColor(hit, 1)});
     }
 
     across := "goes part of the way, to where it can wait";
     if bot.reachesGoal { across = "all the way across"; }
-    lines.add(InspectorLine{text: fmt.sprint("Plan: % points, %", bot.plan.count - bot.next, across)});
-    lines.add(InspectorLine{fmt.sprint("Last search: % ms, % states. Forecast % s old",
+    lines.add(InspectorLine{text: tprint("Plan: % points, %", bot.plan.count - bot.next, across)});
+    lines.add(InspectorLine{tprint("Last search: % ms, % states. Forecast % s old",
         fmt.fixed((decision.lastSearch * 1000) as f32, 1), decision.lastStates, fmt.fixed(game.time - bot.forecastAt, 2)), DimColor});
 
     // The abilities, with the score of the last look at them against the bar
-    lines.add(InspectorLine{fmt.sprint("Abilities (cast when over %):", fmt.fixed(decision.bar, 2)), DimColor});
+    lines.add(InspectorLine{tprint("Abilities (cast when over %):", fmt.fixed(decision.bar, 2)), DimColor});
     for ability, slot in hero.abilities() {
         score := decision.scores[slot];
         state := "";
@@ -112,21 +112,21 @@ describe :: method (bot: *Bot, game: *Game, me: int, lines: *[..]InspectorLine) 
             state = "passive";
             color = DimColor;
         } else if !hero.abilityReady(slot as int) || score < 0 {
-            state = fmt.sprint("cooling down, % s", fmt.fixed(hero.cooldowns[slot], 1));
+            state = tprint("cooling down, % s", fmt.fixed(hero.cooldowns[slot], 1));
             color = DimColor;
         } else {
-            state = fmt.sprint("%", fmt.fixed(score, 2));
+            state = tprint("%", fmt.fixed(score, 2));
             if score > decision.bar { color = {120, 255, 140, 255}; }
         }
-        lines.add(InspectorLine{fmt.sprint("    %: %", ability.name, state), color});
+        lines.add(InspectorLine{tprint("    %: %", ability.name, state), color});
     }
     if decision.lastCast.len > 0 {
-        lines.add(InspectorLine{fmt.sprint("Last cast % % s ago", decision.lastCast, fmt.fixed(game.time - decision.lastCastAt, 1)), DimColor});
+        lines.add(InspectorLine{tprint("Last cast % % s ago", decision.lastCast, fmt.fixed(game.time - decision.lastCastAt, 1)), DimColor});
     }
 
     stats := bot.stats;
-    lines.add(InspectorLine{fmt.sprint("Waited % s, walked % s, dodged % times", stats.waiting as int, stats.walking as int, stats.dodges), DimColor});
-    lines.add(InspectorLine{fmt.sprint("Crossed %, run over %", player.stats.crossings, player.stats.deaths), DimColor});
+    lines.add(InspectorLine{tprint("Waited % s, walked % s, dodged % times", stats.waiting as int, stats.walking as int, stats.dodges), DimColor});
+    lines.add(InspectorLine{tprint("Crossed %, run over %", player.stats.crossings, player.stats.deaths), DimColor});
 }
 
 // Its plan, faintly, in its color: shown for every bot while the inspector is open

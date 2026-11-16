@@ -33,14 +33,14 @@ Assets :: struct {
 }
 
 // The data folder is next to src, and the program is in src/build, so it is found from wherever the game is started
+// The data folder, until the end of the frame (temp.sd)
 dataFolder :: () -> string {
-    return fmt.sprint("%../../data/", GetApplicationDirectory().toString());
+    return tprint("%../../data/", GetApplicationDirectory().toString());
 }
 
+// A file of the data folder, for raylib, until the end of the frame
 dataPath :: (file: string) -> c.string {
-    path := fmt.sprint("%../../data/%", GetApplicationDirectory().toString(), file);
-    defer path.free();
-    return path.toCString();
+    return tempCString(tprint("%../../data/%", GetApplicationDirectory().toString(), file));
 }
 
 loadAssets :: () -> Assets {
@@ -71,21 +71,15 @@ loadAssets :: () -> Assets {
 
     // The models, lit by the sun like the rest
     for kind in CarKind.values {
-        file := fmt.sprint("models/%.obj", CarKind.names[kind]);
-        assets.vehicles[kind] = assets.lighting.loadModel(file);
+        assets.vehicles[kind] = assets.lighting.loadModel(tprint("models/%.obj", CarKind.names[kind]));
         assets.vehicleBody[kind] = findBodyMaterial(assets.vehicles[kind]);
-        file.free();
     }
     for kind in HeroKind.values {
-        file := fmt.sprint("models/%.obj", HeroKind.names[kind]);
-        assets.heroes[kind] = assets.lighting.loadModel(file);
-        file.free();
+        assets.heroes[kind] = assets.lighting.loadModel(tprint("models/%.obj", HeroKind.names[kind]));
 
         for ability in kind.definition().abilities {
             if assets.icons.has(ability.icon) { continue; }
-            iconFile := fmt.sprint("icons/%.png", ability.icon);
-            assets.icons[ability.icon] = loadTexture(iconFile);
-            iconFile.free();
+            assets.icons[ability.icon] = loadTexture(tprint("icons/%.png", ability.icon));
         }
     }
     assets.wall = assets.lighting.loadModel("models/wall.obj");
@@ -93,9 +87,7 @@ loadAssets :: () -> Assets {
     SetTextureFilter(assets.portrait.texture, .bilinear);
 
     for kind in SceneryKind.values {
-        file := fmt.sprint("models/%.obj", SceneryModels[kind]);
-        assets.sceneryModels[kind] = assets.lighting.loadModel(file);
-        file.free();
+        assets.sceneryModels[kind] = assets.lighting.loadModel(tprint("models/%.obj", SceneryModels[kind]));
     }
     assets.scenery = newScenery(77);
 
@@ -103,9 +95,7 @@ loadAssets :: () -> Assets {
 
     assets.cursor = loadTexture("textures/cursor/human.png");
 
-    iconPath := dataPath("window_icon.png");
-    defer iconPath.free();
-    icon := LoadImage(iconPath);
+    icon := LoadImage(dataPath("window_icon.png"));
     ImageFormat(&icon, .uncompressedR8g8b8a8);
     SetWindowIcon(icon);
     UnloadImage(icon);
@@ -214,9 +204,7 @@ findBodyMaterial :: (model: Model) -> int {
 }
 
 loadTexture :: (file: string) -> Texture {
-    path := dataPath(file);
-    defer path.free();
-    texture := LoadTexture(path);
+    texture := LoadTexture(dataPath(file));
     GenTextureMipmaps(&texture);
     SetTextureFilter(texture, .trilinear);
     return texture;

@@ -146,7 +146,7 @@ saveRecording :: method (game: *Game, path: string) -> error {
 // Saves what was played so far to recordings/<time>.json, and says where
 saveRecordingNow :: method (game: *Game) {
     os.makeDir("recordings");
-    path := fmt.sprint("recordings/%.json", time.now().format("2006-01-02_15-04-05"));
+    path := tprint("recordings/%.json", time.now().format("2006-01-02_15-04-05"));
     err := game.saveRecording(path);
     if err != null {
         game.showBanner({255, 90, 80, 255}, "Couldn't save the recording: %", err.message);
