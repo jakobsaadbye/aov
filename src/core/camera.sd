@@ -12,7 +12,8 @@ RtsCamera :: struct {
     distance:       f32 = 90;
     targetDistance: f32 = 90;
     isLocked:       bool = true;    // Follows the hero
-    takesKeys:      bool = true;    // Arrows pan and the wheel zooms. Not while the console has the keyboard
+    takesKeys:      bool = true;
+    mouseMoved:     bool;           // Edge scrolling waits for the mouse to move, so it doesn't pan before anyone touched it    // Arrows pan and the wheel zooms. Not while the console has the keyboard
     shake:          f32;            // Seconds of shaking left
     view:           Camera3D;
 }
@@ -51,7 +52,9 @@ update :: method (camera: *RtsCamera, dt: f32, hero: Vector3, recenter: bool) {
         }
 
         // The mouse at the edge of the window, when the window has it
-        if IsWindowFocused() && IsCursorOnScreen() {
+        delta := GetMouseDelta();
+        if delta.x != 0 || delta.y != 0 { camera.mouseMoved = true; }
+        if camera.mouseMoved && IsWindowFocused() && IsCursorOnScreen() {
             mouse := GetMousePosition();
             if mouse.x < CameraEdgeMargin                     { pan.x -= 1; }
             if mouse.x > GetScreenWidth() - CameraEdgeMargin  { pan.x += 1; }

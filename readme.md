@@ -149,6 +149,28 @@ name, a description, an icon, a cooldown and an effect. A new kind of effect is 
 is in `cast()` in `game.sd` (or, for a passive, where it has its effect), and when the bots use it is its case in
 `scoreAbility()` in `bot.sd`. Both are switches over every effect, so the compiler says where a new one is missing.
 
+## Items
+
+Now and then an item lies in the middle of the road, with a beam over it that is seen from far. The first hero that
+walks over it puts it in the backpack of its player, which holds two. An item boosts every hero of that player for the
+rest of the game, also the heroes after the one that picked it up; with a full backpack a hero leaves an item for the
+others. The first comes 10 seconds into a game, and the next 15 to 30 seconds after one is picked up. The scoreboard
+shows the backpacks and when the next item comes, and the hero card yours (the mouse on an item says what it does).
+
+| Item | |
+| --- | --- |
+| Sneakers | Walks 15% faster |
+| Hard Hat | The cars do 35% less damage |
+| Hourglass | The abilities cool down 30% faster |
+| Spyglass | The abilities reach 30% further |
+| First Aid Kit | 40% more health, and heals three times as fast |
+| Four-Leaf Clover | Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment |
+
+Two of the same do it twice. An item is a value of `ItemKind`, its definition, and what it does in `boostOf`
+(`core/items.sd`); its icon is drawn by `tools/make_textures.py items`. The bots go for an item when the way past it
+isn't more than the gene `itemDetour` longer than the way across. To try one: `spawnItem hourglass` or
+`giveItem clover` in the console, and `items` says what everyone has.
+
 ## Players and bots
 
 Up to six players race across the same road: you and the bots. Each has a hero, a score and a side it starts on, which
@@ -273,6 +295,7 @@ window and runs the loop.
 | `inspector.sd`, `recording.sd` | The inspector of the bots (F4), and recordings and replays |
 | `render.sd`, `hud.sd` | The 3D scene and the 2D overlay, with the hero drawn in 3D in its portrait |
 | `sound.sd` | The `SoundPlayer`: the sounds and the music by name |
+| `items.sd` | The items on the road and in the backpacks, and what they boost |
 | `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
 | `commands.sd`, `console_view.sd` | The console commands of the game, and the console on the screen (F1) |
 

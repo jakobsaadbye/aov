@@ -35,6 +35,7 @@ main :: () {
     testGenomes();
     testKills();
     testConsole();
+    testItems();
     fmt.print("All simulation tests passed");
 }
 
@@ -693,4 +694,71 @@ testConsole :: () {
     // Every command has a line of help
     for entry in console.commands() { assert(entry.help.len > 0); }
     fmt.print("Console: % commands", console.commands().count);
+}
+
+// Items: picked up by walking over them, two at most, and they boost every hero of the player after
+testItems :: () {
+    game := bots.newGame(13, bots: 0);
+    defer game.free();
+    clearRoad(game);
+    you := game.you();
+    game.spawnHero(game.local, .allan);
+    assert(!game.items.onRoad.hasValue() && game.items.nextIn > 0);
+
+    // One comes when its time is up
+    for 0..((core.FirstItemAfter + 1) * 60) as int { game.simulate(Dt); }
+    assert(game.items.onRoad.hasValue());
+
+    // Walking over it puts it in the backpack, and a new one is on its way
+    game.items.onRoad = core.GroundItem{kind: .firstAid, position: {-60, 0}};
+    health := you.hero.maxHealth();
+    walkTo(game, Vector3{-60, 0, 0});
+    assert(you.backpack.count == 1 && you.backpack.items[0] == .firstAid);
+    assert(!game.items.onRoad.hasValue() && game.items.nextIn >= core.ItemEveryLow);
+    assert(near(you.hero.maxHealth(), health * 1.4));
+    assert(near(you.hero.health, you.hero.maxHealth()));
+
+    // Speed and damage
+    speed := you.hero.speed();
+    game.pickUp(game.local, .sneakers);
+    assert(near(you.hero.speed(), speed * 1.15));
+    assert(you.backpack.isFull());
+
+    // A full backpack leaves an item on the road
+    game.items.onRoad = core.GroundItem{kind: .hardHat, position: you.hero.ground()};
+    game.simulate(Dt);
+    assert(game.items.onRoad.hasValue() && you.backpack.count == 2);
+
+    // The next hero has the boost too
+    game.spawnHero(game.local, .butcher);
+    assert(near(you.hero.maxHealth(), core.HeroKind.butcher.definition().maxHealth * 1.4));
+    assert(near(you.hero.health, you.hero.maxHealth()));
+
+    // The clover: once each hero, a car doesn't run it over
+    you.backpack = core.Backpack{};
+    game.spawnHero(game.local, .allan);
+    game.pickUp(game.local, .clover);
+    assert(you.hero.savesLeft == 1);
+    you.hero.position = Vector3{core.laneCenter(3), 0, 0};
+    you.hero.stop();
+    game.traffic.cars[0] = core.Car{isActive: true, kind: .truck, lane: 3, z: -12, speed: 30};
+    for 0..120 { game.simulate(Dt); }
+    assert(you.isPlaying() && you.stats.deaths == 0 && you.hero.savesLeft == 0);
+
+    // A new game empties the backpacks
+    game.restart();
+    assert(you.backpack.count == 0 && !game.items.onRoad.hasValue());
+
+    // A bot goes out of its way for an item on the road
+    botGame := bots.newGame(14, bots: 1, humans: 0);
+    defer botGame.free();
+    clearRoad(botGame);
+    bot := &botGame.players[0];
+    botGame.spawnHero(0, .allan);
+    botGame.items.onRoad = core.GroundItem{kind: .hourglass, position: {0, 20}};
+    for 0..(40 * 60) {
+        botGame.simulate(Dt);
+        if bot.backpack.count > 0 { break; }
+    }
+    assert(bot.backpack.count == 1 && bot.backpack.items[0] == .hourglass);
 }

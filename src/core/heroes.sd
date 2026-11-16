@@ -259,6 +259,8 @@ Hero :: struct {
     cooldowns: [MaxAbilities]f32;   // Seconds before each ability can be cast again, in the order of the abilities
     health:    f32;
     hurtFor:   f32;                 // Seconds since a car last hurt the hero. It heals after a while
+    boost:     Boost;               // Of the items in the backpack of its player (items.sd)
+    savesLeft: int;                 // Of the clovers: times it still gets away from a car
 
     // What the abilities are doing right now
     sprintLeft:       f32;
@@ -301,7 +303,7 @@ Hero :: struct {
             }
         }
         if self.sprintLeft > 0 { speed *= self.sprintMultiplier; }
-        return speed;
+        return speed * self.boost.speed;
     }
 
     walksThroughWalls :: method () -> bool {
@@ -341,7 +343,16 @@ Hero :: struct {
                 else           { }
             }
         }
-        return taken;
+        return taken * self.boost.damage;
+    }
+
+    maxHealth :: method () -> f32 {
+        return self.info().maxHealth * self.boost.health;
+    }
+
+    // How far an ability with this range reaches
+    reach :: method (range: f32) -> f32 {
+        return range * self.boost.reach;
     }
 
     // Remembers where the hero is, every RewindInterval seconds

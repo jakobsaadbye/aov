@@ -37,6 +37,9 @@ Gene :: enum {
     rewindHealth,           // Rewinds when its health is below this share
     aggression,             // How keen it is to cast on enemies at all
     punishAhead,            // How much more it wants an enemy that is ahead of it than one on the road
+
+    // Items
+    itemDetour,             // How many meters out of its way an item on the road is worth
 }
 
 GeneRange :: struct {
@@ -66,6 +69,7 @@ GeneRanges :: [
     GeneRange{0, 1, 0.4},           // rewindHealth
     GeneRange{0, 1, 0.5},           // aggression
     GeneRange{0, 3, 1.0},           // punishAhead
+    GeneRange{0, 80, 30},           // itemDetour
 ];
 
 Genome :: struct {

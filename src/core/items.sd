@@ -1,0 +1,238 @@
+namespace core;
+
+// Items: now and then one lies in the middle of the road, and the first hero that walks over it puts it in the backpack of
+// its player. An item boosts every hero of that player for the rest of the game, also the ones after the hero that
+// picked it up is run over. A backpack holds two; with two, a hero walks over an item and leaves it for the others.
+//
+// A new item is a value of ItemKind, its definition in itemDefinition, and what it does in boostOf.
+
+import console;
+import fmt;
+import math;
+import random;
+use raylib;
+
+ItemKind :: enum {
+    sneakers,
+    hardHat,
+    hourglass,
+    spyglass,
+    firstAid,
+    clover,
+}
+
+ItemDefinition :: struct {
+    name:        string;
+    description: string;
+    icon:        string;        // data/icons/<icon>.png
+    color:       Color;         // Of the item on the road
+}
+
+itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
+    return switch kind {
+        case .sneakers  => ItemDefinition{"Sneakers", "Walks 15% faster", "item_sneakers", {240, 240, 245, 255}};
+        case .hardHat   => ItemDefinition{"Hard Hat", "The cars do 35% less damage", "item_hard_hat", {255, 200, 30, 255}};
+        case .hourglass => ItemDefinition{"Hourglass", "The abilities cool down 30% faster", "item_hourglass", {230, 190, 120, 255}};
+        case .spyglass  => ItemDefinition{"Spyglass", "The abilities reach 30% further", "item_spyglass", {120, 170, 255, 255}};
+        case .firstAid  => ItemDefinition{"First Aid Kit", "40% more health, and heals three times as fast", "item_first_aid", {235, 60, 60, 255}};
+        case .clover    => ItemDefinition{"Four-Leaf Clover", "Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment", "item_clover", {80, 220, 90, 255}};
+    };
+}
+
+// What the items of a backpack do together. Two of the same do it twice
+Boost :: struct {
+    speed:    f32 = 1;      // Times the speed
+    damage:   f32 = 1;      // Times what the cars take
+    cooldown: f32 = 1;      // Times the cooldowns
+    reach:    f32 = 1;      // Times the range of the abilities
+    health:   f32 = 1;      // Times the most health
+    heal:     f32 = 1;      // Times how fast it heals
+    saves:    int;          // Times a hero gets away when a car would run it over
+}
+
+boostOf :: (items: []ItemKind) -> Boost {
+    boost: Boost;
+    for item in items {
+        switch item {
+            case .sneakers  { boost.speed *= 1.15; }
+            case .hardHat   { boost.damage *= 0.65; }
+            case .hourglass { boost.cooldown *= 0.7; }
+            case .spyglass  { boost.reach *= 1.3; }
+            case .firstAid  { boost.health *= 1.4; boost.heal *= 3; }
+            case .clover    { boost.saves += 1; }
+        }
+    }
+    return boost;
+}
+
+BackpackSize :: 2;
+
+Backpack :: struct {
+    items: [BackpackSize]ItemKind;
+    count: int;
+
+    isFull :: method () -> bool {
+        return self.count >= BackpackSize;
+    }
+
+    list :: method * () -> []ItemKind {
+        result: []ItemKind;
+        result.data = &self.items[0];
+        result.count = self.count;
+        return result;
+    }
+}
+
+// The item that lies on the road
+GroundItem :: struct {
+    kind:     ItemKind;
+    position: Vector2;
+}
+
+FirstItemAfter :: 10.0;     // Seconds into a game
+ItemEveryLow   :: 15.0;     // Seconds after one is picked up, at random between these
+ItemEveryHigh  :: 30.0;
+ItemReach      :: 1.3;      // How close a hero must come to an item, besides its own radius
+ItemRoadLength :: 44.0;     // It lies somewhere between -this and this along the road
+
+Items :: struct {
+    onRoad: ?GroundItem;
+    age:    f32;                    // Seconds the one on the road has been there
+    nextIn: f32 = FirstItemAfter;   // Seconds until the next one, while there is none on the road
+    rng:    random.Random;
+}
+
+newItems :: (seed: u64) -> Items {
+    return Items{rng: random.newRandom(seed ^ 0x17e45)};
+}
+
+// Once a frame: the next item when its time comes, and the heroes that walk over one
+updateItems :: method (game: *Game, dt: f32) {
+    items := &game.items;
+    if !items.onRoad.hasValue() {
+        items.nextIn -= dt;
+        if items.nextIn <= 0 {
+            kind := items.rng.between(0, ItemKind.count as int - 1) as ItemKind;
+            z := items.rng.uniform(-ItemRoadLength, ItemRoadLength) as f32;
+            game.placeItem(kind, Vector2{0, z});
+        }
+        return;
+    }
+
+    onRoad := items.onRoad.value();
+    items.age += dt;
+    for *player, i in game.players {
+        if !player.isPlaying() || player.backpack.isFull() { continue; }
+        hero := &player.hero;
+        if hero.isAirborne() { continue; }
+        if hero.ground().distance(onRoad.position) > hero.info().hitRadius + ItemReach { continue; }
+        game.pickUp(i as int, onRoad.kind);
+        items.onRoad = null;
+        items.nextIn = items.rng.uniform(ItemEveryLow, ItemEveryHigh) as f32;
+        return;
+    }
+}
+
+placeItem :: method (game: *Game, kind: ItemKind, position: Vector2) {
+    game.items.onRoad = GroundItem{kind: kind, position: position};
+    game.items.age = 0;
+    game.announce(-1, {255, 210, 90, 255}, "% lies on the road", kind.itemDefinition().name);
+}
+
+// Into the backpack of the player, and the hero has the boost at once
+pickUp :: method (game: *Game, index: int, kind: ItemKind) {
+    player := &game.players[index];
+    if player.backpack.isFull() { return; }
+    player.backpack.items[player.backpack.count] = kind;
+    player.backpack.count += 1;
+    player.stats.items += 1;
+    player.applyBoost();
+    game.announce(index, player.color, "% picked up %", player.name, kind.itemDefinition().name);
+    game.sounds.playAt("item.pickup", player.hero.position, 0.9);
+}
+
+// The boost of the backpack on the hero. Its health goes up with its most health
+applyBoost :: method (player: *Player) {
+    hero := &player.hero;
+    share := hero.health / hero.maxHealth();
+    savesUsed := hero.boost.saves - hero.savesLeft;
+    hero.boost = boostOf(player.backpack.list());
+    hero.health = share * hero.maxHealth();
+    hero.savesLeft = math.max(0, hero.boost.saves - savesUsed);
+}
+
+// A car would run the hero over: with a clover it gets away, with a little health, and is out of the way of the cars for
+// a moment. True when it got away
+savedByClover :: method (game: *Game, index: int) -> bool {
+    hero := &game.players[index].hero;
+    if hero.savesLeft <= 0 { return false; }
+    hero.savesLeft -= 1;
+    hero.health = hero.maxHealth() * 0.25;
+    hero.fadeLeft = math.max(hero.fadeLeft, 1.2);
+    game.announce(index, {80, 220, 90, 255}, "The clover saved %", game.players[index].name);
+    game.sounds.playAt("ability.fade", hero.position, 0.9);
+    return true;
+}
+
+// The item on the road: turning and bobbing over a ring, with a beam that is seen from far
+drawItem :: (game: *Game, assets: *Assets) {
+    if !game.items.onRoad.hasValue() { return; }
+    item := game.items.onRoad.value();
+    definition := item.kind.itemDefinition();
+    t := game.items.age;
+    ground := item.position.at(0.14);
+    pulse := 0.5 + 0.5 * math.sinf(t * 4);
+
+    DrawCylinder(ground, 2.6, 2.6, 0.03, 32, ColorAlpha(definition.color, 0.3 + 0.2 * pulse));
+    DrawCircle3D(ground + Vector3{0, 0.02, 0}, 2.6 + pulse * 0.5, {1, 0, 0}, 90, ColorAlpha(definition.color, 0.9));
+    DrawCylinderEx(ground, ground + Vector3{0, 18, 0}, 0.7, 0.15, 12, ColorAlpha(definition.color, 0.22));
+
+    // The icon, on a pedestal that turns
+    height := 3.2 + 0.4 * math.sinf(t * 2.5);
+    DrawCube(item.position.at(0.5), 1.6, 0.8, 1.6, {40, 36, 30, 255});
+    DrawCubeWires(item.position.at(0.5), 1.6, 0.8, 1.6, definition.color);
+    icon := assets.icons[definition.icon];
+    DrawBillboard(game.camera.view, icon, item.position.at(height), 5, White);
+}
+
+//
+// Console commands, e.g to try an item out
+//
+
+@console.command("Puts an item on the road, a random one without a name")
+spawnItem :: (game: *Game, kind: ?ItemKind) {
+    item := kind ?? game.items.rng.between(0, ItemKind.count as int - 1) as ItemKind;
+    game.placeItem(item, Vector2{0, game.items.rng.uniform(-ItemRoadLength, ItemRoadLength) as f32});
+}
+
+@console.command("Puts an item in the backpack of a player, you when no player is given")
+giveItem :: (game: *Game, kind: ItemKind, player: ?int) {
+    index := player ?? game.local;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    if game.players[index].backpack.isFull() {
+        console.fail("The backpack of % is full", game.players[index].name);
+        return;
+    }
+    game.pickUp(index, kind);
+}
+
+@console.command("The items there are, and what is in each backpack")
+items :: (game: *Game) {
+    for kind in ItemKind.values {
+        definition := kind.itemDefinition();
+        console.print("    %  -  %: %", ItemKind.names[kind], definition.name, definition.description);
+    }
+    for player, i in game.players {
+        names := "empty";
+        for item, k in player.backpack.list() {
+            if k == 0 { names = item.itemDefinition().name; }
+            else      { names = tprint("%, %", names, item.itemDefinition().name); }
+        }
+        console.print("    %. %: %", i, player.name, names);
+    }
+    if game.items.onRoad.hasValue() { console.print("On the road: %", game.items.onRoad.value().kind.itemDefinition().name); }
+    else                            { console.print("The next item in % s", fmt.fixed(game.items.nextIn, 1)); }
+}

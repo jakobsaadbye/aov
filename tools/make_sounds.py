@@ -528,6 +528,14 @@ def ui_sounds():
     save_sound("ui", "not_ready", knock, level=0.4, room=0.3, wet=0.1)
 
 
+def item_sounds():
+    # Picking an item up: a quick rising arpeggio of bells
+    out = np.zeros(n_of(1.0))
+    for k, f in enumerate((784, 988, 1175, 1568)):
+        place(out, chord_bells([f], 0.7, index=1.5) * (0.5 + 0.1 * k), k * 0.06)
+    save_sound("item", "pickup", out, level=0.6, room=1.2, wet=0.25)
+
+
 #
 # Music, rendered as loops that start again without a seam: what rings past the end is added to the start
 #
@@ -777,7 +785,7 @@ def make_traffic():
 if __name__ == "__main__":
     import sys
     only = set(sys.argv[1:])
-    for name, make in (("hero", hero_sounds), ("ability", ability_sounds), ("ui", ui_sounds),
+    for name, make in (("hero", hero_sounds), ("ability", ability_sounds), ("ui", ui_sounds), ("item", item_sounds),
                        ("theme", make_theme), ("traffic", make_traffic)):
         if not only or name in only:
             make()
