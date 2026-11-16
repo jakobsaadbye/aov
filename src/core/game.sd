@@ -178,7 +178,7 @@ announceTraffic :: method (game: *Game, rushBefore: RushPhase, sirenBefore: int)
     }
     if traffic.emergencyLane >= 0 && sirenBefore < 0 {
         game.sounds.playAt("traffic.siren", Vector3{laneCenter(traffic.emergencyLane), 0, -MapHalfLength}, 1.0);
-        game.announce(-1, {255, 80, 80, 255}, "An ambulance is coming!");
+        game.announce(-1, {255, 80, 80, 255}, "Ambulances are coming!");
     }
 }
 
@@ -418,6 +418,7 @@ readInput :: method (game: *Game) {
 // Moves the world on by dt seconds: the bots think, the orders are carried out, the heroes and the cars move
 simulate :: method (game: *Game, dt: f32) {
     game.time += dt;
+    game.updateStench();
 
     for *player, i in game.players {
         if player.isBot() { player.brain.think(game, i as int, dt); }
@@ -507,7 +508,7 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
             // A car on the hero takes health, fast. Without one for a while, the hero heals
             hero := &player.hero;
             car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius);
-            if car.hasValue() && !hero.isFaded() && !hero.isAirborne() {
+            if car.hasValue() && !hero.isFaded() && !hero.isAirborne() && !game.bounced(index) {
                 if hero.hurtFor > 0.3 { game.sounds.playAt("hero.hurt", hero.position, 0.8, 0.06); }
                 if hero.hurtFor > 0.3 && player.isBot() { player.brain.wasHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
@@ -553,6 +554,7 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     hero.sprintLeft = math.max(0, hero.sprintLeft - dt);
     hero.fadeLeft   = math.max(0, hero.fadeLeft - dt);
     hero.stunLeft   = math.max(0, hero.stunLeft - dt);
+    hero.bounceLeft = math.max(0, hero.bounceLeft - dt);
     hero.lockedLeft = math.max(0, hero.lockedLeft - dt);
 
     if hero.leap.hasValue() {

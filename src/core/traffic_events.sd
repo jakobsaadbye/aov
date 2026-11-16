@@ -4,8 +4,9 @@ namespace core;
 //
 //   * Rush hour: after a calm while, a warning, then for a few seconds the cars come much closer after each other, so
 //     there are hardly any gaps. Wait it out, or get across before it comes.
-//   * Ambulances: a siren, and a couple of seconds later an ambulance comes down a lane much faster than the cars, with
-//     its lights flashing. The far end of its lane flashes until it comes.
+//   * Ambulances: a siren, and a couple of seconds later three ambulances come down three lanes next to each other, much
+//     faster than the cars, with their lights flashing; the one in the middle a bit ahead. Arrows flash down their
+//     lanes until they come.
 //
 // Both follow the random numbers of the traffic, so a replay has them at the same times.
 
@@ -30,6 +31,8 @@ EmergencyEveryLow  :: 30.0; // Seconds between two ambulances, at random between
 EmergencyEveryHigh :: 55.0;
 EmergencyWarning   :: 2.5;  // Seconds from the siren to the ambulance on the road
 EmergencySpeed     :: 1.5;  // Times the speed of the fastest cars there can be
+EmergencyLanes     :: 3;    // Ambulances that come at once, in lanes next to each other
+EmergencyBehind    :: 7.0;  // How far the ones at the sides are behind the one in the middle
 
 startEvents :: method (traffic: *Traffic, rng: *random.Random) {
     traffic.hasEvents = true;
@@ -86,25 +89,41 @@ rushGap :: method (traffic: *Traffic) -> f32 {
     return 1;
 }
 
-// The siren: an ambulance comes down the lane in a moment
+// The siren: ambulances come down the lane and the ones on each side of it in a moment
 sirenFor :: method (traffic: *Traffic, lane: int) {
-    traffic.emergencyLane = lane;
+    traffic.emergencyLane = math.clamp(lane, 1, LaneCount - 2);
     traffic.emergencyIn = EmergencyWarning;
 }
 
-spawnEmergency :: method (traffic: *Traffic, lane: int) {
-    for *car in traffic.cars {
-        if car.isActive { continue; }
-        *car = Car{
-            isActive: true,
-            kind:     .ambulance,
-            lane:     lane,
-            z:        -RoadEnd - VanLength * 0.5,
-            color:    White,
-            speed:    traffic.emergencySpeed(),
-            layer:    3,
-        };
-        return;
+// The lanes of the ambulances that are coming, from the first
+emergencyLanes :: method (traffic: *Traffic) -> int, int {
+    first := traffic.emergencyLane - EmergencyLanes / 2;
+    return first, first + EmergencyLanes - 1;
+}
+
+// Where an ambulance starts in a lane of the convoy: the middle one ahead
+emergencyStart :: method (traffic: *Traffic, lane: int) -> f32 {
+    behind: f32 = 0;
+    if lane != traffic.emergencyLane { behind = EmergencyBehind; }
+    return -RoadEnd - VanLength * 0.5 - behind;
+}
+
+spawnEmergency :: method (traffic: *Traffic, middle: int) {
+    first, last := traffic.emergencyLanes();
+    for lane in first...last {
+        for *car in traffic.cars {
+            if car.isActive { continue; }
+            *car = Car{
+                isActive: true,
+                kind:     .ambulance,
+                lane:     lane,
+                z:        traffic.emergencyStart(lane),
+                color:    White,
+                speed:    traffic.emergencySpeed(),
+                layer:    3,
+            };
+            break;
+        }
     }
 }
 
@@ -132,16 +151,18 @@ drawEmergencyLights :: (assets: *Assets, car: *Car, time: f32) {
 
 // Where the ambulance will come: arrows that flash down the whole of its lane, from the far end, until it comes
 drawEmergencyWarning :: (game: *Game) {
-    lane := game.traffic.emergencyLane;
-    if lane < 0 { return; }
-    x := laneCenter(lane);
-    color := flashColor(game.time, 0);
-    steps := 14;
-    for k in 0..steps {
-        z := -MapHalfLength + 3 + k as f32 * (MapHalfLength * 2 - 6) / steps as f32;
-        // A wave that runs down the lane, the way the ambulance will come
-        alpha := 0.15 + 0.55 * math.fmodf(k as f32 * 0.12 - game.time * 1.5 + 100, 1);
-        tip := Vector3{x, 0.13, z + 2.5};
-        DrawTriangle3D(tip, {x + 1.5, 0.13, z}, {x - 1.5, 0.13, z}, ColorAlpha(color, alpha));
+    if game.traffic.emergencyLane < 0 { return; }
+    first, last := game.traffic.emergencyLanes();
+    for lane in first...last {
+        x := laneCenter(lane);
+        color := flashColor(game.time, (lane - first) as f32 * 0.5);
+        steps := 14;
+        for k in 0..steps {
+            z := -MapHalfLength + 3 + k as f32 * (MapHalfLength * 2 - 6) / steps as f32;
+            // A wave that runs down the lane, the way the ambulance will come
+            alpha := 0.15 + 0.55 * math.fmodf(k as f32 * 0.12 - game.time * 1.5 + 100, 1);
+            tip := Vector3{x, 0.13, z + 2.5};
+            DrawTriangle3D(tip, {x + 1.5, 0.13, z}, {x - 1.5, 0.13, z}, ColorAlpha(color, alpha));
+        }
     }
 }

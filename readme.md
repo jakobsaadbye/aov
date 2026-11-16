@@ -158,13 +158,13 @@ The road doesn't stay the same, so a crossing is never quite the one before:
 | --- | --- |
 | No healing | Nothing heals a hero but a First Aid Kit, so every scrape counts for as long as the hero lives |
 | Rush hour | After 35 to 55 calm seconds, a warning, then for 9 to 13 seconds the cars of every lane come much closer after each other. Wait it out, or get across before it comes |
-| Ambulances | Every 30 to 55 seconds a siren, arrows flash down a lane, and 2.5 seconds later an ambulance comes down it, much faster than any car, with its lights flashing |
-| Oil slicks | Dark patches come and go on the lanes. A hero that walks onto one slides on the way it went, a bit faster, and can't turn until it is off the oil |
+| Ambulances | Every 30 to 55 seconds a siren, arrows flash down three lanes next to each other, and 2.5 seconds later three ambulances come down them, much faster than any car, with their lights flashing; the middle one a bit ahead |
+| Oil | Now and then a car leaks for a moment and leaves a trail of tar on its lane, which dries up after a minute or so. A hero that walks onto it slides on the way it went, a bit faster, and can't turn until it is off the oil |
 
 Rush hour and the ambulances are in `core/traffic_events.sd`, the oil in `core/slicks.sd`. They follow the random numbers
 of the game, so a replay has them at the same times. The bots hear the siren too (the forecast has the ambulance from
 then on), and see the oil as never safe, so they walk around it. To try them: `rushHour`, `ambulance [lane]` and
-`spawnSlick [x] [z]` in the console.
+`spawnSlick [x] [z]` (a car leaks, or a blob at x and z) in the console.
 
 ## Items
 
@@ -182,6 +182,9 @@ shows the backpacks and when the next item comes, and the hero card yours (the m
 | Spyglass | The abilities reach 30% further |
 | First Aid Kit | 40% more health (the grey part of the health bar), and heals 10% of it a second, 1.5 seconds after a car was on it. The only thing that heals |
 | Four-Leaf Clover | Once each hero: a car that would run it over leaves it with a bit of health, out of the way for a moment |
+| Frost Charm | An aura of cold: the cars near the hero drive 30% slower |
+| Garlic | A stench: enemy heroes near the hero walk 30% slower |
+| Spring Shoes | A car that hits the hero bounces it over the car, towards the far side. Every 12 seconds |
 
 Two of the same do it twice. An item is a value of `ItemKind`, its definition, and what it does in `boostOf`
 (`core/items.sd`); its icon is drawn by `tools/make_textures.py items`. The bots go for an item when the way past it

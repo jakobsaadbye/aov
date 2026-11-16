@@ -49,6 +49,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     }
     game.effects.draw();
     drawItem(game, assets);
+    drawItemAuras(game);
 
     if game.hasLocal() && game.watched == game.local && game.you().isPlaying() { drawAbilityHints(game); }
     for player, i in game.players {
@@ -98,6 +99,7 @@ drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
     scale := 1 + car.layer as f32 * 0.012;
     assets.drawVehicle(car.kind, car.position(), color, scale);
     if car.kind == .ambulance { drawEmergencyLights(assets, car, time); }
+    drawLeak(car, time);
 
     if car.frozenLeft > 0 {
         // A shell of ice

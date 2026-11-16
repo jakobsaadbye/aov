@@ -38,6 +38,7 @@ main :: () {
     testItems();
     testHazards();
     testSpectating();
+    testItemAuras();
     fmt.print("All simulation tests passed");
 }
 
@@ -105,9 +106,10 @@ testTraffic :: () {
         for car, i in traffic.cars {
             if !car.isActive { continue; }
             assert(car.speed > 0);
-            justSpawned := car.z == -core.RoadEnd - car.length() * 0.5;     // A new car in the place of one that left
+            justSpawned := car.age == 0;            // A new car in the place of one that left
             if !justSpawned { assert(car.z >= before[i]); }
-            if car.isActive { assert(car.z >= -core.RoadEnd - car.length() && car.z <= core.RoadEnd + car.length()); }
+            // Ambulances at the side of a convoy start a bit behind
+            assert(car.z >= -core.RoadEnd - car.length() - core.EmergencyBehind && car.z <= core.RoadEnd + car.length());
         }
     }
 
@@ -825,8 +827,14 @@ testHazards :: () {
     traffic.sirenFor(9);
     for 0..((core.EmergencyWarning + 0.1) * 60) as int { game.simulate(Dt); }
     ambulance: ?core.Car = null;
-    for car in traffic.cars { if car.isActive && car.kind == .ambulance { ambulance = car; } }
-    assert(ambulance.hasValue() && ambulance.value().lane == 9);
+    lanes: [..]int;
+    defer lanes.free();
+    for car in traffic.cars {
+        if !car.isActive || car.kind != .ambulance { continue; }
+        lanes.add(car.lane);
+        if car.lane == 9 { ambulance = car; }
+    }
+    assert(ambulance.hasValue() && lanes.count == 3 && lanes.contains(8) && lanes.contains(10));
     assert(near(ambulance.value().speed, traffic.emergencySpeed()));
     for lane in traffic.lanes { assert(ambulance.value().speed > lane.speed * core.MaxSpawnSpeed); }
     fmt.print("An ambulance in lane 9 drives % m/s, at the middle % s after its siren", fmt.fixed(ambulance.value().speed, 1),
@@ -858,6 +866,14 @@ testHazards :: () {
     forecast2 := bots.newForecast(game, bots.ForecastOptions{radius: 1});
     assert(forecast2.safeFor(Vector2{-30, 0}, 0) == 0);
     assert(forecast2.safeFor(Vector2{-30, 20}, 0) > 0);
+
+    // A car that leaks leaves blobs of oil behind it, on its lane
+    clearRoad(game);
+    game.traffic.cars[0] = core.Car{isActive: true, kind: .car, lane: 6, z: -40, speed: 15};
+    assert(game.leak(&game.slicks.rng));
+    for 0..90 { game.simulate(Dt); }
+    assert(game.slicks.list.count >= 3);
+    for slick in game.slicks.list { assert(math.fabsf(slick.center.x - core.laneCenter(6)) < 1); }
 }
 
 // Spectating: nobody at the keyboard, and the view follows any player, which the game doesn't record
@@ -876,4 +892,43 @@ testSpectating :: () {
     playing := bots.newGame(16, bots: 3, humans: 1);
     defer playing.free();
     assert(playing.hasLocal() && !playing.canSwitchView() && playing.you() == &playing.players[0]);
+}
+
+// The items that give an aura or an effect, not only numbers
+testItemAuras :: () {
+    game := bots.newGame(17, bots: 1);
+    defer game.free();
+    clearRoad(game);
+    you := game.you();
+    enemy := &game.players[1];
+    enemy.brain = null;
+    game.spawnHero(0, .allan);
+    game.spawnHero(1, .allan);
+
+    // Frost Charm: an aura that slows the cars, which the bots' forecast knows of too
+    assert(!you.hero.chillAura().hasValue());
+    game.pickUp(0, .frostCharm);
+    assert(you.hero.chillAura().hasValue() && near(you.hero.chillAura().value().radius, core.FrostRadius));
+
+    // Garlic: an enemy near the hero walks slower, one further away doesn't
+    game.pickUp(1, .garlic);
+    you.hero.position = Vector3{-60, 0, 0};
+    enemy.hero.position = Vector3{-60, 0, 4};
+    speed := you.hero.speed();
+    game.simulate(Dt);
+    assert(near(you.hero.speed(), speed * (1 - core.ItemAuraSlow)));
+    enemy.hero.position = Vector3{-60, 0, 30};
+    game.simulate(Dt);
+    assert(near(you.hero.speed(), speed));
+
+    // Spring Shoes: a car bounces the hero over it towards the far side, then not again for a while
+    you.backpack = core.Backpack{};
+    game.spawnHero(0, .allan);
+    game.pickUp(0, .springShoes);
+    you.hero.position = Vector3{core.laneCenter(3), 0, 0};
+    you.hero.stop();
+    game.traffic.cars[0] = core.Car{isActive: true, kind: .truck, lane: 3, z: -8, speed: 25};
+    for 0..60 { game.simulate(Dt); }
+    assert(you.isPlaying() && you.stats.deaths == 0 && you.hero.bounceLeft > 0);
+    assert(you.hero.position.x > core.laneCenter(3) + 4);
 }

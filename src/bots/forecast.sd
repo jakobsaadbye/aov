@@ -262,9 +262,11 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
     // An ambulance that was heard: it is on the road after its siren
     traffic := &game.traffic;
     if traffic.emergencyLane >= 0 {
-        lane := traffic.emergencyLane;
-        ambulance := Car{isActive: true, kind: .ambulance, lane: lane, z: -RoadEnd - VanLength * 0.5, speed: traffic.emergencySpeed()};
-        forecast.lanes[lane].add(trajectoryOf(game, ambulance, traffic.emergencyIn));
+        first, last := traffic.emergencyLanes();
+        for lane in first...last {
+            ambulance := Car{isActive: true, kind: .ambulance, lane: lane, z: traffic.emergencyStart(lane), speed: traffic.emergencySpeed()};
+            forecast.lanes[lane].add(trajectoryOf(game, ambulance, traffic.emergencyIn));
+        }
     }
     for lane, i in game.traffic.lanes {
         // The next car of the lane, from when it is spawned. It gets to the cells as soon as a truck as fast as a car of
