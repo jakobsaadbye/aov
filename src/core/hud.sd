@@ -350,6 +350,7 @@ drawHelp :: () {
         HelpLine{"P", "Pause"},
         HelpLine{"F5", "New game"},
         HelpLine{"F4", "Inspect the bots (Tab: next)"},
+        HelpLine{"F1", "Console"},
         HelpLine{"H", "Hide this"},
     ];
 
@@ -372,7 +373,7 @@ drawDebug :: (game: *Game) {
         fmt.sprint("Hero % %", fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1)),
         fmt.sprint("Cars %", game.traffic.activeCount()),
         fmt.sprint("Phase %", game.you().phase.kind),
-        "F1 wireframes   F2 hitboxes   F4 inspector",
+        "Console: toggleWireframes, toggleHitboxes",
     ];
 
     width := 300;

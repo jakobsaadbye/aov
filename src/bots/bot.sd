@@ -1,6 +1,7 @@
 namespace bots;
 
 use core;
+import console;
 
 // The bots. A bot is a Brain: something that looks at the game and gives its player's hero orders, with the same
 // Commands that your keys and mouse give (game.sd). So a bot can't do anything you can't, and a new kind of bot, e.g one
@@ -602,20 +603,26 @@ progressOf :: (point: Vector2, startSide: Side) -> f32 {
     return math.clamp((across + GoalX) / (GoalX * 2), 0, 1);
 }
 
-// With bot_arena.sd --hits: what a bot was doing when a car got it, to find out why
+// With bot_arena.sd --hits or toggleHitReports: what a bot was doing when a car got it, to find out why
 debugHits := false;
+
+@console.command("Prints what a bot was doing when a car got it, to find out why")
+toggleHitReports :: () {
+    debugHits = !debugHits;
+    if debugHits { console.print("Hit reports on"); } else { console.print("Hit reports off"); }
+}
 
 wasHit :: method (bot: *Bot, game: *Game, index: int, car: *Car) {
     if !debugHits { return; }
     hero := game.players[index].hero;
     rel := game.time - bot.forecastAt;
     newCar := car.age < game.time - bot.searchedAt;
-    fmt.print("HIT car new since the plan: % (age % s, plan % s old, forecast % s old)", newCar, fmt.fixed(car.age, 2), fmt.fixed(game.time - bot.searchedAt, 2), fmt.fixed(game.time - bot.forecastAt, 2));
-    fmt.print("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % z % speed % frozen % braking %",
+    console.print("HIT car new since the plan: % (age % s, plan % s old, forecast % s old)", newCar, fmt.fixed(car.age, 2), fmt.fixed(game.time - bot.searchedAt, 2), fmt.fixed(game.time - bot.forecastAt, 2));
+    console.print("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % z % speed % frozen % braking %",
         fmt.fixed(game.time, 2), game.players[index].name, fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.isMoving, hero.canAct(), fmt.fixed(hero.stunLeft, 2),
         fmt.fixed(rel, 2), fmt.fixed(bot.forecast.safeFor(hero.ground(), rel), 2), car.lane, fmt.fixed(car.z, 1), fmt.fixed(car.speed, 1), fmt.fixed(car.frozenLeft, 1), car.isBraking);
     if bot.next < bot.plan.count {
         w := bot.plan[bot.next];
-        fmt.print("     next waypoint (% %) depart % arrive %, % of % left", fmt.fixed(w.point.x, 1), fmt.fixed(w.point.y, 1), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2), bot.next, bot.plan.count);
+        console.print("     next waypoint (% %) depart % arrive %, % of % left", fmt.fixed(w.point.x, 1), fmt.fixed(w.point.y, 1), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2), bot.next, bot.plan.count);
     }
 }

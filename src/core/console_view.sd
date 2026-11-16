@@ -1,0 +1,293 @@
+namespace core;
+
+// The console on the screen (console/console.sd runs the commands): F1 drops it down over half of the screen, F1 twice
+// quickly over all of it, and F1 or Esc closes it. While it is open it has the keyboard: the game reads no keys.
+//
+//     Enter          runs the line
+//     Tab            completes the name of a command, and again goes to the next one that matches
+//     Up, Down       the lines typed before
+//     Page up, down  scrolls, and so does the wheel
+
+import console;
+import math;
+import mem;
+use raylib;
+
+ConsoleView :: struct {
+    target:     f32;            // 0 closed, 0.5 over half of the screen, 1 over all of it
+    shown:      f32;            // Moves to the target, so it slides
+    input:      [..]u8;
+    cursor:     int;
+    browsing:   int = -1;       // The line of the history that is shown, or -1
+    scroll:     int;            // Lines up from the last one
+    lastF1:     f64 = -10;
+    completing: int = -1;       // Tab: the match it is on, or -1
+    prefix:     [..]u8;         // Tab: what was typed before it completed
+}
+
+DoubleTapTime   :: 0.4;     // Seconds between the two presses of F1 that open all of it
+ConsoleFontSize :: 16;
+ConsoleLine     :: 20;
+ConsoleColor    :: Color{12, 14, 18, 235};
+InputColor      :: Color{255, 210, 90, 255};
+
+// Whether it has the keyboard, which it keeps for the frame it closes in, so that Esc doesn't pause the game too
+isOpen :: method (view: *ConsoleView) -> bool {
+    return view.target > 0;
+}
+
+// Opens it over half of the screen, or all of it, or closes it
+toggle :: method (view: *ConsoleView, full: bool) {
+    if view.isOpen() && (view.target == 1) == full { view.target = 0; return; }
+    view.target = 0.5;
+    if full { view.target = 1; }
+}
+
+// Once a frame, before the game reads its keys. Gives true while it has the keyboard
+update :: method (view: *ConsoleView, dt: f32) -> bool {
+    wasOpen := view.isOpen();
+    if IsKeyPressed(.f1) {
+        now := GetTime();
+        if view.target == 0.5 && now - view.lastF1 < DoubleTapTime { view.target = 1; }
+        else if view.isOpen()                                       { view.target = 0; }
+        else                                                        { view.target = 0.5; }
+        view.lastF1 = now;
+    }
+    if view.isOpen() && IsKeyPressed(.escape) { view.target = 0; }
+    view.shown = math.lerp(view.shown, view.target, math.min(1, dt * 14));
+    if math.abs(view.shown - view.target) < 0.002 { view.shown = view.target; }
+    if !view.isOpen() { return wasOpen; }
+
+    view.type();
+    return true;
+}
+
+@private
+type :: method (view: *ConsoleView) {
+    for {
+        c := GetCharPressed() as int;
+        if c == 0 { break; }
+        if c < 32 || c > 126 { continue; }
+        view.input.insertAt(view.cursor, c as u8);
+        view.cursor += 1;
+        view.edited();
+    }
+    if pressed(.backspace) && view.cursor > 0 {
+        view.cursor -= 1;
+        _ := view.input.removeAt(view.cursor);
+        view.edited();
+    }
+    if pressed(.delete) && view.cursor < view.input.count {
+        _ := view.input.removeAt(view.cursor);
+        view.edited();
+    }
+    if pressed(.left)  { view.cursor = math.max(0, view.cursor - 1); }
+    if pressed(.right) { view.cursor = math.min(view.input.count as int, view.cursor + 1); }
+    if IsKeyPressed(.home) { view.cursor = 0; }
+    if IsKeyPressed(.end)  { view.cursor = view.input.count as int; }
+    if pressed(.up)    { view.browse(-1); }
+    if pressed(.down)  { view.browse(1); }
+    if IsKeyPressed(.tab) { view.complete(); }
+
+    rows := view.rows();
+    if pressed(.pageUp)   { view.scroll += rows / 2; }
+    if pressed(.pageDown) { view.scroll -= rows / 2; }
+    wheel := GetMouseWheelMove();
+    if wheel != 0 { view.scroll += (wheel * 3) as int; }
+    view.scroll = math.clamp(view.scroll, 0, math.max(0, console.lines().count as int - rows));
+
+    if IsKeyPressed(.enter) || IsKeyPressed(.kpEnter) {
+        line := view.text().copy(mem.heap());
+        defer line.free(mem.heap());
+        view.input.clear();
+        view.cursor = 0;
+        view.browsing = -1;
+        view.scroll = 0;
+        view.edited();
+        console.execute(line);
+    }
+}
+
+@private
+pressed :: (key: KeyboardKey) -> bool {
+    return IsKeyPressed(key) || IsKeyPressedRepeat(key);
+}
+
+@private
+text :: method (view: *ConsoleView) -> string {
+    result: string;
+    result.data = view.input.data;
+    result.len = view.input.count;
+    return result;
+}
+
+@private
+setText :: method (view: *ConsoleView, text: string) {
+    view.input.clear();
+    for c in text { view.input.add(c); }
+    view.cursor = view.input.count as int;
+}
+
+// Typing ends a completion
+@private
+edited :: method (view: *ConsoleView) {
+    view.completing = -1;
+}
+
+// Up and down: the lines typed before, the last one first
+@private
+browse :: method (view: *ConsoleView, step: int) {
+    history := console.history();
+    if history.count == 0 { return; }
+    if view.browsing < 0 {
+        if step > 0 { return; }
+        view.browsing = history.count as int;
+    }
+    view.browsing += step;
+    if view.browsing >= history.count {
+        view.browsing = -1;
+        view.setText("");
+        return;
+    }
+    view.browsing = math.max(0, view.browsing);
+    view.setText(history[view.browsing]);
+}
+
+// Tab: the first command that starts with what was typed, and the next one on each Tab after it
+@private
+complete :: method (view: *ConsoleView) {
+    if view.completing < 0 {
+        view.prefix.clear();
+        for c in view.input { view.prefix.add(c); }
+    }
+    prefix: string;
+    prefix.data = view.prefix.data;
+    prefix.len = view.prefix.count;
+    matches := console.complete(prefix);
+    defer matches.free();
+    if matches.count == 0 { return; }
+    view.completing = (view.completing + 1) % matches.count as int;
+    view.setText(matches[view.completing].name);
+    view.input.add(' ');
+    view.cursor += 1;
+}
+
+// The lines of the log that fit
+@private
+rows :: method (view: *ConsoleView) -> int {
+    height := (GetScreenHeight() as f32 * view.shown) as int;
+    return math.max(1, (height - 44) / ConsoleLine);
+}
+
+drawConsole :: (view: *ConsoleView) {
+    if view.shown <= 0.001 { return; }
+    previous := useTemp();
+    defer mem.setAllocator(previous);
+
+    width := GetScreenWidth();
+    height := (GetScreenHeight() as f32 * view.shown) as int;
+    DrawRectangle(0, 0, width, height, ConsoleColor);
+    DrawRectangle(0, height - 2, width, 2, InputColor);
+
+    // The log, the last line at the bottom
+    inputY := height - 30;
+    lines := console.lines();
+    rows := view.rows();
+    BeginScissorMode(0, 0, width, inputY - 4);
+    last := lines.count as int - 1 - view.scroll;
+    for k in 0..rows + 1 {
+        index := last - k as int;
+        if index < 0 { break; }
+        line := lines[index];
+        y := inputY - 8 - (k as int + 1) * ConsoleLine;
+        drawText(line.text, 14, y, ConsoleFontSize, lineColor(line.kind));
+    }
+    EndScissorMode();
+    if view.scroll > 0 {
+        note := tprint("^ % more below ^", view.scroll);
+        drawText(note, width - textWidth(note, ConsoleFontSize) - 14, inputY - 26, ConsoleFontSize, DimColor);
+    }
+
+    // What is typed, with the cursor blinking
+    DrawRectangle(0, inputY - 6, width, 28, {255, 255, 255, 12});
+    drawText("]", 14, inputY, ConsoleFontSize, InputColor);
+    text := view.text();
+    drawText(text, 30, inputY, ConsoleFontSize, TextColor);
+    if (GetTime() * 2) as int % 2 == 0 {
+        x := 30 + textWidth(text.slice(0, view.cursor), ConsoleFontSize);
+        DrawRectangle(x + 1, inputY, 2, ConsoleFontSize + 2, InputColor);
+    }
+
+    view.drawMatches(height);
+}
+
+// Under the console: the commands that start with the first word typed, how each is used and what it does
+@private
+drawMatches :: method (view: *ConsoleView, top: int) {
+    // While Tab goes through the matches: all that match what was typed before it, with the one it is on lit up
+    selected := -1;
+    word: string;
+    if view.completing >= 0 {
+        word.data = view.prefix.data;
+        word.len = view.prefix.count;
+        selected = view.completing;
+    } else {
+        word = view.text();
+        space := word.indexOf(" ");
+        if space >= 0 {
+            // Typing the arguments of a command: only that command
+            entry := console.lookup(word.slice(0, space));
+            if entry != null { view.drawMatchRows(top, [entry], -1); }
+            return;
+        }
+    }
+    if word.len == 0 && selected < 0 { return; }
+    matches := console.complete(word);
+    if matches.count > 0 { view.drawMatchRows(top, matches, selected); }
+}
+
+MaxMatches :: 8;
+
+@private
+drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*console.Entry, selected: int) {
+    // A window of the matches that has the selected one in it
+    first := 0;
+    if selected >= MaxMatches { first = selected - MaxMatches + 1; }
+    shown := math.min(matches.count as int - first, MaxMatches);
+
+    width := 0;
+    for i in first..first + shown {
+        entry := matches[i];
+        width = math.max(width, textWidth(console.usage(entry), ConsoleFontSize) + textWidth(entry.help, ConsoleFontSize) + 60);
+    }
+    width = math.min(width, GetScreenWidth() - 28);
+    rows := shown;
+    if matches.count > first + shown { rows += 1; }
+    DrawRectangle(14, top + 4, width, rows * ConsoleLine + 12, ConsoleColor);
+    for k in 0..shown {
+        i := first + k as int;
+        entry := matches[i];
+        y := top + 10 + k as int * ConsoleLine;
+        usage := console.usage(entry);
+        color := TextColor;
+        if i == selected {
+            DrawRectangle(16, y - 2, width - 4, ConsoleLine, ColorAlpha(InputColor, 0.25));
+            color = InputColor;
+        }
+        drawText(usage, 24, y, ConsoleFontSize, color);
+        drawText(entry.help, 24 + textWidth(usage, ConsoleFontSize) + 24, y, ConsoleFontSize, DimColor);
+    }
+    if matches.count > first + shown {
+        drawText(tprint("and % more (Tab)", matches.count - first - shown), 24, top + 10 + shown * ConsoleLine, ConsoleFontSize, DimColor);
+    }
+}
+
+@private
+lineColor :: (kind: console.LineKind) -> Color {
+    return switch kind {
+        case .output  => TextColor;
+        case .input   => InputColor;
+        case .warning => Color{255, 170, 70, 255};
+        case .error   => Color{255, 90, 80, 255};
+    };
+}

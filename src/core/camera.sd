@@ -12,6 +12,7 @@ RtsCamera :: struct {
     distance:       f32 = 90;
     targetDistance: f32 = 90;
     isLocked:       bool = true;    // Follows the hero
+    takesKeys:      bool = true;    // Arrows pan and the wheel zooms. Not while the console has the keyboard
     shake:          f32;            // Seconds of shaking left
     view:           Camera3D;
 }
@@ -31,7 +32,8 @@ newRtsCamera :: (focus: Vector3) -> RtsCamera {
 
 update :: method (camera: *RtsCamera, dt: f32, hero: Vector3, recenter: bool) {
     // Zoom
-    wheel := GetMouseWheelMove();
+    wheel: f32 = 0;
+    if camera.takesKeys { wheel = GetMouseWheelMove(); }
     if wheel != 0 {
         camera.targetDistance = math.clamp(camera.targetDistance - wheel * 10, CameraMinDistance, CameraMaxDistance);
     }
@@ -41,10 +43,12 @@ update :: method (camera: *RtsCamera, dt: f32, hero: Vector3, recenter: bool) {
         camera.focus = camera.focus.lerp(Vector3{hero.x, 0, hero.z}, math.min(1, dt * 8));
     } else {
         pan := Vector2{0, 0};
-        if IsKeyDown(.left)  { pan.x -= 1; }
-        if IsKeyDown(.right) { pan.x += 1; }
-        if IsKeyDown(.up)    { pan.y -= 1; }
-        if IsKeyDown(.down)  { pan.y += 1; }
+        if camera.takesKeys {
+            if IsKeyDown(.left)  { pan.x -= 1; }
+            if IsKeyDown(.right) { pan.x += 1; }
+            if IsKeyDown(.up)    { pan.y -= 1; }
+            if IsKeyDown(.down)  { pan.y += 1; }
+        }
 
         // The mouse at the edge of the window, when the window has it
         if IsWindowFocused() && IsCursorOnScreen() {
