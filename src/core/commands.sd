@@ -167,3 +167,37 @@ walk :: (game: *Game, x: f32, z: f32, player: ?int) {
     }
     game.players[index].order(Command{move: Vector2{x, z}});
 }
+
+@console.command("Uses the item in a slot of the backpack (0 is the first) at a point x z, or where the hero stands. You when no player is given")
+useItemNow :: (game: *Game, slot: int, x: ?f32, z: ?f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    target := game.players[index].hero.ground();
+    if x.hasValue() && z.hasValue() { target = Vector2{x.value(), z.value()}; }
+    if !game.itemReady(index, slot) { console.fail("There is no item to use in slot %, or it isn't ready", slot); }
+    game.players[index].order(Command{useItem: {slot: slot, target: target}});
+}
+
+@console.command("Offers every player three perks to pick one of, as after a crossing")
+offerPerksNow :: (game: *Game) {
+    game.offerPerks();
+}
+
+@console.command("The perks there are, and the ones each player has")
+perks :: (game: *Game) {
+    for kind in PerkKind.values {
+        definition := kind.perkDefinition();
+        console.print("    %  -  %: %", PerkKind.names[kind], definition.name, definition.description);
+    }
+    for player, i in game.players {
+        names := "none";
+        for perk, k in player.perks {
+            if k == 0 { names = perk.perkDefinition().name; }
+            else      { names = tprint("%, %", names, perk.perkDefinition().name); }
+        }
+        console.print("    %. %: %", i, player.name, names);
+    }
+}

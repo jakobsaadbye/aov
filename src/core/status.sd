@@ -25,6 +25,7 @@ StatusKind :: enum {
     tangled,        // In yarn: amount slower (Gudrun)
     windedDown,     // After an energy drink: amount slower
     mending,        // Heals amount of its most health a second while it stands still (Ditte)
+    sugarRush,      // amount times as fast, then winded down when it is over (an energy drink)
 }
 
 Status :: struct {
@@ -60,6 +61,7 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .tangled    => StatusRules{harms: true};
         case .windedDown => StatusRules{};
         case .mending    => StatusRules{};
+        case .sugarRush  => StatusRules{};
     };
 }
 
@@ -107,8 +109,13 @@ clearStatus :: method (hero: *Hero, kind: StatusKind) {
 }
 
 updateStatuses :: method (hero: *Hero, dt: f32) {
+    rushing := hero.has(.sugarRush);
     for *slot in hero.statuses.slots { slot.timeLeft = math.max(0, slot.timeLeft - dt); }
+    // The sugar rush is over: now it is tired
+    if rushing && !hero.has(.sugarRush) { hero.addStatus(.windedDown, EnergyCrash, 0.35); }
 }
+
+EnergyCrash :: 2.0;     // Seconds it is slower after an energy drink
 
 // Any of its statuses does this
 anyStatus :: method (hero: Hero, test: (StatusRules) -> bool) -> bool {
@@ -142,6 +149,7 @@ steeredTo :: method (hero: Hero) -> ?Vector2 {
 statusSpeed :: method (hero: Hero) -> f32 {
     speed: f32 = 1;
     if hero.has(.haste)      { speed *= hero.status(.haste).amount; }
+    if hero.has(.sugarRush)  { speed *= hero.status(.sugarRush).amount; }
     if hero.has(.slow)       { speed *= 1 - hero.status(.slow).amount; }
     if hero.has(.tangled)    { speed *= 1 - hero.status(.tangled).amount; }
     if hero.has(.windedDown) { speed *= 1 - hero.status(.windedDown).amount; }

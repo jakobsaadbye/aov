@@ -42,6 +42,9 @@ Trait :: union {
     itemReach:    f32;          // Picks items up from this much further away
     coldBlooded:  f32;          // Seconds longer the cars it froze or slowed stay so
     hotPotato;                  // Shoving an enemy swaps an item with it
+    mirror;                     // The next spell cast on it goes back to its caster, now and then (a mirror)
+    airTime:      f32;          // Times how long its leaps and flights stay up (an umbrella)
+    knockTaken:   f32;          // Times how far it is knocked away
 }
 
 ChillAura :: struct {
@@ -82,6 +85,9 @@ HeroStats :: struct {
     itemReach:   f32;
     coldBlooded: f32;
     hotPotato:   bool;
+    mirror:      bool;
+    airTime:     f32 = 1;
+    knockTaken:  f32 = 1;
 }
 
 addTrait :: method (stats: *HeroStats, trait: Trait) {
@@ -126,6 +132,9 @@ addTrait :: method (stats: *HeroStats, trait: Trait) {
         case .itemReach    { stats.itemReach += v; }
         case .coldBlooded  { stats.coldBlooded += v; }
         case .hotPotato    { stats.hotPotato = true; }
+        case .mirror       { stats.mirror = true; }
+        case .airTime      { stats.airTime *= v; }
+        case .knockTaken   { stats.knockTaken *= v; }
     }
 }
 

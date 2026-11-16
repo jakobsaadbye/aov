@@ -495,6 +495,213 @@ def icon_berserk():
     finish(image, "berserk")
 
 
+# Items
+
+
+def icon_item_banana_peel():
+    image, draw = icon_base((250, 220, 90), (150, 110, 20))
+    for k, (dx, dy) in enumerate(((-60, 40), (60, 40), (0, 70))):
+        poly(draw, [(128, 110), (128 + dx * 0.4, 120), (128 + dx, 128 + dy), (128 + dx * 0.7, 140 + dy), (128, 140)], (250, 225, 60))
+    circle(draw, 128, 100, 22, (130, 95, 30))
+    finish(image, "item_banana_peel")
+
+
+def icon_item_bubble_wrap():
+    image, draw = icon_base((200, 230, 250), (90, 140, 190))
+    for y in range(50, 220, 42):
+        for x in range(50, 220, 42):
+            circle(draw, x, y, 17, (240, 250, 255), outline=(120, 160, 200), width=4)
+            circle(draw, x - 5, y - 5, 4, (255, 255, 255), width=0)
+    finish(image, "item_bubble_wrap")
+
+
+def icon_item_mirror():
+    image, draw = icon_base((180, 200, 230), (60, 70, 110))
+    draw.ellipse([60, 30, 196, 190], fill=(150, 110, 60), outline=INK, width=6)
+    draw.ellipse([74, 44, 182, 176], fill=(200, 225, 250))
+    draw.line([(95, 80), (130, 60)], fill=(255, 255, 255), width=8)
+    draw.rectangle([115, 186, 141, 240], fill=(150, 110, 60), outline=INK, width=5)
+    finish(image, "item_mirror")
+
+
+def icon_item_energy_drink():
+    image, draw = icon_base((80, 150, 255), (20, 40, 120))
+    draw.rounded_rectangle([80, 50, 176, 226], radius=14, fill=(40, 90, 220), outline=INK, width=6)
+    draw.rectangle([86, 50, 170, 66], fill=(200, 200, 210))
+    poly(draw, [(140, 90), (105, 145), (130, 145), (115, 200), (155, 130), (130, 130), (145, 90)], (255, 230, 60))
+    finish(image, "item_energy_drink")
+
+
+def icon_item_traffic_cone():
+    image, draw = icon_base((255, 160, 80), (130, 60, 10))
+    draw.rectangle([50, 205, 206, 228], fill=(240, 110, 20), outline=INK, width=5)
+    poly(draw, [(128, 30), (180, 205), (76, 205)], (255, 120, 20))
+    poly(draw, [(108, 100), (148, 100), (158, 135), (98, 135)], (250, 250, 250), width=3)
+    finish(image, "item_traffic_cone")
+
+
+def icon_item_megaphone():
+    image, draw = icon_base((220, 220, 230), (90, 90, 110))
+    poly(draw, [(50, 105), (90, 105), (190, 50), (190, 206), (90, 151), (50, 151)], (240, 240, 245))
+    draw.rectangle([70, 150, 92, 200], fill=(60, 60, 64), outline=INK, width=4)
+    for r in (30, 55):
+        draw.arc([190 - r, 128 - r, 190 + r, 128 + r], start=-45, end=45, fill=(220, 40, 40), width=9)
+    finish(image, "item_megaphone")
+
+
+def icon_item_rubber_chicken():
+    image, draw = icon_base((250, 230, 100), (160, 120, 20))
+    draw.ellipse([60, 110, 190, 190], fill=(250, 220, 60), outline=INK, width=6)
+    poly(draw, [(170, 120), (200, 50), (225, 60), (195, 130)], (250, 220, 60))
+    circle(draw, 210, 55, 22, (250, 220, 60))
+    poly(draw, [(228, 52), (250, 60), (228, 68)], (240, 120, 40))
+    poly(draw, [(200, 30), (210, 18), (220, 32)], (220, 40, 40))
+    circle(draw, 210, 50, 4, (0, 0, 0), width=0)
+    finish(image, "item_rubber_chicken")
+
+
+def icon_item_balloon():
+    image, draw = icon_base((255, 140, 170), (140, 30, 70))
+    draw.ellipse([70, 30, 186, 160], fill=(240, 60, 100), outline=INK, width=6)
+    draw.ellipse([95, 55, 120, 85], fill=(255, 170, 190))
+    poly(draw, [(118, 158), (138, 158), (128, 172)], (240, 60, 100))
+    draw.line([(128, 172), (115, 200), (140, 230)], fill=(240, 240, 240), width=4)
+    finish(image, "item_balloon")
+
+
+def icon_item_bus_ticket():
+    image, draw = icon_base((110, 210, 140), (30, 100, 60))
+    draw.rounded_rectangle([30, 70, 226, 186], radius=10, fill=(245, 240, 220), outline=INK, width=6)
+    for y in (100, 128, 156):
+        draw.line([(50, y), (150, y)], fill=(60, 60, 60), width=6)
+    circle(draw, 190, 128, 22, None, outline=(40, 140, 90), width=6)
+    finish(image, "item_bus_ticket")
+
+
+def icon_item_lucky_dice():
+    image, draw = icon_base((200, 200, 210), (70, 70, 90))
+    draw.rounded_rectangle([50, 50, 206, 206], radius=24, fill=(250, 250, 250), outline=INK, width=6)
+    for x, y in ((90, 90), (128, 128), (166, 166), (166, 90), (90, 166)):
+        circle(draw, x, y, 13, (200, 30, 30), width=0)
+    finish(image, "item_lucky_dice")
+
+
+def icon_item_rollerblades():
+    image, draw = icon_base((255, 120, 180), (130, 30, 80))
+    poly(draw, [(70, 40), (140, 40), (150, 140), (210, 150), (210, 185), (70, 185)], (240, 80, 150))
+    for x in (85, 125, 165, 200):
+        circle(draw, x, 205, 16, (250, 230, 120))
+    finish(image, "item_rollerblades")
+
+
+def icon_item_reflective_vest():
+    image, draw = icon_base((210, 255, 90), (90, 130, 20))
+    poly(draw, [(70, 40), (110, 40), (128, 90), (146, 40), (186, 40), (206, 220), (50, 220)], (200, 250, 50))
+    for y in (130, 175):
+        draw.rectangle([52, y, 204, y + 16], fill=(230, 230, 235))
+    finish(image, "item_reflective_vest")
+
+
+def icon_item_umbrella():
+    image, draw = icon_base((240, 100, 120), (110, 20, 40))
+    draw.pieslice([30, 40, 226, 220], start=180, end=360, fill=(230, 50, 70), outline=INK, width=6)
+    line(draw, [(128, 130), (128, 210), (110, 225), (95, 210)], (60, 40, 30), 9)
+    finish(image, "item_umbrella")
+
+
+# Perks: a bronze medallion with a sign on it
+
+
+def medallion(top, bottom):
+    image, draw = icon_base(top, bottom)
+    circle(draw, 128, 128, 100, (160, 120, 60), width=8)
+    circle(draw, 128, 128, 82, (110, 80, 40), outline=(220, 180, 100), width=5)
+    return image, draw
+
+
+def icon_perk_second_wind():
+    image, draw = medallion((120, 190, 230), (30, 70, 110))
+    for y, w in ((100, 90), (128, 110), (156, 80)):
+        draw.line([(78, y), (78 + w, y)], fill=(230, 245, 255), width=10)
+    finish(image, "perk_second_wind")
+
+
+def icon_perk_thick_skin():
+    image, draw = medallion((200, 150, 120), (100, 60, 40))
+    poly(draw, [(128, 70), (175, 90), (170, 150), (128, 185), (86, 150), (81, 90)], (230, 180, 140))
+    finish(image, "perk_thick_skin")
+
+
+def icon_perk_scavenger():
+    image, draw = medallion((200, 180, 120), (90, 70, 30))
+    circle(draw, 115, 115, 36, None, outline=(240, 230, 210), width=10)
+    line(draw, [(140, 140), (175, 175)], (240, 230, 210), 12)
+    finish(image, "perk_scavenger")
+
+
+def icon_perk_revenge():
+    image, draw = medallion((200, 60, 60), (80, 10, 10))
+    poly(draw, [(85, 90), (150, 90), (150, 70), (180, 110), (150, 150), (150, 130), (85, 130)], (250, 200, 180))
+    finish(image, "perk_revenge")
+
+
+def icon_perk_jaywalker():
+    image, draw = medallion((120, 120, 130), (40, 40, 50))
+    for x in range(78, 180, 26):
+        draw.rectangle([x, 100, x + 14, 156], fill=(240, 240, 240))
+    circle(draw, 150, 85, 12, (235, 190, 150))
+    finish(image, "perk_jaywalker")
+
+
+def icon_perk_pocket():
+    image, draw = medallion((150, 110, 70), (70, 40, 20))
+    poly(draw, [(85, 80), (171, 80), (165, 160), (128, 180), (91, 160)], (90, 110, 170))
+    draw.line([(85, 100), (171, 100)], fill=(250, 220, 120), width=6)
+    finish(image, "perk_pocket")
+
+
+def icon_perk_nimble():
+    image, draw = medallion((150, 220, 160), (30, 90, 40))
+    draw.arc([80, 80, 176, 176], start=200, end=340, fill=(250, 250, 250), width=12)
+    poly(draw, [(165, 95), (185, 120), (155, 120)], (250, 250, 250))
+    finish(image, "perk_nimble")
+
+
+def icon_perk_cold_blooded():
+    image, draw = medallion((150, 210, 240), (30, 80, 130))
+    poly(draw, [(115, 70), (141, 70), (141, 150), (115, 150)], (240, 250, 255))
+    circle(draw, 128, 165, 22, (200, 40, 40))
+    finish(image, "perk_cold_blooded")
+
+
+def icon_perk_hot_potato():
+    image, draw = medallion((240, 150, 60), (120, 50, 10))
+    draw.ellipse([85, 95, 171, 165], fill=(190, 140, 80), outline=INK, width=5)
+    for x in (100, 128, 156):
+        line(draw, [(x, 85), (x + 6, 65)], (255, 120, 40), 6, outline=False)
+    finish(image, "perk_hot_potato")
+
+
+def icon_perk_fleet_foot():
+    image, draw = medallion((240, 210, 120), (120, 90, 20))
+    poly(draw, [(85, 140), (95, 90), (125, 90), (135, 120), (175, 130), (175, 150), (85, 150)], (240, 240, 245))
+    finish(image, "perk_fleet_foot")
+
+
+def icon_perk_focus():
+    image, draw = medallion((170, 140, 220), (60, 30, 100))
+    for r in (55, 35, 15):
+        circle(draw, 128, 128, r, None, outline=(240, 230, 255), width=8)
+    finish(image, "perk_focus")
+
+
+def icon_perk_long_arms():
+    image, draw = medallion((130, 180, 240), (30, 60, 120))
+    line(draw, [(80, 160), (176, 96)], (235, 190, 150), 14)
+    poly(draw, [(170, 80), (195, 92), (180, 115)], (235, 190, 150))
+    finish(image, "perk_long_arms")
+
+
 ICONS = {name[5:]: f for name, f in dict(globals()).items() if name.startswith("icon_") and callable(f) and f.__module__ == __name__ and name != "icon_base"}
 
 if __name__ == "__main__":

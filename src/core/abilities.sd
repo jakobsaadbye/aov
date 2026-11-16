@@ -126,6 +126,15 @@ spellTarget :: method (game: *Game, caster: int, ability: *Ability, target: Vect
     victim := game.enemyNear(caster, aim, TargetSnapRadius);
     if victim < 0 { return -1; }
     enemy := &game.players[victim];
+    // A mirror sends it back
+    if enemy.hero.stats.mirror && enemy.hero.mirrorLeft <= 0 {
+        enemy.hero.mirrorLeft = MirrorCooldown;
+        game.effects.particles.emit(.sparkles, enemy.hero.position + Vector3{0, 2, 0}, 24, tint: {210, 230, 255, 255});
+        game.sounds.playAt("item.mirror", enemy.hero.position);
+        game.announce(caster, {210, 230, 255, 255}, "% bounced off the mirror of %", ability.name, enemy.name);
+        if !game.players[caster].hero.isTargetable() { return Absorbed; }
+        return caster;
+    }
     if enemy.hero.stats.decoysFirst && enemy.decoy.hasValue() {
         game.popDecoy(victim);
         game.announce(caster, {255, 220, 120, 255}, "% hit a decoy", ability.name);
@@ -135,6 +144,8 @@ spellTarget :: method (game: *Game, caster: int, ability: *Ability, target: Vect
 }
 
 Absorbed :: -2;
+SecondWindTime :: 2.0;      // Seconds the perk Second Wind makes it faster after it is knocked away
+MirrorCooldown :: 15.0;
 
 // What a cast does when spellTarget found no victim: spent when the spell was absorbed, else not cast
 spent :: (victim: int) -> bool {
@@ -148,6 +159,8 @@ knockAway :: method (game: *Game, victim: int, from: Vector2, distance: f32, sou
     away := enemy.ground() - from;
     if away.lengthSqr() < 0.01 { away = Vector2{1, 0}; }
     away = away.normalize();
+    distance *= enemy.stats.knockTaken;
+    if enemy.stats.secondWind { enemy.addStatus(.haste, SecondWindTime, 1.3); }
     enemy.displacement = Displacement{to: (enemy.ground() + away * distance).at(), speed: KnockbackSpeed};
     enemy.clearStatus(.sleep);
     enemy.stop();

@@ -170,6 +170,7 @@ Hero :: struct {
     goalSign:         f32 = 1;      // Which way across is the way to the goal: 1 is +x
     rolledOnce:       bool;         // A car only knocked it down, once (the trait roll)
     nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
+    mirrorLeft:       f32;          // Seconds until its mirror sends a spell back again
 
     // What the enemies did to the hero
     harmedBy:     int = -1;             // The player that last hooked, bashed or locked it, who gets the kill if a car
@@ -274,7 +275,7 @@ Hero :: struct {
     // Jumps through the air to a point
     startLeap :: method * (to: Vector2, duration: f32, height: f32) {
         toTarget := to - self.ground();
-        self.leap = LeapState{from: self.position, to: to.at(), duration: duration, height: height};
+        self.leap = LeapState{from: self.position, to: to.at(), duration: duration * self.stats.airTime, height: height};
         self.isMoving = false;
         if toTarget.lengthSqr() > 0.0001 { self.facing = math.atan2f(toTarget.x, toTarget.y); }
     }

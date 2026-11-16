@@ -161,6 +161,10 @@ profile :: method (bot: *Bot) -> BotProfile {
 
 think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     player := &game.players[me];
+    // A perk to pick: one of them, at random, after a moment to think
+    if player.perkOffer.isOpen && player.perkOffer.timeLeft < PerkPickTime - 1 {
+        player.order(Command{choosePerk: bot.rng.between(0, PerkChoices - 1)});
+    }
     if !player.isPlaying() {
         bot.plan.clear();
         bot.replanIn = 0;
@@ -479,6 +483,17 @@ chooseAbility :: method (bot: *Bot, game: *Game, me: int) -> ?Command {
             bestScore = choice.score;
             bot.decision.chosen = ability.name;
             best = Command{cast: {slot: slot as int, target: choice.target}};
+        }
+    }
+    // The items that are used, like abilities
+    for slot in 0..player.backpack.count {
+        if !game.itemReady(me, slot as int) { continue; }
+        action := player.backpack.items[slot].itemDefinition().action;
+        choice := bot.scoreAbility(game, view, &action);
+        if choice.score > bestScore {
+            bestScore = choice.score;
+            bot.decision.chosen = action.name;
+            best = Command{useItem: {slot: slot as int, target: choice.target}};
         }
     }
     return best;

@@ -59,6 +59,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
     drawHeroCard(game, assets);
     if game.canSwitchView() { drawWatching(game); }
     drawBanner(game);
+    drawPerkOffer(game, assets);
     if game.showHelp       { drawHelp(); }
     if game.debug.overlay  { drawDebug(game); }
     drawInspectorPanel(game);
@@ -204,7 +205,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
 
     buttonsWidth := slots.count as int * (AbilityButtonSize + AbilityButtonGap) - AbilityButtonGap;
     if actives > 0 && actives < slots.count { buttonsWidth += PassiveGap - AbilityButtonGap; }
-    backpackWidth := BackpackSize * (ItemSlotSize + 8) - 8;
+    backpackWidth := game.you().backpack.size * (ItemSlotSize + 8) - 8;
     width  := math.max(20 + PortraitBox + 28 + buttonsWidth + 40 + backpackWidth + 24, 600);
     height := HeroCardHeight;
     panel := Rectangle{(GetScreenWidth() - width) as f32 * 0.5, (GetScreenHeight() - height - 10) as f32, width as f32, height as f32};
@@ -279,7 +280,7 @@ drawBackpack :: (game: *Game, assets: *Assets, x: int, y: int) {
     mouse := GetMousePosition();
     game.hoveredItem = -1;
     hovered: ?Rectangle = null;
-    for slot in 0..BackpackSize {
+    for slot in 0..backpack.size {
         box := Rectangle{(x + slot as int * (ItemSlotSize + 8)) as f32, y as f32, ItemSlotSize, ItemSlotSize};
         uiSlot(box);
         if slot >= backpack.count { continue; }
@@ -288,9 +289,20 @@ drawBackpack :: (game: *Game, assets: *Assets, x: int, y: int) {
         icon := assets.icons[item.icon];
         inner := Rectangle{box.x + 4, box.y + 4, box.width - 8, box.height - 8};
         DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, inner, {0, 0}, 0, White);
-        left, seconds := itemCooldown(&game.you().hero, kind);
+        left, seconds := itemCooldown(game.you(), slot as int);
         drawCooldown(inner, left, seconds, 20);
-        uiIconFrame(box);
+        highlight: ?Color = null;
+        if slot as int == game.aimingItem { highlight = UiGold; }
+        uiIconFrame(box, highlight);
+        if item.isUsed() {
+            // Its key in the corner, and how many uses are left
+            DrawRectangle(box.x as int + 4, box.y as int + 4, 15, 16, {0, 0, 0, 200});
+            drawText(tprint("%", slot + 1), box.x as int + 7, box.y as int + 4, 14, UiGold);
+            if item.charges > 0 {
+                text := tprint("%", backpack.charges[slot]);
+                drawText(text, (box.x + box.width) as int - 6 - textWidth(text, 16), (box.y + box.height) as int - 20, 16, White);
+            }
+        }
         isHovered := CheckCollisionPointRec(mouse, box);
         // Locked: a padlock in the corner. On hover, a faint one says a right click locks it
         if backpack.locked[slot] { drawLock(box, 1); }

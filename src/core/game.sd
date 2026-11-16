@@ -38,6 +38,8 @@ Command :: union {
     stop;
     cast: struct { slot: int; target: Vector2; };
     lockItem: int;                          // Locks the item in a slot of the backpack, or unlocks it
+    useItem: struct { slot: int; target: Vector2; };    // Uses the item in a slot of the backpack (item_abilities.sd)
+    choosePerk: int;                        // Picks one of the perks offered after a crossing (perks.sd)
 }
 
 Player :: struct {
@@ -52,6 +54,7 @@ Player :: struct {
     backpack:  Backpack;                    // The items it picked up, which boost all of its heroes (items.sd)
     perks:     [..]PerkKind;                // Picked after the crossings, for all of its heroes (perks.sd)
     decoy:     ?Decoy;                      // Tim & Tom's other twin, while it walks (world_effects.sd)
+    perkOffer: PerkOffer;                    // The perks it may pick one of, after a crossing (perks.sd)
 
     isBot :: method () -> bool {
         return self.brain != null;
@@ -157,6 +160,8 @@ Game :: struct {
     hoveredItem: int = -1;                  // and of the item in the backpack
     mouseOnHud:  bool;                      // The mouse is on the hero card: a click there isn't on the ground
     aiming:      int = -1;                  // An ability whose icon was clicked: the next left click on the ground casts it
+    aimingItem:  int = -1;                  // and an item
+    hoveredPerk: int = -1;                  // The card of a perk the mouse is on
     sounds:      SoundPlayer;               // Silent until it is loaded, e.g in simulation_test.sd
     inspector:   Inspector;                 // F4: what a bot thinks (inspector.sd)
     recording:   Recording;                 // What was played so far (recording.sd)
@@ -264,6 +269,7 @@ restart :: method (game: *Game) {
         player.stats = Stats{};
         player.backpack = Backpack{};
         player.perks.clear();
+        player.perkOffer.isOpen = false;
         player.startSide = .left;
         player.commands.clear();
         kind := (game.rng.between(0, HeroKind.count as int - 1)) as HeroKind;
@@ -447,12 +453,26 @@ updateCamera :: method (game: *Game, dt: f32) {
 readInput :: method (game: *Game) {
     if !game.hasLocal() { return; }                         // Spectating
     player := &game.players[game.local];
+    // Perks: a click on a card, or 1, 2 and 3 while the hero waits for the next round
+    if game.players[game.local].perkOffer.isOpen && !game.keyboardTaken {
+        if IsMouseButtonPressed(.left) && game.hoveredPerk >= 0 {
+            game.players[game.local].order(Command{choosePerk: game.hoveredPerk});
+            return;
+        }
+        if !game.players[game.local].isPlaying() {
+            for key, k in ItemKeys {
+                if IsKeyPressed(key) { game.players[game.local].order(Command{choosePerk: k as int}); }
+            }
+        }
+    }
+
     if !player.isPlaying() { return; }
     if game.keyboardTaken { return; }
 
     // Right click: walks there, or on an item in the backpack, locks it. It also stops aiming an ability
     if IsMouseButtonPressed(.right) {
         game.aiming = -1;
+        game.aimingItem = -1;
         if game.hoveredItem >= 0 {
             player.order(Command{lockItem: game.hoveredItem});
         } else if !game.mouseOnHud && game.mouseGround.hasValue() {
@@ -476,6 +496,11 @@ readInput :: method (game: *Game) {
             } else {
                 player.order(Command{cast: {slot: game.hoveredAbility, target: player.hero.ground()}});
             }
+        } else if game.hoveredItem >= 0 {
+            game.startItem(game.hoveredItem);
+        } else if game.aimingItem >= 0 && !game.mouseOnHud && game.mouseGround.hasValue() {
+            player.order(Command{useItem: {slot: game.aimingItem, target: game.mouseGround.value().xz()}});
+            game.aimingItem = -1;
         } else if game.aiming >= 0 && !game.mouseOnHud && game.mouseGround.hasValue() {
             if player.hero.abilityReady(game.aiming) {
                 player.order(Command{cast: {slot: game.aiming, target: game.mouseGround.value().xz()}});
@@ -484,6 +509,11 @@ readInput :: method (game: *Game) {
         }
     }
     if IsKeyPressed(.s) { player.order(.stop); }
+
+    // The items that are used: 1, 2 and 3
+    for key, slot in ItemKeys {
+        if IsKeyPressed(key) { game.startItem(slot as int); }
+    }
 
     // The first ability that is cast is on Q, the second on W, ... Passives have no key
     for key, i in AbilityKeys {
@@ -499,6 +529,28 @@ readInput :: method (game: *Game) {
         player.order(Command{cast: {slot: slot, target: target}});
         game.aiming = -1;
     }
+}
+
+// Uses an item of the player at the keyboard: at once at the mouse, or, when it is clicked and aims at a point, with the
+// next left click on the ground
+startItem :: method (game: *Game, slot: int) {
+    player := &game.players[game.local];
+    if slot >= player.backpack.count { return; }
+    definition := player.backpack.items[slot].itemDefinition();
+    if !definition.isUsed() { return; }
+    if !game.itemReady(game.local, slot) {
+        game.sounds.play("ui.not_ready");
+        return;
+    }
+    game.aiming = -1;
+    if definition.action.aimsAtPoint() && game.hoveredItem == slot {
+        game.aimingItem = slot;
+        return;
+    }
+    target := player.hero.ground();
+    if game.mouseGround.hasValue() { target = game.mouseGround.value().xz(); }
+    player.order(Command{useItem: {slot: slot, target: target}});
+    game.aimingItem = -1;
 }
 
 // Moves the world on by dt seconds: the bots think, the orders are carried out, the heroes and the cars move
@@ -524,6 +576,7 @@ simulate :: method (game: *Game, dt: f32) {
         profileEnd(.heroes);
     }
     game.updateMatch(dt);
+    game.updatePerkOffers(dt);
 
     game.separateHeroes();
     game.updateItems(dt);
@@ -596,9 +649,10 @@ isNearRoad :: (point: Vector2) -> bool {
 carryOut :: method (game: *Game, index: int) {
     player := &game.players[index];
     defer player.commands.clear();
-    if !player.isPlaying() { return; }
 
     for command in player.commands {
+        // A perk can be picked while the hero isn't on the field, e.g after a crossing. Nothing else
+        if !player.isPlaying() && command.kind != .choosePerk { continue; }
         switch v in command {
             case .move { player.hero.moveTo(v.at()); }
             case .stop { player.hero.stop(); }
@@ -606,12 +660,15 @@ carryOut :: method (game: *Game, index: int) {
             case .lockItem {
                 if v >= 0 && v < player.backpack.count { player.backpack.locked[v] = !player.backpack.locked[v]; }
             }
+            case .useItem    { game.useItem(index, v.slot, v.target); }
+            case .choosePerk { game.choosePerk(index, v); }
         }
     }
 }
 
 updatePlayer :: method (game: *Game, index: int, dt: f32) {
     player := &game.players[index];
+    player.coolItems(dt);
     switch v in &player.phase {
         case .playing {
             game.moveHero(index, dt);
@@ -812,6 +869,10 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
     if hero.harmedBy >= 0 && hero.harmedBy != index && game.time - hero.harmedAt < KillCredit {
         killer = hero.harmedBy;
         game.players[killer].stats.kills += 1;
+        // Revenge: its killer's abilities cool down for longer
+        if hero.stats.revenge > 0 {
+            for *cooldown in game.players[killer].hero.cooldowns { *cooldown += hero.stats.revenge; }
+        }
     }
 
     // The car throws the bits along the road
@@ -900,6 +961,7 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
     player.hero.lostIn = LostEveryLow;
     player.phase = .playing;
     player.hero.stats = statsOf(player);
+    player.backpack.size = BackpackSize + player.hero.stats.pockets;
     player.hero.savesLeft = player.hero.stats.saves;
     player.hero.health = player.hero.maxHealth();
     if index == game.watched { game.sounds.play("hero.spawn", 0.6); }

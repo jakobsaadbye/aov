@@ -34,6 +34,7 @@ Rain :: struct {
     radius:   f32;
     slow:     f32;
     timeLeft: f32;
+    isCone:   bool;         // A traffic cone, not rain
 }
 
 //
@@ -191,6 +192,15 @@ drawDecoys :: (game: *Game, assets: *Assets) {
 drawRain :: (game: *Game) {
     for rain in game.rain {
         alpha := math.min(rain.timeLeft, 1);
+        if rain.isCone {
+            // An orange cone with white stripes
+            base := rain.center.at(0);
+            DrawCube(base + Vector3{0, 0.05, 0}, 1.2, 0.1, 1.2, ColorAlpha({255, 110, 20, 255}, alpha));
+            DrawCylinder(base, 0.5, 0.06, 1.6, 10, ColorAlpha({255, 110, 20, 255}, alpha));
+            DrawCylinder(base + Vector3{0, 0.7, 0}, 0.32, 0.26, 0.25, 10, ColorAlpha(White, alpha));
+            DrawCircle3D(rain.center.at(0.15), rain.radius, {1, 0, 0}, 90, ColorAlpha({255, 140, 40, 255}, 0.5 * alpha));
+            continue;
+        }
         DrawCylinder(rain.center.at(0.13), rain.radius, rain.radius, 0.02, 40, ColorAlpha({90, 130, 200, 255}, 0.18 * alpha));
         DrawCircle3D(rain.center.at(0.15), rain.radius, {1, 0, 0}, 90, ColorAlpha({150, 190, 255, 255}, 0.6 * alpha));
     }

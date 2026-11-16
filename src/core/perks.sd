@@ -44,3 +44,111 @@ perkDefinition :: method (kind: PerkKind) -> PerkDefinition {
         case .longArms    => PerkDefinition{"Long Arms", "The abilities reach 15% further", "perk_long_arms", Trait{reach: 1.15}};
     };
 }
+
+PerkChoices  :: 3;
+PerkPickTime :: 12.0;      // Seconds to pick, before the first one is taken
+
+// Three perks to pick one of
+PerkOffer :: struct {
+    isOpen:   bool;
+    perks:    [PerkChoices]int;     // Values of PerkKind. As ints: a fixed array of an enum in a struct isn't copied right
+    timeLeft: f32;
+
+    perk :: method (k: int) -> PerkKind {
+        return self.perks[k] as PerkKind;
+    }
+}
+
+// After a crossing: every player is offered perks, three it doesn't have, at random
+offerPerks :: method (game: *Game) {
+    for i in 0..game.players.count { game.offerPerksTo(i as int); }
+}
+
+@private
+offerPerksTo :: method (game: *Game, index: int) {
+    player := &game.players[index];
+    offer := PerkOffer{isOpen: true, timeLeft: PerkPickTime};
+    count := 0;
+    attempts := 0;
+    while count < PerkChoices && attempts < 60 {
+        attempts += 1;
+        kind := game.rng.between(0, PerkKind.count as int - 1) as PerkKind;
+        if hasPerk(player, kind) || isOffered(&offer, count, kind) { continue; }
+        offer.perks[count] = kind as int;
+        count += 1;
+    }
+    if count == PerkChoices { player.perkOffer = offer; }
+}
+
+@private
+hasPerk :: (player: *Player, kind: PerkKind) -> bool {
+    for owned in player.perks {
+        if owned == kind { return true; }
+    }
+    return false;
+}
+
+@private
+isOffered :: (offer: *PerkOffer, count: int, kind: PerkKind) -> bool {
+    for k in 0..count {
+        if offer.perks[k] == kind as int { return true; }
+    }
+    return false;
+}
+
+choosePerk :: method (game: *Game, index: int, choice: int) {
+    player := &game.players[index];
+    if !player.perkOffer.isOpen || choice < 0 || choice >= PerkChoices { return; }
+    kind := player.perkOffer.perk(choice);
+    player.perkOffer.isOpen = false;
+    player.perks.add(kind);
+    player.refreshStats();
+    if index == game.watched { game.showBanner(UiGold, "Perk: %", kind.perkDefinition().name); }
+    else                      { game.announce(index, player.color, "% picked %", player.name, kind.perkDefinition().name); }
+}
+
+// Picks a perk at random for whoever didn't pick in time
+updatePerkOffers :: method (game: *Game, dt: f32) {
+    for *player, i in game.players {
+        if !player.perkOffer.isOpen { continue; }
+        player.perkOffer.timeLeft -= dt;
+        if player.perkOffer.timeLeft <= 0 { game.choosePerk(i as int, game.rng.between(0, PerkChoices - 1)); }
+    }
+}
+
+// The offer of the player at the keyboard: three cards in the middle of the screen. A click on one, or 1, 2 or 3 while
+// the hero waits for the next round, picks it
+PerkCardWidth  :: 230;
+PerkCardHeight :: 150;
+
+drawPerkOffer :: (game: *Game, assets: *Assets) {
+    game.hoveredPerk = -1;
+    if !game.hasLocal() || game.watched != game.local { return; }
+    player := &game.players[game.local];
+    if !player.perkOffer.isOpen { return; }
+    offer := player.perkOffer;
+    gap := 24;
+    total := PerkChoices * PerkCardWidth + (PerkChoices - 1) * gap;
+    x := (GetScreenWidth() - total) / 2;
+    y := 215;
+    uiPlaque(tprint("Pick a perk  ·  % s", math.ceilf(offer.timeLeft) as int), GetScreenWidth() / 2, y - 48, 22);
+    mouse := GetMousePosition();
+    for k in 0..PerkChoices {
+        definition := offer.perk(k as int).perkDefinition();
+        card := Rectangle{(x + k as int * (PerkCardWidth + gap)) as f32, y as f32, PerkCardWidth, PerkCardHeight};
+        hovered := CheckCollisionPointRec(mouse, card);
+        if hovered { game.hoveredPerk = k as int; }
+        uiPanel(card, 0.6);
+        icon := assets.icons[definition.icon];
+        iconBox := Rectangle{card.x + 16, card.y + 16, 48, 48};
+        DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, iconBox, {0, 0}, 0, White);
+        highlight: ?Color = null;
+        if hovered { highlight = UiGold; }
+        uiIconFrame(iconBox, highlight);
+        drawTitle(definition.name, card.x as int + 76, card.y as int + 20, 18, UiGold);
+        drawText(tprint("%", k + 1), card.x as int + PerkCardWidth - 28, card.y as int + 16, 16, UiGoldDim);
+        lines := wrapText(definition.description, 15, PerkCardWidth - 32);
+        for line, n in lines { drawText(line, card.x as int + 16, card.y as int + 76 + n as int * 19, 15, Parchment); }
+        lines.free();
+    }
+}
