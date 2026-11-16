@@ -10,6 +10,7 @@ import fmt;
 import math;
 import random;
 import json;
+import time;
 use raylib;
 
 Dt :: 1.0 / 60.0;
@@ -40,6 +41,7 @@ main :: () {
     testSpectating();
     testItemAuras();
     testMatch();
+    testParticles();
     fmt.print("All simulation tests passed");
 }
 
@@ -1011,4 +1013,33 @@ testMatch :: () {
     for 0..30 { game.simulate(Dt); }
     assert(other.hero.position.x > -58 + core.ShoveDistance && other.hero.harmedBy == 0);
     assert(game.you().hero.shoveLeft > 0);
+}
+
+// Particles: they move by their style, stain the ground, die, and are quick. Off, nothing is made
+testParticles :: () {
+    system := core.newParticles(1);
+    defer system.free();
+    system.emit(.blood, Vector3{0, 2, 0}, 50);
+    assert(system.count() == 0);                    // Off: only where someone looks
+
+    system.isOn = true;
+    system.emit(.blood, Vector3{0, 2, 0}, 50);
+    system.emit(.sparks, Vector3{0, 2, 0}, 30);
+    assert(system.count() == 80);
+    for 0..(3 * 60) { system.update(Dt); }
+    assert(system.count() == 0 && system.stainCount > 30);     // The drops landed and stained the road
+
+    // A rate: about as many as asked for
+    for 0..60 { system.emitRate(.heal, Vector3{}, 30, Dt); }
+    assert(system.count() > 20 && system.count() < 40);
+
+    // Many at once: an update of 15000 is quick
+    system.clear();
+    for fx in core.Fx.values { system.emit(fx, Vector3{0, 2, 0}, 1200, radius: 5); }
+    count := system.count();
+    started := time.clock();
+    for 0..10 { system.update(Dt); }
+    perFrame := (time.clock() - started) / 10 * 1000;
+    fmt.print("Particles: an update of % takes % ms", count, fmt.fixed(perFrame as f32, 3));
+    assert(count > 10000 && perFrame < 8);
 }

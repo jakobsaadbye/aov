@@ -1,0 +1,440 @@
+namespace core;
+
+// Particles: lots of small, short-lived sprites, e.g blood, dust, sparks, the mist of an aura. What they look like and how
+// they move is a ParticleStyle, a recipe with many knobs (effect_styles.sd has the ones of the game). The code that makes
+// them only says where and how many:
+//
+//     game.effects.particles.emit(.blood, hero.position, 40, push: car.velocity);
+//     game.effects.particles.emitRate(.stench, hero.position, 12, dt);     // About 12 a second, for an aura
+//
+// It is made to be quick: the particles live in a pool for each texture and blend mode, a dead one takes the place of the
+// last one (no holes, no allocations while playing), and each pool is drawn as one batch of quads that face the camera,
+// with the GPU blending them. Thousands at once cost well under a millisecond. Only what is shown uses them: they don't
+// take part in the game, and they have random numbers of their own, so a replay is the same with or without them.
+
+import math;
+import random;
+use raylib;
+
+ParticleTexture :: enum {
+    soft,           // A soft dot
+    spark,          // Long and thin, for sparks: stretch them along their way
+    smoke,          // A lumpy blob
+    drop,           // A drop of liquid
+    star,           // A four pointed star, for sparkles
+    ring,
+    stain,          // A splash, for stains on the ground
+}
+
+BlendKind :: enum {
+    alpha,          // In front of what is behind, e.g smoke, blood
+    additive,       // Adds its light, e.g sparks, magic. Never darkens
+}
+
+// Where the particles of an emit start
+EmitShape :: enum {
+    point,
+    sphere,         // In a ball of the radius
+    disc,           // On the ground, in a circle of the radius
+    ring,           // On the ground, on a circle of the radius
+}
+
+// What a particle does when it gets to the ground
+GroundHit :: enum {
+    none,           // Goes through it, e.g mist
+    bounce,
+    stick,          // Lies there until it is gone
+    stain,          // Leaves a stain there, and is gone
+}
+
+// A number between low and high, at random for each particle
+Between :: struct {
+    low:  f32;
+    high: f32;
+}
+
+ParticleStyle :: struct {
+    texture:   ParticleTexture = .soft;
+    blend:     BlendKind = .alpha;
+    lifetime:  Between = {0.6, 1};          // Seconds
+
+    // Where they start, and how they set off
+    shape:     EmitShape = .point;
+    radius:    f32;                         // Of the shape
+    speed:     Between = {1, 3};            // Meters a second
+    direction: Vector3 = {0, 1, 0};         // The middle of the cone they set off in
+    spread:    f32 = 1;                     // 0 straight along the direction, 1 in every direction
+    outward:   bool;                        // Away from the middle of the shape instead of along the direction
+    flat:      bool;                        // Only along the ground
+
+    // How they move
+    gravity:   f32;                         // Meters a second each second, down. Below 0 they rise, e.g smoke
+    drag:      f32;                         // The share of their speed they lose each second
+    wobble:    f32;                         // Meters a second they wander, e.g mist
+
+    // How they look over their life: from colors[0] to colors[1] halfway to colors[2] at the end, alpha included
+    size:      Between = {0.3, 0.6};        // Meters
+    grow:      f32 = 1;                     // Times the size at the end of their life
+    colors:    [3]Color = [Color{255, 255, 255, 255}, Color{255, 255, 255, 255}, Color{255, 255, 255, 0}];
+    fadeIn:    f32 = 0.08;                  // The share of their life they take to appear
+    spin:      Between;                     // Radians a second
+    stretch:   f32;                         // Seconds of their way they are long, e.g sparks and drops that fly
+
+    ground:    GroundHit = .none;
+    stainSize: Between = {0.4, 0.8};       // With .stain: the size of the stain
+    stainColor: Color = {120, 12, 16, 230};
+}
+
+Particle :: struct {
+    position: Vector3;
+    velocity: Vector3;
+    age:      f32;
+    life:     f32;
+    size:     f32;
+    rotation: f32;
+    spin:     f32;
+    seed:     f32;              // For its wobble
+    resting:  bool;             // On the ground
+    tint:     Color;            // Times the colors of its style
+    fx:       Fx;               // Its style: styleOf(fx)
+}
+
+// A pool of the particles of one texture and blend mode, drawn at once
+ParticleLayer :: struct {
+    texture:   ParticleTexture;
+    blend:     BlendKind;
+    particles: [..]Particle;
+}
+
+// A stain on the ground, e.g of blood: drawn flat, all of them at once
+Stain :: struct {
+    position: Vector2;
+    size:     f32;
+    rotation: f32;
+    color:    Color;
+    age:      f32;
+}
+
+MaxParticlesPerLayer :: 4096;
+MaxStains            :: 160;
+StainLifetime        :: 20.0;
+
+ParticleSystem :: struct {
+    layers:    [ParticleTexture.count * BlendKind.count]ParticleLayer;
+    stains:    [MaxStains]Stain;
+    stainCount: int;            // Stains made so far; the oldest is painted over when there are MaxStains
+    rng:       random.Random;
+    isOn:      bool;            // Off where nobody looks, e.g bot_train.sd: emit does nothing
+    updateSeconds: f64;         // What the last update and draw cost, for the debug overlay
+    drawSeconds:   f64;
+}
+
+newParticles :: (seed: u64) -> ParticleSystem {
+    system := ParticleSystem{rng: random.newRandom(seed ^ 0x9a271c1e)};
+    for *layer, i in system.layers {
+        layer.texture = (i / BlendKind.count) as ParticleTexture;
+        layer.blend = (i % BlendKind.count) as BlendKind;
+    }
+    return system;
+}
+
+layerOf :: method (system: *ParticleSystem, style: *ParticleStyle) -> *ParticleLayer {
+    return &system.layers[style.texture as int * BlendKind.count + style.blend as int];
+}
+
+// The particles there are now
+count :: method (system: *ParticleSystem) -> int {
+    total := 0;
+    for layer in system.layers { total += layer.particles.count as int; }
+    return total;
+}
+
+// Makes count particles of a style at a point. push is added to their speed, e.g the way a car was going, tint colors
+// them, e.g the color of a hero, and a radius of 0 or more is the radius of the shape instead of the style's, e.g the
+// size of an aura
+emit :: method (system: *ParticleSystem, fx: Fx, at: Vector3, count: int, push := Vector3{}, tint := White, radius: f32 = -1) {
+    if !system.isOn { return; }
+    style := styleOf(fx);
+    layer := system.layerOf(style);
+    for 0..count {
+        if layer.particles.count >= MaxParticlesPerLayer { return; }
+        particle := system.newParticle(style, at, push, tint, radius);
+        particle.fx = fx;
+        layer.particles.add(particle);
+    }
+}
+
+// For something that goes on, e.g an aura: about perSecond particles a second, so over dt seconds this many, rounded at
+// random so a few a second come out right too
+emitRate :: method (system: *ParticleSystem, fx: Fx, at: Vector3, perSecond: f32, dt: f32, push := Vector3{}, tint := White, radius: f32 = -1) {
+    if !system.isOn { return; }
+    wanted := perSecond * dt;
+    count := math.floorf(wanted) as int;
+    if system.rng.random() < (wanted - count as f32) as f64 { count += 1; }
+    if count > 0 { system.emit(fx, at, count, push, tint, radius); }
+}
+
+@private
+newParticle :: method (system: *ParticleSystem, style: *ParticleStyle, at: Vector3, push: Vector3, tint: Color, radiusOverride: f32) -> Particle {
+    rng := &system.rng;
+    radius := style.radius;
+    if radiusOverride >= 0 { radius = radiusOverride; }
+    // Where in the shape
+    offset := Vector3{};
+    switch style.shape {
+        case .point  { }
+        case .sphere { offset = randomDirection(rng) * (radius * math.sqrtf(rng.random() as f32)); }
+        case .disc {
+            a := rng.uniform(0, math.Tau) as f32;
+            r := radius * math.sqrtf(rng.random() as f32);
+            offset = Vector3{math.cosf(a) * r, 0, math.sinf(a) * r};
+        }
+        case .ring {
+            a := rng.uniform(0, math.Tau) as f32;
+            offset = Vector3{math.cosf(a) * radius, 0, math.sinf(a) * radius};
+        }
+    }
+
+    // Which way: in a cone around the direction, or away from the middle
+    way := style.direction;
+    if style.outward && offset.lengthSqr() > 0.0001 { way = offset.normalize(); }
+    if style.spread > 0 { way = way.lerp(randomDirection(rng), style.spread).normalize(); }
+    if style.flat { way = Vector3{way.x, 0, way.z}.normalize(); }
+    speed := pick(rng, style.speed);
+
+    return Particle{
+        position: at + offset,
+        velocity: way * speed + push,
+        life:     math.max(pick(rng, style.lifetime), 0.01),
+        size:     pick(rng, style.size),
+        rotation: rng.uniform(0, math.Tau) as f32,
+        spin:     pick(rng, style.spin) * randomSign(rng),
+        seed:     rng.uniform(0, 100) as f32,
+        tint:     tint,
+    };
+}
+
+@private
+randomSign :: (rng: *random.Random) -> f32 {
+    if rng.chance(0.5) { return 1; }
+    return -1;
+}
+
+@private
+pick :: (rng: *random.Random, between: Between) -> f32 {
+    if between.high <= between.low { return between.low; }
+    return rng.uniform(between.low, between.high) as f32;
+}
+
+@private
+randomDirection :: (rng: *random.Random) -> Vector3 {
+    z := rng.uniform(-1, 1) as f32;
+    a := rng.uniform(0, math.Tau) as f32;
+    r := math.sqrtf(1 - z * z);
+    return Vector3{r * math.cosf(a), z, r * math.sinf(a)};
+}
+
+// Moves them on, and takes the ones that are over away. A dead one takes the place of the last one, so a pool has no holes
+update :: method (system: *ParticleSystem, dt: f32) {
+    started := GetTime();
+    for *layer in system.layers {
+        i := 0;
+        while i < layer.particles.count {
+            p := &layer.particles[i];
+            p.age += dt;
+            if p.age >= p.life {
+                layer.particles[i] = layer.particles[layer.particles.count - 1];
+                layer.particles.count -= 1;
+                continue;
+            }
+            style := styleOf(p.fx);
+            if !p.resting {
+                p.velocity.y -= style.gravity * dt;
+                if style.drag > 0 { p.velocity = p.velocity * math.max(0, 1 - style.drag * dt); }
+                if style.wobble > 0 {
+                    t := p.age * 2.3 + p.seed;
+                    p.velocity += Vector3{math.sinf(t * 1.7), math.sinf(t * 1.1) * 0.5, math.cosf(t * 1.3)} * (style.wobble * dt * 3);
+                }
+                p.position += p.velocity * dt;
+                p.rotation += p.spin * dt;
+
+                if p.position.y < 0.05 && p.velocity.y < 0 {
+                    switch style.ground {
+                        case .none { }
+                        case .bounce {
+                            p.position.y = 0.05;
+                            p.velocity = Vector3{p.velocity.x * 0.55, -p.velocity.y * 0.35, p.velocity.z * 0.55};
+                        }
+                        case .stick {
+                            p.position.y = 0.05;
+                            p.resting = true;
+                        }
+                        case .stain {
+                            system.addStain(p.position.xz(), pick(&system.rng, style.stainSize), multiply(style.stainColor, p.tint));
+                            layer.particles[i] = layer.particles[layer.particles.count - 1];
+                            layer.particles.count -= 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+    for i in 0..math.min(system.stainCount, MaxStains) { system.stains[i].age += dt; }
+    system.updateSeconds = GetTime() - started;
+}
+
+addStain :: method (system: *ParticleSystem, at: Vector2, size: f32, color: Color) {
+    if !system.isOn { return; }
+    system.stains[system.stainCount % MaxStains] = Stain{position: at, size: size, rotation: system.rng.uniform(0, math.Tau) as f32, color: color};
+    system.stainCount += 1;
+}
+
+clear :: method (system: *ParticleSystem) {
+    for *layer in system.layers { layer.particles.clear(); }
+    system.stainCount = 0;
+}
+
+free :: method (system: *ParticleSystem) {
+    for *layer in system.layers { layer.particles.free(); }
+}
+
+@private
+multiply :: (a: Color, b: Color) -> Color {
+    return Color{
+        ((a.r as int * b.r as int) / 255) as u8, ((a.g as int * b.g as int) / 255) as u8,
+        ((a.b as int * b.b as int) / 255) as u8, ((a.a as int * b.a as int) / 255) as u8,
+    };
+}
+
+// The color of a particle at a share of its life
+@private
+colorAt :: (p: *Particle, style: *ParticleStyle, t: f32) -> Color {
+    colors := style.colors;
+    color: Color;
+    if t < 0.5 { color = ColorLerp(colors[0], colors[1], t * 2); }
+    else       { color = ColorLerp(colors[1], colors[2], (t - 0.5) * 2); }
+    fadeIn := style.fadeIn;
+    if fadeIn > 0 && t < fadeIn { color.a = (color.a as f32 * t / fadeIn) as u8; }
+    return multiply(color, p.tint);
+}
+
+//
+// Drawing: each pool in one batch of quads, with the texture of the pool, the depth buffer read but not written, so they
+// don't hide each other
+//
+
+RlQuads :: 7;
+
+// After the 3D scene is drawn, in BeginMode3D
+draw :: method (system: *ParticleSystem, assets: *Assets, camera: Camera3D) {
+    started := GetTime();
+    view := (camera.target - camera.position).normalize();
+    right := view.cross({0, 1, 0}).normalize();
+    up := right.cross(view).normalize();
+
+    rlDisableBackfaceCulling();
+    rlDisableDepthMask();
+    system.drawStains(assets);
+    for *layer in system.layers {
+        if layer.particles.count == 0 { continue; }
+        BeginBlendMode(layer.blend as int);
+        texture := assets.particleTextures[layer.texture];
+        start := 0;
+        while start < layer.particles.count {
+            // In chunks, so one never overflows raylib's batch
+            end := math.min(start + 1000, layer.particles.count as int);
+            rlCheckRenderBatchLimit((end - start) * 4);
+            rlSetTexture(texture.id);
+            rlBegin(RlQuads);
+            for i in start..end {
+                p := &layer.particles[i];
+                style := styleOf(p.fx);
+                t := p.age / p.life;
+                color := colorAt(p, style, t);
+                rlColor4ub(color.r, color.g, color.b, color.a);
+                size := p.size * math.lerp(1, style.grow, t);
+                half := size * 0.5;
+                a: Vector3;
+                b: Vector3;
+                if style.stretch > 0 && p.velocity.lengthSqr() > 0.01 {
+                    // Long along the way it goes, as seen from the camera
+                    along := p.velocity - view * p.velocity.dot(view);
+                    length := along.length();
+                    if length < 0.001 { along = up; length = 1; }
+                    a = along / length * (half + length * style.stretch * 0.5);
+                    b = view.cross(a / a.length()) * half;
+                } else {
+                    c := math.cosf(p.rotation);
+                    s := math.sinf(p.rotation);
+                    a = (up * c + right * s) * half;
+                    b = (right * c - up * s) * half;
+                }
+                quad(p.position, a, b);
+            }
+            rlEnd();
+            rlSetTexture(0);
+            start = end;
+        }
+        EndBlendMode();
+    }
+    rlEnableDepthMask();
+    rlEnableBackfaceCulling();
+    system.drawSeconds = GetTime() - started;
+}
+
+// A quad around the center: a is its half up, b its half to the right
+@private
+quad :: (center: Vector3, a: Vector3, b: Vector3) {
+    p0 := center + a - b;
+    p1 := center - a - b;
+    p2 := center - a + b;
+    p3 := center + a + b;
+    rlTexCoord2f(0, 0); rlVertex3f(p0.x, p0.y, p0.z);
+    rlTexCoord2f(0, 1); rlVertex3f(p1.x, p1.y, p1.z);
+    rlTexCoord2f(1, 1); rlVertex3f(p2.x, p2.y, p2.z);
+    rlTexCoord2f(1, 0); rlVertex3f(p3.x, p3.y, p3.z);
+}
+
+@private
+drawStains :: method (system: *ParticleSystem, assets: *Assets) {
+    count := math.min(system.stainCount, MaxStains);
+    if count == 0 { return; }
+    BeginBlendMode(BlendKind.alpha as int);
+    rlCheckRenderBatchLimit(count * 4);
+    rlSetTexture(assets.particleTextures[ParticleTexture.stain].id);
+    rlBegin(RlQuads);
+    for i in 0..count {
+        stain := system.stains[i];
+        if stain.age >= StainLifetime { continue; }
+        fade := math.clamp((StainLifetime - stain.age) / (StainLifetime * 0.3), 0, 1);
+        color := stain.color;
+        color.a = (color.a as f32 * fade) as u8;
+        rlColor4ub(color.r, color.g, color.b, color.a);
+        half := stain.size * 0.5;
+        c := math.cosf(stain.rotation) * half;
+        s := math.sinf(stain.rotation) * half;
+        // Flat on the road, a little above the oil, each a bit higher than the one before so they don't flicker
+        y := 0.106 + (i % 16) as f32 * 0.0004;
+        quad(stain.position.at(y), Vector3{c, 0, s}, Vector3{-s, 0, c});
+    }
+    rlEnd();
+    rlSetTexture(0);
+    EndBlendMode();
+}
+
+// The rlgl functions the particles are drawn with. raylib.dll has them
+extern "raylib.dll" {
+    rlBegin                   :: (mode: int) -> void;
+    rlEnd                     :: () -> void;
+    rlVertex3f                :: (x: f32, y: f32, z: f32) -> void;
+    rlTexCoord2f              :: (x: f32, y: f32) -> void;
+    rlColor4ub                :: (r: u8, g: u8, b: u8, a: u8) -> void;
+    rlSetTexture              :: (id: u32) -> void;
+    rlCheckRenderBatchLimit   :: (vertices: int) -> bool;
+    rlDisableDepthMask        :: () -> void;
+    rlEnableDepthMask         :: () -> void;
+    rlDisableBackfaceCulling  :: () -> void;
+    rlEnableBackfaceCulling   :: () -> void;
+}

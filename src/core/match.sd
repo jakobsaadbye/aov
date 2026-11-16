@@ -99,6 +99,7 @@ shove :: method (game: *Game, from: int, to: int) -> bool {
     victim.harmedAt = game.time;
     attacker.shoveLeft = ShoveCooldown;
     game.effects.addRing(victim.ground(), 0.3, 2.5, {255, 255, 255, 255}, 0.25);
+    game.effects.particles.emit(.shove, (attacker.position + victim.position) * 0.5 + Vector3{0, 1.2, 0}, 10);
     game.sounds.playAt("ability.shield_bash", victim.position, 0.45, 0.1);
     return true;
 }

@@ -202,6 +202,7 @@ pickUp :: method (game: *Game, index: int, kind: ItemKind) {
         game.announce(index, player.color, "% picked up %", player.name, kind.itemDefinition().name);
     }
     game.sounds.playAt("item.pickup", player.hero.position, 0.9);
+    game.effects.particles.emit(.sparkles, player.hero.position + Vector3{0, 1.5, 0}, 30, tint: kind.itemDefinition().color);
 }
 
 // The boost of the backpack on the hero. Its health goes up with its most health
@@ -233,6 +234,7 @@ bounced :: method (game: *Game, index: int) -> bool {
     hero.leap = LeapState{from: hero.position, to: to, duration: BounceTime};
     hero.isMoving = false;
     game.effects.addRing(hero.ground(), 0.5, 4, {255, 150, 60, 255}, 0.35);
+    game.effects.particles.emit(.dust, hero.position, 12);
     game.sounds.playAt("ability.leap", hero.position, 0.9, 0.1);
     game.announce(index, {255, 150, 60, 255}, "% bounced off a car", player.name);
     return true;
@@ -266,12 +268,6 @@ drawItemAuras :: (game: *Game) {
             pulse := 0.5 + 0.5 * math.sinf(game.time * 3);
             DrawCircle3D(ground.at(0.15), hero.boost.stench * (0.95 + pulse * 0.05), {1, 0, 0}, 90, {215, 185, 60, 170});
             DrawCylinder(ground.at(0.12), hero.boost.stench, hero.boost.stench, 0.02, 40, {200, 170, 50, 45 + (pulse * 20) as u8});
-            for k in 0..6 {
-                a := game.time * 0.8 + k as f32 * Pi / 3;
-                r := hero.boost.stench * (0.4 + 0.4 * math.fmodf(game.time * 0.3 + k as f32 * 0.17, 1));
-                rise := math.fmodf(game.time * 0.6 + k as f32 * 0.37, 1);
-                DrawSphere(Vector3{ground.x + math.cosf(a) * r, 0.5 + rise * 2.5, ground.y + math.sinf(a) * r}, 0.45 * (1 - rise), {215, 185, 60, 120});
-            }
         }
         if hero.boost.bounces && hero.bounceLeft <= 0 {
             DrawCircle3D(ground.at(0.16), hero.info().hitRadius + 0.9, {1, 0, 0}, 90, {255, 150, 60, 140});
@@ -288,6 +284,7 @@ savedByClover :: method (game: *Game, index: int) -> bool {
     hero.health = hero.maxHealth() * 0.25;
     hero.fadeLeft = math.max(hero.fadeLeft, 1.2);
     game.announce(index, {80, 220, 90, 255}, "The clover saved %", game.players[index].name);
+    game.effects.particles.emit(.sparkles, hero.position + Vector3{0, 1.5, 0}, 40, tint: {120, 255, 120, 255});
     game.sounds.playAt("ability.fade", hero.position, 0.9);
     return true;
 }

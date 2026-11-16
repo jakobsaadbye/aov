@@ -8,6 +8,7 @@ Writes the textures and the ability icons of the game to data/:
     data/icons/item_<name>.png          and for each item, by the name in items.sd
 
     python3 tools/make_textures.py items      only the icons of the items
+    python3 tools/make_textures.py particles  only the textures of the particles (data/textures/particles/)
 
     python3 tools/make_textures.py
 
@@ -455,10 +456,60 @@ def item_icons():
     icon_item_spring_shoes()
 
 
+#
+# Particles (core/particles.sd): white, so the particles color them, with the shape in the alpha
+#
+
+P = 64
+
+
+def save_rgba(alpha, name):
+    """A white image with the alpha given, 0 to 1, of size P x P"""
+    a = (np.clip(alpha, 0, 1) * 255).astype(np.uint8)
+    rgb = np.full((P, P, 3), 255, np.uint8)
+    image = Image.fromarray(np.dstack([rgb, a]), "RGBA")
+    save(image, "textures", "particles", name + ".png")
+
+
+def particle_grid():
+    y, x = np.mgrid[0:P, 0:P]
+    return (x + 0.5) / P * 2 - 1, (y + 0.5) / P * 2 - 1
+
+
+def make_particles():
+    x, y = particle_grid()
+    r = np.sqrt(x * x + y * y)
+    save_rgba(np.clip(1 - r, 0, 1) ** 1.6, "soft")                                    # A soft dot
+    save_rgba(np.clip(1 - np.abs(x) * 3.5, 0, 1) * np.clip(1 - np.abs(y), 0, 1) ** 0.6, "spark")   # Long and thin
+    # Smoke: a soft blob with lumps in it
+    noise = fractal(P, 4)
+    save_rgba(np.clip(1 - r * 1.1, 0, 1) ** 1.2 * (0.55 + 0.45 * noise), "smoke")
+    # A drop, round at the bottom and pointed at the top
+    shape = np.sqrt(x * x / np.clip(0.35 + 0.65 * (y + 1) / 2, 0.05, 1) ** 2 + (y * 0.9) ** 2)
+    save_rgba(np.clip((1 - shape) * 4, 0, 1), "drop")
+    # A four pointed star, for sparkles
+    star = np.clip(1 - np.minimum(np.abs(x), np.abs(y)) * 9, 0, 1) * np.clip(1 - r, 0, 1) ** 1.5
+    save_rgba(np.maximum(star, np.clip(1 - r * 3, 0, 1)), "star")
+    # A ring
+    save_rgba(np.clip(1 - np.abs(r - 0.75) * 8, 0, 1), "ring")
+    # A stain: a blob with an uneven edge and drops around it
+    angle = np.arctan2(y, x)
+    # A splash: a round puddle with a gently uneven edge, darker where it is thick, and a few drops around it
+    edge = 0.6 + 0.06 * np.sin(angle * 3 + 1) + 0.04 * np.sin(angle * 7 + 2) + 0.02 * np.sin(angle * 11)
+    stain = np.clip((edge - r) * 14, 0, 1)
+    for (cx, cy, cr) in ((0.78, 0.25, 0.07), (-0.72, 0.45, 0.05), (0.25, -0.82, 0.06), (-0.4, -0.75, 0.04)):
+        stain = np.maximum(stain, np.clip((cr - np.sqrt((x - cx) ** 2 + (y - cy) ** 2)) * 40, 0, 1))
+    thick = np.clip(1 - r / 0.7, 0, 1) * 0.15
+    save_rgba(np.clip(stain * (0.8 + 0.1 * noise + thick), 0, 1), "stain")
+
+
 if __name__ == "__main__":
     import sys
     if sys.argv[1:] == ["items"]:
         item_icons()
+        sys.exit(0)
+    if sys.argv[1:] == ["particles"]:
+        make_particles()
         sys.exit(0)
     make_grass()
     make_asphalt()
@@ -480,3 +531,4 @@ if __name__ == "__main__":
     icon_shield_bash()
     icon_time_lock()
     item_icons()
+    make_particles()

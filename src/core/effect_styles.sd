@@ -1,0 +1,200 @@
+namespace core;
+
+// The particle effects of the game: a ParticleStyle each (particles.sd), named by Fx. To change how something looks,
+// change its numbers here; to try one, effect <name> in the console makes it at the hero you watch.
+
+import console;
+import fmt;
+import math;
+use raylib;
+
+// Blood, when a car runs a hero over: drops that fly and stain the road where they land, and a mist
+BloodSpray :: ParticleStyle{
+    texture: .drop, lifetime: {0.6, 1.3}, speed: {4, 12}, direction: {0, 1, 0}, spread: 0.55,
+    gravity: 26, drag: 0.4, size: {0.18, 0.4}, stretch: 0.05,
+    colors: [Color{190, 20, 25, 255}, Color{150, 10, 15, 255}, Color{110, 5, 10, 230}], fadeIn: 0,
+    ground: .stain, stainSize: {0.4, 1.1}, stainColor: {120, 8, 12, 210},
+};
+
+BloodMist :: ParticleStyle{
+    texture: .smoke, lifetime: {0.4, 0.9}, shape: .sphere, radius: 0.6, speed: {0.5, 2.5},
+    drag: 2, size: {0.8, 1.5}, grow: 2.2,
+    colors: [Color{170, 25, 30, 170}, Color{130, 15, 20, 110}, Color{90, 10, 15, 0}],
+};
+
+// The bits of a hero that was run over, in its color, that bounce on the road
+Bits :: ParticleStyle{
+    texture: .soft, lifetime: {0.8, 1.6}, speed: {5, 14}, spread: 0.7,
+    gravity: 30, size: {0.35, 0.7}, spin: {2, 8},
+    colors: [Color{255, 255, 255, 255}, Color{220, 220, 220, 255}, Color{160, 160, 160, 0}], fadeIn: 0,
+    ground: .bounce,
+};
+
+// Dust where something lands or is knocked over: a ring of puffs along the ground
+Dust :: ParticleStyle{
+    texture: .smoke, lifetime: {0.5, 1.1}, shape: .ring, radius: 0.6, speed: {2, 6}, outward: true, flat: true, spread: 0.1,
+    drag: 2.5, gravity: -0.5, size: {0.8, 1.4}, grow: 2.4,
+    colors: [Color{170, 150, 120, 170}, Color{150, 135, 110, 110}, Color{130, 120, 100, 0}],
+};
+
+// Sparks, e.g of Bjørn's bash or a hook that bites
+Sparks :: ParticleStyle{
+    texture: .spark, blend: .additive, lifetime: {0.2, 0.5}, speed: {6, 15}, spread: 1,
+    gravity: 14, drag: 1, size: {0.12, 0.22}, stretch: 0.05,
+    colors: [Color{255, 250, 210, 255}, Color{255, 190, 80, 255}, Color{255, 90, 20, 0}], fadeIn: 0,
+};
+
+// Sparkles of an item that is picked up, or of the clover
+Sparkles :: ParticleStyle{
+    texture: .star, blend: .additive, lifetime: {0.5, 1}, shape: .sphere, radius: 0.8, speed: {1, 4}, spread: 1,
+    gravity: -1.5, drag: 1.5, size: {0.5, 1}, grow: 0.3, spin: {1, 3},
+    colors: [Color{255, 240, 180, 255}, Color{255, 220, 120, 220}, Color{255, 180, 80, 0}],
+};
+
+// The magic of a blink: a puff of light where it went from and where it got to
+BlinkFlash :: ParticleStyle{
+    texture: .soft, blend: .additive, lifetime: {0.3, 0.6}, shape: .sphere, radius: 0.8, speed: {2, 5}, outward: true,
+    drag: 3, size: {0.5, 1}, grow: 0.2,
+    colors: [Color{220, 180, 255, 255}, Color{160, 100, 255, 200}, Color{100, 60, 220, 0}],
+};
+
+// The Frost Charm and Frosty's chill aura: snow that drifts in the cold around the hero
+Snow :: ParticleStyle{
+    texture: .star, lifetime: {1.4, 2.4}, shape: .disc, radius: 7, speed: {0.2, 0.6},
+    gravity: -0.5, wobble: 0.6, size: {0.7, 1.1}, spin: {0.5, 2},
+    colors: [Color{235, 250, 255, 0}, Color{235, 250, 255, 240}, Color{200, 235, 255, 0}], fadeIn: 0.3,
+};
+
+// The stench of Garlic: sickly clouds that rise and wander
+Stench :: ParticleStyle{
+    texture: .smoke, lifetime: {1.5, 2.6}, shape: .disc, radius: 5, speed: {0.2, 0.8},
+    gravity: -0.6, wobble: 1, size: {1.2, 2}, grow: 1.8, spin: {0.2, 0.8},
+    colors: [Color{160, 150, 50, 0}, Color{150, 140, 45, 150}, Color{120, 120, 40, 0}], fadeIn: 0.25,
+};
+
+// Healing of the First Aid Kit: small lights that rise
+Heal :: ParticleStyle{
+    texture: .soft, blend: .additive, lifetime: {0.6, 1.1}, shape: .disc, radius: 0.9, speed: {1.5, 3},
+    direction: {0, 1, 0}, spread: 0.1, size: {0.25, 0.45}, grow: 0.5,
+    colors: [Color{140, 255, 140, 255}, Color{90, 230, 110, 200}, Color{60, 200, 90, 0}],
+};
+
+// Ghosty fading: pale wisps
+Wisps :: ParticleStyle{
+    texture: .soft, blend: .additive, lifetime: {0.6, 1.2}, shape: .sphere, radius: 1, speed: {0.3, 1},
+    gravity: -1.2, wobble: 0.8, size: {0.4, 0.8}, grow: 1.6,
+    colors: [Color{200, 220, 255, 0}, Color{180, 200, 255, 120}, Color{160, 180, 255, 0}], fadeIn: 0.3,
+};
+
+// Oil that drips from a car that leaks
+OilDrips :: ParticleStyle{
+    texture: .drop, lifetime: {0.3, 0.5}, speed: {0, 0.5}, spread: 1, gravity: 12, size: {0.18, 0.28}, stretch: 0.03,
+    colors: [Color{12, 10, 8, 255}, Color{12, 10, 8, 255}, Color{12, 10, 8, 200}], fadeIn: 0,
+};
+
+// A shove: a puff where the two heroes meet
+ShovePuff :: ParticleStyle{
+    texture: .smoke, lifetime: {0.3, 0.6}, shape: .sphere, radius: 0.4, speed: {2, 5}, outward: true,
+    drag: 3, size: {0.5, 0.9}, grow: 2,
+    colors: [Color{235, 230, 220, 160}, Color{220, 215, 205, 90}, Color{200, 200, 200, 0}],
+};
+
+// The look of an item on the road: lights that rise in its beam, in the color of the item
+ItemGlow :: ParticleStyle{
+    texture: .soft, blend: .additive, lifetime: {0.8, 1.5}, shape: .disc, radius: 1.5, speed: {1.5, 3.5},
+    direction: {0, 1, 0}, spread: 0.05, size: {0.25, 0.5}, grow: 0.4,
+    colors: [Color{255, 255, 255, 0}, Color{255, 255, 255, 220}, Color{255, 255, 255, 0}], fadeIn: 0.2,
+};
+
+// The effects, by name: what the code makes, e.g particles.emit(.blood, at, 40)
+Fx :: enum {
+    blood,
+    mist,
+    bits,
+    dust,
+    sparks,
+    sparkles,
+    blink,
+    snow,
+    stench,
+    heal,
+    wisps,
+    oil,
+    shove,
+    glow,
+}
+
+@private
+fxStyles: [Fx.count]ParticleStyle;
+@private
+fxReady: bool;
+
+// The style of an effect. A new effect is a value of Fx, its style above, and a line here
+styleOf :: (fx: Fx) -> *ParticleStyle {
+    if !fxReady {
+        fxReady = true;
+        fxStyles[Fx.blood]    = BloodSpray;
+        fxStyles[Fx.mist]     = BloodMist;
+        fxStyles[Fx.bits]     = Bits;
+        fxStyles[Fx.dust]     = Dust;
+        fxStyles[Fx.sparks]   = Sparks;
+        fxStyles[Fx.sparkles] = Sparkles;
+        fxStyles[Fx.blink]    = BlinkFlash;
+        fxStyles[Fx.snow]     = Snow;
+        fxStyles[Fx.stench]   = Stench;
+        fxStyles[Fx.heal]     = Heal;
+        fxStyles[Fx.wisps]    = Wisps;
+        fxStyles[Fx.oil]      = OilDrips;
+        fxStyles[Fx.shove]    = ShovePuff;
+        fxStyles[Fx.glow]     = ItemGlow;
+    }
+    return &fxStyles[fx];
+}
+
+// The effects that go on, made a little each frame: the auras, healing, fading, the item on the road and the oil a car
+// leaks
+emitEffects :: method (game: *Game, dt: f32) {
+    particles := &game.effects.particles;
+    if !particles.isOn { return; }
+    for player in game.players {
+        if !player.isPlaying() { continue; }
+        hero := player.hero;
+        ground := hero.ground().at(0.3);
+        aura := hero.chillAura();
+        if aura.hasValue() { particles.emitRate(.snow, ground, aura.value().radius * 2.5, dt, radius: aura.value().radius); }
+        if hero.boost.stench > 0 { particles.emitRate(.stench, ground, 7, dt, radius: hero.boost.stench * 0.8); }
+        if hero.boost.regen > 0 && hero.health < hero.maxHealth() && hero.hurtFor > HealDelay {
+            particles.emitRate(.heal, ground, 14, dt);
+        }
+        if hero.isFaded() { particles.emitRate(.wisps, hero.position + Vector3{0, 1.5, 0}, 30, dt); }
+    }
+    if game.items.onRoad.hasValue() {
+        item := game.items.onRoad.value();
+        particles.emitRate(.glow, item.position.at(0.2), 10, dt, tint: item.kind.itemDefinition().color);
+    }
+    for *car in game.traffic.cars {
+        if !car.isActive || car.leakLeft <= 0 { continue; }
+        back := car.position() + Vector3{0, 0.7, -car.length() * 0.5 + 0.4};
+        particles.emitRate(.oil, back, 25, dt);
+    }
+}
+
+@console.command("Makes a particle effect at the hero that is watched, e.g effect blood 60")
+effect :: (game: *Game, fx: Fx, count: int = 30) {
+    game.effects.particles.emit(fx, game.you().hero.position + Vector3{0, 1.5, 0}, count);
+}
+
+@console.command("How many particles there are, and what they cost")
+particles :: (game: *Game) {
+    system := &game.effects.particles;
+    console.print("% particles, % stains. Update % ms, draw % ms", system.count(), math.min(system.stainCount, MaxStains),
+        fmt.fixed((system.updateSeconds * 1000) as f32, 3), fmt.fixed((system.drawSeconds * 1000) as f32, 3));
+}
+
+@console.command("Makes a lot of particles at once, to see what they cost")
+particleStorm :: (game: *Game, count: int = 5000) {
+    effects := [Fx.snow, Fx.stench, Fx.sparks, Fx.dust, Fx.blood];
+    for fx in effects {
+        game.effects.particles.emit(fx, game.you().hero.position + Vector3{0, 2, 0}, count / effects.count as int, radius: 10);
+    }
+}

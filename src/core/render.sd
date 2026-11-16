@@ -47,7 +47,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
             DrawCube(rect.center().at(0.12 + car.layer as f32 * 0.006), rect.width + 0.4, 0.02, rect.height + 0.4, ShadowColor);
         }
     }
-    game.effects.draw();
+    game.effects.drawRings();
     drawItem(game, assets);
     drawItemAuras(game);
 
@@ -57,6 +57,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
         drawHero(assets, game, i as int);
     }
     drawInspection3D(game);
+    game.effects.particles.draw(assets, game.camera.view);
 
     if game.debug.wireframes { rlDisableWireMode(); }
     if game.debug.hitboxes { drawHitboxes(game); }
@@ -99,7 +100,6 @@ drawCar :: (assets: *Assets, car: *Car, warped: bool, time: f32) {
     scale := 1 + car.layer as f32 * 0.012;
     assets.drawVehicle(car.kind, car.position(), color, scale);
     if car.kind == .ambulance { drawEmergencyLights(assets, car, time); }
-    drawLeak(car, time);
 
     if car.frozenLeft > 0 {
         // A shell of ice
