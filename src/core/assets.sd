@@ -29,6 +29,7 @@ Assets :: struct {
 
     sceneryModels: [SceneryKind.count]Model;
     scenery:       [..]Decoration;
+    cityBlocks:    [..]Rectangle;
 
     cursor: Texture;
 }
@@ -51,18 +52,18 @@ loadAssets :: () -> Assets {
     assets.cube     = GenMeshCube(1, 1, 1);
     assets.lit      = assets.lighting.newMaterial(White);
 
-    // The field: grass, tiled
-    grass := loadTexture("textures/grass/grass.png");
+    // The field: the pavement of a city, slabs of 2.5 meters
+    pavement := loadTexture("textures/pavement/pavement.png");
     assets.ground = GenMeshPlane(MapHalfWidth * 2, MapHalfLength * 2, 1, 1);
-    tileTexture(&assets.ground, 10, 8);
+    tileTexture(&assets.ground, MapHalfWidth * 2 / 10, MapHalfLength * 2 / 10);
     assets.groundMaterial = assets.lighting.newMaterial(White);
-    assets.groundMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = grass;
+    assets.groundMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = pavement;
 
-    // The land around it, darker, so the field stands out
+    // The streets of the city around it, darker, so the field stands out
     assets.outside = GenMeshPlane(900, 900, 1, 1);
     tileTexture(&assets.outside, 56, 56);
-    assets.outsideMaterial = assets.lighting.newMaterial({150, 160, 140, 255});
-    assets.outsideMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = grass;
+    assets.outsideMaterial = assets.lighting.newMaterial({140, 140, 148, 255});
+    assets.outsideMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = loadTexture("textures/road/asphalt.png");
 
     // The road: asphalt, a tile every 16
     assets.road = GenMeshPlane(RoadHalfWidth * 2, RoadEnd * 2, 1, 1);
@@ -100,6 +101,7 @@ loadAssets :: () -> Assets {
         assets.sceneryModels[kind] = assets.lighting.loadModel(tprint("models/%.obj", SceneryModels[kind]));
     }
     assets.scenery = newScenery(77);
+    assets.cityBlocks = cityBlocks();
 
     loadFonts();
     loadUi();
@@ -125,6 +127,7 @@ unload :: method (assets: *Assets) {
     UnloadRenderTexture(assets.portrait);
     for model in assets.sceneryModels { UnloadModel(model); }
     assets.scenery.free();
+    assets.cityBlocks.free();
     unloadFonts();
     unloadUi();
     for _, icon in assets.icons  { UnloadTexture(icon); }
@@ -158,10 +161,16 @@ drawWall :: method (assets: *Assets, wall: Rectangle) {
 // Draws a vehicle with the color of the car on its body
 // The tufts, flowers and rocks near a point, e.g what the camera looks at
 drawScenery :: method (assets: *Assets, around: Vector3, reach: f32) {
+    // The pavement of the blocks, with a curb around it
+    for block in assets.cityBlocks {
+        center := block.center();
+        if math.fabsf(center.x - around.x) > reach + BlockSize || math.fabsf(center.y - around.z) > reach + BlockSize { continue; }
+        DrawCube(center.at(0.1), block.width + 0.8, 0.2, block.height + 0.8, {120, 118, 112, 255});
+        DrawCube(center.at(0.12), block.width, 0.22, block.height, {172, 168, 158, 255});
+    }
     for decoration in assets.scenery {
         if math.fabsf(decoration.position.x - around.x) > reach || math.fabsf(decoration.position.z - around.z) > reach { continue; }
-        s := decoration.scale;
-        DrawModelEx(assets.sceneryModels[decoration.kind], decoration.position, {0, 1, 0}, decoration.angle, {s, s, s}, White);
+        DrawModelEx(assets.sceneryModels[decoration.kind], decoration.position, {0, 1, 0}, decoration.angle, decoration.size, White);
     }
 }
 

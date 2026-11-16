@@ -4,6 +4,7 @@ Writes the low-poly models of the game to data/models/: the vehicles (car, van, 
 butcher, frosty), as OBJ files with a MTL file of their colors.
 
     python3 tools/make_models.py
+    python3 tools/make_models.py city       only the buildings and what stands on the pavement
 
 The models are plain OBJ, so they can just as well be edited in Blender and saved over these. The game expects:
 
@@ -543,7 +544,173 @@ def make_rock():
     m.write()
 
 
+#
+# The city around the field: buildings, and what stands on the pavement. A building is BUILDING_SIZE square and its
+# height as made; the game scales it, so the same model makes many buildings. Material names are of each model alone
+#
+
+BUILDING_SIZE = 16.0
+
+
+def windows(m, material_dark, material_lit, width, height, floor_height, first_floor, spacing, window_w, window_h, seed):
+    """A grid of windows on the four faces of a box of the width, from first_floor up. Some are lit"""
+    rnd = (seed * 9301 + 49297) % 233280
+    floors = int((height - first_floor) / floor_height)
+    across = int(width / spacing)
+    half = width / 2
+    for face in range(4):
+        for f in range(floors):
+            y = first_floor + f * floor_height + floor_height * 0.55
+            for k in range(across):
+                u = -half + spacing * (k + 0.5)
+                rnd = (rnd * 9301 + 49297) % 233280
+                mat = material_lit if rnd % 7 == 0 else material_dark
+                if face == 0:   m.box(mat, (u, y, half + 0.04), (window_w, window_h, 0.12))
+                elif face == 1: m.box(mat, (u, y, -half - 0.04), (window_w, window_h, 0.12))
+                elif face == 2: m.box(mat, (half + 0.04, y, u), (0.12, window_h, window_w))
+                else:           m.box(mat, (-half - 0.04, y, u), (0.12, window_h, window_w))
+
+
+def make_office():
+    m = Model("building_office")
+    m.material("office_wall", (0.55, 0.6, 0.66))
+    m.material("office_glass", (0.16, 0.24, 0.34))
+    m.material("office_lit", (0.95, 0.85, 0.55))
+    m.material("office_roof", (0.32, 0.33, 0.35))
+    h = 30.0
+    m.box("office_wall", (0, h / 2, 0), (BUILDING_SIZE, h, BUILDING_SIZE))
+    windows(m, "office_glass", "office_lit", BUILDING_SIZE, h, 3.0, 3.0, 2.0, 1.6, 2.0, 1)
+    m.box("office_roof", (0, h + 0.3, 0), (BUILDING_SIZE - 1, 0.6, BUILDING_SIZE - 1))
+    m.box("office_roof", (3, h + 1.4, -2), (4, 2.2, 3))                 # Air conditioning
+    m.box("office_roof", (-4, h + 2, 3), (2.5, 3.4, 2.5))               # The lift house
+    m.write()
+
+
+def make_brick():
+    m = Model("building_brick")
+    m.material("brick_wall", (0.58, 0.28, 0.2))
+    m.material("brick_trim", (0.82, 0.78, 0.7))
+    m.material("brick_window", (0.18, 0.2, 0.24))
+    m.material("brick_lit", (1.0, 0.82, 0.5))
+    m.material("brick_roof", (0.25, 0.2, 0.18))
+    h = 16.0
+    m.box("brick_wall", (0, h / 2, 0), (BUILDING_SIZE, h, BUILDING_SIZE))
+    windows(m, "brick_window", "brick_lit", BUILDING_SIZE, h, 3.2, 1.0, 3.2, 1.4, 1.9, 2)
+    for y in (3.6, 6.8, 10.0, 13.2):                                    # A band of trim between the floors
+        m.box("brick_trim", (0, y, 0), (BUILDING_SIZE + 0.2, 0.25, BUILDING_SIZE + 0.2))
+    m.box("brick_trim", (0, h + 0.3, 0), (BUILDING_SIZE + 0.6, 0.6, BUILDING_SIZE + 0.6))   # The cornice
+    m.box("brick_roof", (0, h + 0.65, 0), (BUILDING_SIZE - 0.6, 0.2, BUILDING_SIZE - 0.6))
+    m.write()
+
+
+def make_shop():
+    m = Model("building_shop")
+    m.material("shop_wall", (0.86, 0.8, 0.66))
+    m.material("shop_glass", (0.3, 0.45, 0.55))
+    m.material("shop_awning", (0.75, 0.15, 0.15))
+    m.material("shop_awning_white", (0.95, 0.95, 0.92))
+    m.material("shop_window", (0.2, 0.22, 0.26))
+    m.material("shop_roof", (0.4, 0.38, 0.36))
+    h = 9.0
+    m.box("shop_wall", (0, h / 2, 0), (BUILDING_SIZE, h, BUILDING_SIZE))
+    for face in range(4):                                              # Shop windows and an awning on every side
+        for k in range(3):
+            u = -5 + k * 5
+            if face == 0:   m.box("shop_glass", (u, 1.6, BUILDING_SIZE / 2 + 0.05), (4, 2.6, 0.1))
+            elif face == 1: m.box("shop_glass", (u, 1.6, -BUILDING_SIZE / 2 - 0.05), (4, 2.6, 0.1))
+            elif face == 2: m.box("shop_glass", (BUILDING_SIZE / 2 + 0.05, 1.6, u), (0.1, 2.6, 4))
+            else:           m.box("shop_glass", (-BUILDING_SIZE / 2 - 0.05, 1.6, u), (0.1, 2.6, 4))
+        for k in range(6):                                             # Red and white stripes
+            u = -6.25 + k * 2.5
+            mat = "shop_awning" if k % 2 == 0 else "shop_awning_white"
+            if face == 0:   m.box(mat, (u, 3.4, BUILDING_SIZE / 2 + 0.9), (2.5, 0.2, 1.8))
+            elif face == 1: m.box(mat, (u, 3.4, -BUILDING_SIZE / 2 - 0.9), (2.5, 0.2, 1.8))
+            elif face == 2: m.box(mat, (BUILDING_SIZE / 2 + 0.9, 3.4, u), (1.8, 0.2, 2.5))
+            else:           m.box(mat, (-BUILDING_SIZE / 2 - 0.9, 3.4, u), (1.8, 0.2, 2.5))
+    windows(m, "shop_window", "shop_window", BUILDING_SIZE, h, 3.0, 4.2, 3.2, 1.4, 1.6, 3)
+    m.box("shop_roof", (0, h + 0.25, 0), (BUILDING_SIZE + 0.3, 0.5, BUILDING_SIZE + 0.3))
+    m.write()
+
+
+def make_tower():
+    m = Model("building_tower")
+    m.material("tower_concrete", (0.7, 0.68, 0.64))
+    m.material("tower_glass", (0.2, 0.28, 0.36))
+    m.material("tower_lit", (0.9, 0.9, 0.7))
+    m.material("tower_top", (0.45, 0.45, 0.48))
+    h = 42.0
+    m.box("tower_concrete", (0, h / 2, 0), (BUILDING_SIZE, h, BUILDING_SIZE))
+    windows(m, "tower_glass", "tower_lit", BUILDING_SIZE, h, 3.5, 3.5, 2.6, 2.0, 2.6, 4)
+    m.box("tower_top", (0, h + 1.5, 0), (BUILDING_SIZE * 0.6, 3, BUILDING_SIZE * 0.6))
+    m.cylinder("tower_top", (0, h + 6, 0), 0.15, 6, axis="y", segments=6)   # An antenna
+    m.write()
+
+
+def make_lamp():
+    m = Model("lamp")
+    m.material("lamp_pole", (0.22, 0.24, 0.26))
+    m.material("lamp_light", (1.0, 0.92, 0.65))
+    m.cylinder("lamp_pole", (0, 0.2, 0), 0.35, 0.4, axis="y", segments=8)
+    m.cylinder("lamp_pole", (0, 3.6, 0), 0.12, 7, axis="y", segments=8)
+    m.box("lamp_pole", (0.9, 7.1, 0), (2.0, 0.18, 0.25))
+    m.box("lamp_light", (1.7, 6.9, 0), (0.7, 0.2, 0.45))
+    m.write()
+
+
+def make_tree():
+    m = Model("tree")
+    m.material("tree_planter", (0.55, 0.53, 0.5))
+    m.material("tree_soil", (0.3, 0.22, 0.15))
+    m.material("tree_trunk", (0.38, 0.27, 0.18))
+    m.material("tree_leaves", (0.27, 0.5, 0.22))
+    m.material("tree_leaves_dark", (0.2, 0.4, 0.18))
+    m.box("tree_planter", (0, 0.35, 0), (2.4, 0.7, 2.4))
+    m.box("tree_soil", (0, 0.71, 0), (2.0, 0.04, 2.0))
+    m.cylinder("tree_trunk", (0, 2.2, 0), 0.22, 3.2, axis="y", segments=7)
+    m.sphere("tree_leaves", (0, 4.6, 0), 1.9, scale=(1, 0.9, 1), rings=5, segments=8)
+    m.sphere("tree_leaves_dark", (0.8, 4.0, 0.5), 1.2, rings=4, segments=7)
+    m.sphere("tree_leaves", (-0.7, 4.2, -0.6), 1.3, rings=4, segments=7)
+    m.write()
+
+
+def make_bench():
+    m = Model("bench")
+    m.material("bench_wood", (0.55, 0.36, 0.2))
+    m.material("bench_iron", (0.15, 0.15, 0.17))
+    for x in (-1.1, 1.1):
+        m.box("bench_iron", (x, 0.4, 0), (0.15, 0.8, 0.8))
+    for k in range(3):
+        m.box("bench_wood", (0, 0.8, -0.3 + k * 0.3), (2.6, 0.08, 0.22))
+    for k in range(2):
+        m.box("bench_wood", (0, 1.1 + k * 0.3, -0.5), (2.6, 0.2, 0.08))
+    m.write()
+
+
+def make_hydrant():
+    m = Model("hydrant")
+    m.material("hydrant_red", (0.8, 0.15, 0.12))
+    m.material("hydrant_cap", (0.9, 0.85, 0.75))
+    m.cylinder("hydrant_red", (0, 0.45, 0), 0.25, 0.9, axis="y", segments=8)
+    m.sphere("hydrant_red", (0, 0.92, 0), 0.25, rings=3, segments=8)
+    m.cylinder("hydrant_cap", (0, 0.6, 0), 0.1, 0.8, axis="x", segments=6)
+    m.write()
+
+
+def make_bin():
+    m = Model("bin")
+    m.material("bin_body", (0.2, 0.42, 0.3))
+    m.material("bin_lid", (0.15, 0.3, 0.22))
+    m.cylinder("bin_body", (0, 0.5, 0), 0.35, 1.0, axis="y", segments=8)
+    m.cylinder("bin_lid", (0, 1.05, 0), 0.4, 0.1, axis="y", segments=8)
+    m.write()
+
+
 if __name__ == "__main__":
+    import sys
+    if sys.argv[1:] == ["city"]:
+        for make in (make_office, make_brick, make_shop, make_tower, make_lamp, make_tree, make_bench, make_hydrant, make_bin):
+            make()
+        sys.exit(0)
     make_tuft()
     make_flower("flower_yellow", (0.98, 0.85, 0.25))
     make_flower("flower_white", (0.95, 0.95, 0.92))
@@ -560,3 +727,5 @@ if __name__ == "__main__":
     make_bjorn()
     make_hilda()
     make_mira()
+    for make in (make_office, make_brick, make_shop, make_tower, make_lamp, make_tree, make_bench, make_hydrant, make_bin):
+        make()

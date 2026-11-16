@@ -27,7 +27,7 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 
 | | |
 | --- | --- |
-| `data/textures/` | The grass (`grass/grass.png`), the road (`road/asphalt.png`), the Warcraft cursor |
+| `data/textures/` | The pavement (`pavement/pavement.png`), the road (`road/asphalt.png`), the particles and the frames of the UI, the Warcraft cursor |
 | `data/models/` | The vehicles (car, van, truck), the heroes and a segment of the wall, as OBJ with a MTL of their colors |
 | `data/icons/` | A 64x64 icon for each ability, by the name in `heroes.sd` |
 | `data/sounds/` | The sound effects, by group: `hero/`, `car/`, `ability/`, `ui/` |
@@ -36,7 +36,8 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | `data/shaders/` | `lighting.vs` and `lighting.fs`: the sun, ambient light and the haze in the distance |
 | `data/window_icon.png` | |
 
-The models were made by `tools/make_models.py`, the grass, the asphalt and the icons by `tools/make_textures.py`, and
+The models were made by `tools/make_models.py` (`city` for the buildings, lamps, trees, benches, hydrants and bins), the
+pavement, the asphalt and the icons by `tools/make_textures.py`, and
 the sounds and the music by `tools/make_sounds.py`
 (run them with python3 to write the files again), but they are plain files that can just as well be edited in Blender or
 painted over. `Grass_02.png` and `Ground_03.png` aren't used any more. The game expects a model to look towards +z and stand on y = 0, in the units
@@ -137,7 +138,7 @@ The mouse on the icon of an ability shows what it does, and how far it reaches.
 | --- | --- |
 | Allan | **Sprint** (Q): runs twice as fast for a moment. **Quick feet** (passive): 10% faster |
 | Ghosty | **Fade** (Q): the cars drive through him for 1.5 seconds. **Phase walk** (passive): floats through the walls |
-| Butcher | **Meat hook** (Q): a hook on a chain, up to 34 away and slow enough to see coming. An enemy it hits is dragged back to him; else he pulls himself to where it bites. **Charge** (W): very fast for a short moment |
+| Butcher | **Meat hook** (Q): a hook on a chain, up to 34 away. It bites into the first car it meets, and he is pulled to the side of the car as it drives on; a hook that meets no car is reeled back in. He can walk while it flies. **Charge** (W): very fast for a short moment |
 | Frosty | **Cold snap** (Q): freezes the cars around him. **Slide** (W): slides to the cursor. **Chill aura** (passive): cars near him drive 40% slower |
 | Bjørn | A viking. **Leap** (Q): jumps to the cursor, high over the cars and the walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away, e.g into the traffic. **Iron hide** (passive): half the damage from the cars |
 | Hilda | A crossing guard. **Stop!** (Q): raises her stop sign, and the five lanes around her stop for 3 seconds while their cars queue up. **Brisk walker** (passive): 15% faster |
@@ -163,6 +164,13 @@ got to, the others with the same hero. So everyone always races from the same si
 Heroes shove each other: one that walks into an enemy pushes it away, a couple of meters, further when it is heavier (by
 its health: the Butcher pushes Allan far and hardly moves for him). A car that gets a hero soon after a shove counts as a
 kill for the one that shoved. `core/match.sd` has all of this.
+
+## The city
+
+The motorway has 32 lanes and runs through a city. Heroes start on the pavement on either side, past a row of street
+lamps along the walls and trees in planters, with benches, hydrants and bins; past the field are blocks of offices,
+brick apartments, shops with awnings and towers, with streets between them (`core/scenery.sd`). It is only for the eye:
+nothing walks into it.
 
 ## Hazards
 

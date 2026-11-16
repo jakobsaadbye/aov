@@ -131,7 +131,7 @@ defineHeroes :: () {
     butcher := HeroDefinition{name: "Butcher", color: {150, 90, 70, 255}, width: 3.2, height: 4.6, moveSpeed: 6.5, hitRadius: 1.15, maxHealth: 100};
     butcher.abilities.add(Ability{
         name: "Meat hook", icon: "hook", sound: "ability.hook_throw", cooldown: 7,
-        description: "Throws the hook at the cursor, up to 34 away. An enemy it hits is dragged back to him, else he pulls himself to where it bites",
+        description: "Throws the hook at the cursor, up to 34 away. It bites into the first car it meets, and he is pulled to the side of the car. He can walk while it flies",
         effect: {hook: {range: 34, pullSpeed: 40}},
     });
     butcher.abilities.add(Ability{
@@ -214,15 +214,22 @@ defineHeroes :: () {
 
 // The hook of the butcher: it flies out to the point, then pulls him after it. An enemy it hits on the way is caught
 // and dragged back to him instead
+// The Butcher's hook: it flies out to a point and bites into the first car it meets. Then he is pulled to the side of
+// the car, which drives on. A hook that meets no car is reeled in again. He can walk while it flies
 HookState :: struct {
     point:    Vector3;
     from:     Vector3;      // Where it was thrown from
     flight:   f32;          // 0 to 1, while the hook flies out
+    reeling:  bool;         // It met no car, and comes back
+    car:      int = -1;     // The car it bit into, while he is pulled to it
+    bite:     Vector3;      // Where on the car, from its middle
+    pulled:   f32;          // Seconds he has been pulled
     stuckFor: f32;          // Seconds the pull hasn't moved him, e.g into a wall
-    victim:   int = -1;     // The player whose hero it caught, while it is dragged back
 }
 
-HookSpeed :: 55.0;          // How fast the hook flies: slow enough to see it coming
+HookSpeed     :: 70.0;      // How fast the hook flies
+HookBiteRadius :: 0.6;      // How close to a car the head has to come to bite into it
+HookMaxPull   :: 2.5;       // Seconds he is pulled at most
 
 // Moved by something else, e.g knocked away or dragged by a hook. The hero can't act until it is over
 Displacement :: struct {
@@ -344,7 +351,12 @@ Hero :: struct {
 
     // If it can be given orders: not stunned, dragged, or in the middle of a hook or a leap
     canAct :: method () -> bool {
-        return self.stunLeft <= 0 && !self.displacement.hasValue() && !self.hook.hasValue() && !self.leap.hasValue();
+        return self.stunLeft <= 0 && !self.displacement.hasValue() && !self.isPulledByHook() && !self.leap.hasValue();
+    }
+
+    // Pulled to a car by his hook. While the hook flies he can still walk
+    isPulledByHook :: method () -> bool {
+        return self.hook.hasValue() && self.hook.value().car >= 0;
     }
 
     // How much of the damage of a car the hero takes: 1 is all of it

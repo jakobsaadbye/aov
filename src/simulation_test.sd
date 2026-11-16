@@ -75,7 +75,7 @@ testWalls :: () {
 
     // Allan walks straight into the long wall on the start side, and stops there
     game.spawnHero(0, .allan);
-    game.you().hero.position = Vector3{-60, 0, 30};
+    game.you().hero.position = Vector3{-108, 0, 30};
     game.you().hero.moveTo(Vector3{0, 0, 30});
     for 0..600 { game.simulate(Dt); }
     wallSide := -core.RoadHalfWidth - core.WallWidth;
@@ -84,14 +84,14 @@ testWalls :: () {
 
     // Ghosty floats through it
     game.spawnHero(0, .ghosty);
-    game.you().hero.position = Vector3{-60, 0, 30};
-    game.you().hero.moveTo(Vector3{-30, 0, 30});
+    game.you().hero.position = Vector3{-108, 0, 30};
+    game.you().hero.moveTo(Vector3{-78, 0, 30});
     for 0..600 { game.simulate(Dt); }
-    assert(near(game.you().hero.position.x, -30, 0.01));
+    assert(near(game.you().hero.position.x, -78, 0.01));
 
     // Nobody leaves the field
-    game.you().hero.position = Vector3{-70, 0, 0};
-    game.you().hero.moveTo(Vector3{-200, 0, 0});
+    game.you().hero.position = Vector3{-118, 0, 0};
+    game.you().hero.moveTo(Vector3{-248, 0, 0});
     for 0..600 { game.simulate(Dt); }
     assert(game.you().hero.position.x >= -core.MapHalfWidth);
 }
@@ -223,7 +223,7 @@ testHealth :: () {
     // Nothing heals him, on the road or off it
     for 0..(3 * 60) { game.simulate(Dt); }
     assert(game.you().hero.health < maxHealth * 0.6);
-    game.you().hero.position = Vector3{-60, 0, 0};
+    game.you().hero.position = Vector3{-108, 0, 0};
     for 0..(6 * 60) { game.simulate(Dt); }
     assert(game.you().hero.health < maxHealth * 0.6);
 
@@ -296,10 +296,10 @@ testAbilities :: () {
 
     // Frosty's Slide blinks to the cursor, no further than its range
     game.spawnHero(0, .frosty);
-    game.you().hero.position = Vector3{-70, 0, 0};
-    game.mouseGround = Vector3{-70, 0, 40};
+    game.you().hero.position = Vector3{-118, 0, 0};
+    game.mouseGround = Vector3{-118, 0, 40};
     game.useAbility(1);
-    assert(game.you().hero.position.distance(Vector3{-70, 0, 9}) < 0.01);
+    assert(game.you().hero.position.distance(Vector3{-118, 0, 9}) < 0.01);
     assert(!game.you().hero.abilityReady(1));
 
     // The keys go to the abilities that are cast, in order. Passives have none
@@ -311,30 +311,37 @@ testAbilities :: () {
     game.useAbility(5);
     assert(game.you().hero.cooldowns[2] == 0 && game.you().hero.cooldowns[5] == 0);
 
-    // The butcher hooks a point and is pulled to it, no further than the hook reaches
+    // The butcher's hook bites into a car, and he is pulled to its side
     game.spawnHero(0, .butcher);
-    game.you().hero.position = Vector3{-70, 0, 0};
-    game.mouseGround = Vector3{-55, 0, 10};
+    butcher := &game.you().hero;
+    grass := -core.RoadHalfWidth - core.WallWidth - 6;
+    butcher.position = Vector3{core.laneCenter(0), 0, 0};    // On the road, in an empty lane
+    game.traffic.cars[0] = core.Car{isActive: true, kind: .car, lane: 3, z: 0, speed: 0.001};
+    game.mouseGround = Vector3{core.laneCenter(3), 0, 0};
     game.useAbility(0);
-    assert(game.you().hero.hook.hasValue());
-    for 0..60 { game.simulate(Dt); }
-    assert(!game.you().hero.hook.hasValue());
-    assert(game.you().hero.position.distance(Vector3{-55, 0, 10}) < 0.5);
+    assert(butcher.hook.hasValue());
+    for 0..120 { game.simulate(Dt); }
+    assert(!butcher.hook.hasValue());
+    beside := core.laneCenter(3) - core.CarWidth * 0.5 - butcher.info().hitRadius - 0.4;
+    assert(near(butcher.position.x, beside, 0.5));
 
-    // Aimed past its reach, it goes as far as it reaches
-    game.you().hero.cooldowns[0] = 0;
-    game.mouseGround = Vector3{-55, 0, -190};
+    // Without a car to bite, it comes back and nothing happens
+    clearRoad(game);
+    butcher.cooldowns[0] = 0;
+    butcher.position = Vector3{grass, 0, 0};
+    game.mouseGround = Vector3{grass + 20, 0, 0};
     game.useAbility(0);
-    for 0..150 { game.simulate(Dt); }
-    assert(game.you().hero.position.distance(Vector3{-55, 0, 10 - 34}) < 0.5);
+    for 0..120 { game.simulate(Dt); }
+    assert(!butcher.hook.hasValue() && near(butcher.position.x, grass, 0.01));
 
-    // A wall in the way stops the pull at the wall
-    game.you().hero.cooldowns[0] = 0;
-    game.mouseGround = Vector3{0, 0, -16};
+    // He walks while it flies, and it goes past an enemy without catching it
+    butcher.cooldowns[0] = 0;
+    butcher.position = Vector3{grass, 0, 0};
+    butcher.moveTo(Vector3{grass, 0, 20});
+    game.mouseGround = Vector3{grass + 20, 0, 0};
     game.useAbility(0);
-    for 0..150 { game.simulate(Dt); }
-    assert(!game.you().hero.hook.hasValue());
-    assert(near(game.you().hero.position.x, -core.RoadHalfWidth - core.WallWidth - game.you().hero.info().hitRadius, 0.05));
+    for 0..12 { game.simulate(Dt); }
+    assert(butcher.hook.hasValue() && butcher.position.z > 1);
 
     // Frosty freezes the cars around him, and his chill aura slows the cars near him
     game.spawnHero(0, .frosty);
@@ -426,14 +433,14 @@ testNewHeroes :: () {
 
     // Her rewind takes her back to where she was, with the health she had then
     clearRoad(game);
-    game.you().hero.position = Vector3{-70, 0, 0};
-    walkTo(game, Vector3{-60, 0, 0});
+    game.you().hero.position = Vector3{-118, 0, 0};
+    walkTo(game, Vector3{-108, 0, 0});
     game.you().hero.health = 5;
     for 0..200 { game.simulate(Dt); }            // Standing still, so the last 3 seconds are all here
-    game.you().hero.moveTo(Vector3{-70, 0, 20});
+    game.you().hero.moveTo(Vector3{-118, 0, 20});
     for 0..60 { game.simulate(Dt); }
     game.useAbility(1);
-    assert(game.you().hero.position.distance(Vector3{-60, 0, 0}) < 2.5);
+    assert(game.you().hero.position.distance(Vector3{-108, 0, 0}) < 2.5);
 }
 
 testCommands :: () {
@@ -444,17 +451,17 @@ testCommands :: () {
 
     // A move is carried out in the next simulate
     you := game.you();
-    you.hero.position = Vector3{-70, 0, 0};
-    you.order(core.Command{move: {-60, 0}});
+    you.hero.position = Vector3{-118, 0, 0};
+    you.order(core.Command{move: {-108, 0}});
     for 0..120 { game.simulate(Dt); }
-    assert(you.hero.ground().distance({-60, 0}) < 0.5 && you.commands.count == 0);
+    assert(you.hero.ground().distance({-108, 0}) < 0.5 && you.commands.count == 0);
 
     // A stunned hero doesn't move, and doesn't cast
     you.hero.stunLeft = 1;
-    you.order(core.Command{move: {-70, 0}});
+    you.order(core.Command{move: {-118, 0}});
     game.simulate(Dt);
     for 0..30 { game.simulate(Dt); }
-    assert(you.hero.ground().distance({-60, 0}) < 0.5);
+    assert(you.hero.ground().distance({-108, 0}) < 0.5);
     assert(!you.hero.abilityReady(0));
 }
 
@@ -465,42 +472,42 @@ testEnemySpells :: () {
     enemy := &game.players[1];
     enemy.brain = null;         // It stands still, for the test
 
-    // The butcher's hook catches the enemy it passes, which is dragged back to him
+    // The butcher's hook only bites into cars: it goes past an enemy, which stays where it was
     game.spawnHero(0, .butcher);
-    game.you().hero.position = Vector3{-70, 0, 0};
-    enemy.hero.position = Vector3{-55, 0, 0};
-    game.cast(0, 0, {-50, 0});
+    game.you().hero.position = Vector3{-118, 0, 0};
+    enemy.hero.position = Vector3{-103, 0, 0};
+    game.cast(0, 0, {-98, 0});
     for 0..120 { game.simulate(Dt); }
-    assert(enemy.hero.ground().distance(game.you().hero.ground()) < 4);
-    assert(!game.you().hero.hook.hasValue() && enemy.hero.canAct());
+    assert(near(enemy.hero.position.x, -103, 0.01) && enemy.hero.harmedBy < 0);
+    assert(!game.you().hero.hook.hasValue());
 
     // Bjørn's bash stuns the nearest enemy and knocks it away from him
     game.spawnHero(0, .bjorn);
-    game.you().hero.position = Vector3{-70, 0, 0};
-    enemy.hero.position = Vector3{-67, 0, 0};
+    game.you().hero.position = Vector3{-118, 0, 0};
+    enemy.hero.position = Vector3{-115, 0, 0};
     enemy.hero.stunLeft = 0;
     bashSlot := 1;
-    game.cast(0, bashSlot, {-67, 0});
+    game.cast(0, bashSlot, {-115, 0});
     assert(enemy.hero.stunLeft > 1);
     for 0..60 { game.simulate(Dt); }
-    assert(near(enemy.hero.position.x, -67 + 9, 0.3));
+    assert(near(enemy.hero.position.x, -115 + 9, 0.3));
 
     // Out of reach, it isn't cast at all
     game.you().hero.cooldowns[bashSlot] = 0;
-    enemy.hero.position = Vector3{-50, 0, 0};
-    game.cast(0, bashSlot, {-50, 0});
+    enemy.hero.position = Vector3{-98, 0, 0};
+    game.cast(0, bashSlot, {-98, 0});
     assert(game.you().hero.abilityReady(bashSlot));
 
     // Mira locks the enemy nearest the point in time
     game.spawnHero(0, .mira);
     enemy.hero.stunLeft = 0;
-    game.you().hero.position = Vector3{-70, 0, 0};
-    enemy.hero.position = Vector3{-60, 0, 5};
-    game.cast(0, 2, {-61, 4});
+    game.you().hero.position = Vector3{-118, 0, 0};
+    enemy.hero.position = Vector3{-108, 0, 5};
+    game.cast(0, 2, {-109, 4});
     assert(enemy.hero.lockedLeft > 1.9 && !enemy.hero.canAct());
-    enemy.order(core.Command{move: {-70, 20}});
+    enemy.order(core.Command{move: {-118, 20}});
     for 0..60 { game.simulate(Dt); }
-    assert(near(enemy.hero.position.x, -60) && near(enemy.hero.position.z, 5));
+    assert(near(enemy.hero.position.x, -108) && near(enemy.hero.position.z, 5));
 }
 
 // The forecast of the bots says when the cars it knows of will be where: what it says is free, is
@@ -560,7 +567,7 @@ testRecording :: () {
     defer game.free();
     rng := random.newRandom(1);
     for frame in 0..900 {
-        if frame == 100 { game.you().order(core.Command{move: {-60, 20}}); }
+        if frame == 100 { game.you().order(core.Command{move: {-108, 20}}); }
         if frame == 400 { game.you().order(core.Command{cast: {slot: 0, target: {-40, 0}}}); }
         if frame == 600 {
             // A new game with easier bots, as F5 after changing the difficulty while paused
@@ -664,7 +671,7 @@ clearRoad :: (game: *core.Game) {
 
 walkTo :: (game: *core.Game, point: Vector3) {
     game.you().hero.moveTo(point);
-    for 0..(20 * 60) {
+    for 0..(60 * 60) {
         game.simulate(Dt);
         if !game.you().hero.isMoving || game.you().phase.kind != .playing { return; }
     }
@@ -731,9 +738,9 @@ testItems :: () {
     assert(game.items.onRoad.hasValue());
 
     // Walking over it puts it in the backpack, and a new one is on its way
-    game.items.onRoad = core.GroundItem{kind: .firstAid, position: {-60, 0}};
+    game.items.onRoad = core.GroundItem{kind: .firstAid, position: {-108, 0}};
     health := you.hero.maxHealth();
-    walkTo(game, Vector3{-60, 0, 0});
+    walkTo(game, Vector3{-108, 0, 0});
     assert(you.backpack.count == 1 && you.backpack.items[0] == .firstAid);
     assert(!game.items.onRoad.hasValue() && game.items.nextIn >= core.ItemEveryLow);
     assert(near(you.hero.maxHealth(), health * 1.4));
@@ -952,12 +959,12 @@ testItemAuras :: () {
 
     // Garlic: an enemy near the hero walks slower, one further away doesn't
     game.pickUp(1, .garlic);
-    you.hero.position = Vector3{-60, 0, 0};
-    enemy.hero.position = Vector3{-60, 0, 4};
+    you.hero.position = Vector3{-108, 0, 0};
+    enemy.hero.position = Vector3{-108, 0, 4};
     speed := you.hero.speed();
     game.simulate(Dt);
     assert(near(you.hero.speed(), speed * (1 - core.ItemAuraSlow)));
-    enemy.hero.position = Vector3{-60, 0, 30};
+    enemy.hero.position = Vector3{-108, 0, 30};
     game.simulate(Dt);
     assert(near(you.hero.speed(), speed));
 
@@ -1006,12 +1013,12 @@ testMatch :: () {
     clearRoad(game);
     game.spawnHero(0, .butcher);
     game.spawnHero(1, .allan);
-    game.you().hero.position = Vector3{-60, 0, 0};
-    other.hero.position = Vector3{-58, 0, 0};
+    game.you().hero.position = Vector3{-108, 0, 0};
+    other.hero.position = Vector3{-106, 0, 0};
     other.hero.stop();
-    game.you().hero.moveTo(Vector3{-40, 0, 0});
+    game.you().hero.moveTo(Vector3{-88, 0, 0});
     for 0..30 { game.simulate(Dt); }
-    assert(other.hero.position.x > -58 + core.ShoveDistance && other.hero.harmedBy == 0);
+    assert(other.hero.position.x > -106 + core.ShoveDistance && other.hero.harmedBy == 0);
     assert(game.you().hero.shoveLeft > 0);
 }
 
