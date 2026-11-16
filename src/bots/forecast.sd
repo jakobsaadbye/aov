@@ -296,6 +296,12 @@ trajectoryOf :: (game: *Game, car: Car, appears: f32) -> Trajectory {
     lane := traffic.lanes[car.lane];
     trajectory := Trajectory{halfLength: car.length() * 0.5};
 
+    // An ambulance drives on at its speed, whatever happens
+    if car.kind == .ambulance {
+        trajectory.add(appears, car.z, car.speed);
+        return trajectory;
+    }
+
     t := appears;
     z := car.z;
     if car.frozenLeft > 0 {
