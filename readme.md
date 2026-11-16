@@ -27,7 +27,7 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 
 | | |
 | --- | --- |
-| `data/textures/` | The grass (`grass/grass.png`), the road (`road/asphalt.png`), the Warcraft cursor |
+| `data/textures/` | The pavement (`pavement/pavement.png`), the road (`road/asphalt.png`), the particles and the frames of the UI, the Warcraft cursor |
 | `data/models/` | The vehicles (car, van, truck), the heroes and a segment of the wall, as OBJ with a MTL of their colors |
 | `data/icons/` | A 64x64 icon for each ability, by the name in `heroes.sd` |
 | `data/sounds/` | The sound effects, by group: `hero/`, `car/`, `ability/`, `ui/` |
@@ -36,7 +36,8 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | `data/shaders/` | `lighting.vs` and `lighting.fs`: the sun, ambient light and the haze in the distance |
 | `data/window_icon.png` | |
 
-The models were made by `tools/make_models.py`, the grass, the asphalt and the icons by `tools/make_textures.py`, and
+The models were made by `tools/make_models.py` (`city` for the buildings, lamps, trees, benches, hydrants and bins), the
+pavement, the asphalt and the icons by `tools/make_textures.py`, and
 the sounds and the music by `tools/make_sounds.py`
 (run them with python3 to write the files again), but they are plain files that can just as well be edited in Blender or
 painted over. `Grass_02.png` and `Ground_03.png` aren't used any more. The game expects a model to look towards +z and stand on y = 0, in the units
@@ -163,6 +164,13 @@ got to, the others with the same hero. So everyone always races from the same si
 Heroes shove each other: one that walks into an enemy pushes it away, a couple of meters, further when it is heavier (by
 its health: the Butcher pushes Allan far and hardly moves for him). A car that gets a hero soon after a shove counts as a
 kill for the one that shoved. `core/match.sd` has all of this.
+
+## The city
+
+The motorway has 32 lanes and runs through a city. Heroes start on the pavement on either side, past a row of street
+lamps along the walls and trees in planters, with benches, hydrants and bins; past the field are blocks of offices,
+brick apartments, shops with awnings and towers, with streets between them (`core/scenery.sd`). It is only for the eye:
+nothing walks into it.
 
 ## Hazards
 

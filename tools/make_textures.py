@@ -98,6 +98,22 @@ def make_asphalt():
     save(Image.fromarray(rgb, "RGB"), "textures", "road", "asphalt.png")
 
 
+def make_pavement():
+    """Square slabs of pale concrete, each a little different, with dark joints between them. It tiles: 4 by 4 slabs"""
+    size = 256
+    slabs = 4
+    cell = size // slabs
+    n = fractal(size, 4)
+    grit = rng.random((size, size))
+    y, x = np.mgrid[0:size, 0:size]
+    shade = rng.uniform(-10, 10, (slabs, slabs))[(y // cell) % slabs, (x // cell) % slabs]
+    value = 168 + shade + (n - 0.5) * 18 + (grit - 0.5) * 16
+    joint = (x % cell < 3) | (y % cell < 3)
+    value = np.where(joint, value * 0.62, value)
+    rgb = np.clip(np.stack([value, value - 2, value - 6], axis=2), 0, 255).astype(np.uint8)
+    save(Image.fromarray(rgb, "RGB"), "textures", "pavement", "pavement.png")
+
+
 #
 # Icons: a symbol on a colored, shaded background with a frame, drawn at 4x and scaled down
 #
@@ -623,12 +639,16 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["particles"]:
         make_particles()
         sys.exit(0)
+    if sys.argv[1:] == ["pavement"]:
+        make_pavement()
+        sys.exit(0)
     if sys.argv[1:] == ["ui"]:
         os.makedirs(os.path.join(DATA, "textures", "ui"), exist_ok=True)
         make_ui()
         sys.exit(0)
     make_grass()
     make_asphalt()
+    make_pavement()
     icon_sprint()
     icon_charge()
     icon_hook()

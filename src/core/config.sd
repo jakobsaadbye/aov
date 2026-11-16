@@ -8,14 +8,14 @@ WindowHeight :: 900;
 TargetFps    :: 144;
 
 // The playing field
-MapHalfWidth  :: 80.0;      // x from -80 to 80
+MapHalfWidth  :: 128.0;     // x from -128 to 128
 MapHalfLength :: 64.0;      // z from -64 to 64
 
 // The motorway runs along z, and all of its lanes drive from the far end (the top of the screen) towards the camera.
 // The cars are nearly as wide as their lanes, so no hero fits between two of them
 LaneWidth     :: 6.0;
-LaneCount     :: 16;
-RoadHalfWidth :: LaneWidth * LaneCount * 0.5;     // 48: the road covers x from -48 to 48
+LaneCount     :: 32;
+RoadHalfWidth :: LaneWidth * LaneCount * 0.5;     // 96: the road covers x from -96 to 96
 RoadOverhang  :: 40.0;                            // How far the road goes on past the field, where the cars come from
 
 // The walls along both sides of the road, each with one opening to get on and off it
@@ -31,7 +31,7 @@ GoalX     :: RoadHalfWidth + WallWidth + 4;   // Past the wall on the far side
 WallSegmentLength :: 5.0;     // The length of data/models/wall.obj, which is repeated along each wall
 
 // Traffic. The sizes of the vehicles are those of their models in data/models (see tools/make_models.py)
-MaxCars         :: 160;
+MaxCars         :: 320;
 CarWidth        :: 5.2;
 CarLength       :: 8.0;
 VanLength       :: 9.0;
