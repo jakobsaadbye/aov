@@ -86,12 +86,40 @@ boostOf :: (items: []ItemKind) -> Boost {
 
 BackpackSize :: 2;
 
+// The items of a player, the oldest first. A locked item stays when a new one is picked up; else the new one takes the
+// place of the oldest that isn't locked
 Backpack :: struct {
-    items: [BackpackSize]ItemKind;
-    count: int;
+    items:  [BackpackSize]ItemKind;
+    locked: [BackpackSize]bool;
+    count:  int;
 
     isFull :: method () -> bool {
         return self.count >= BackpackSize;
+    }
+
+    // The slot a new item goes in when it is full: the oldest that isn't locked, or -1 when all are
+    oldestUnlocked :: method () -> int {
+        for slot in 0..self.count {
+            if !self.locked[slot] { return slot as int; }
+        }
+        return -1;
+    }
+
+    // If it can take a new item: there is room, or an item that isn't locked to give up for it
+    canTake :: method () -> bool {
+        return !self.isFull() || self.oldestUnlocked() >= 0;
+    }
+
+    // Takes an item out, and the ones after it move up
+    remove :: method * (slot: int) -> ItemKind {
+        item := self.items[slot];
+        for i in slot + 1..self.count {
+            self.items[i - 1] = self.items[i];
+            self.locked[i - 1] = self.locked[i];
+        }
+        self.count -= 1;
+        self.locked[self.count] = false;
+        return item;
     }
 
     list :: method * () -> []ItemKind {
@@ -141,7 +169,7 @@ updateItems :: method (game: *Game, dt: f32) {
     onRoad := items.onRoad.value();
     items.age += dt;
     for *player, i in game.players {
-        if !player.isPlaying() || player.backpack.isFull() { continue; }
+        if !player.isPlaying() || !player.backpack.canTake() { continue; }
         hero := &player.hero;
         if hero.isAirborne() { continue; }
         if hero.ground().distance(onRoad.position) > hero.info().hitRadius + ItemReach { continue; }
@@ -161,12 +189,18 @@ placeItem :: method (game: *Game, kind: ItemKind, position: Vector2) {
 // Into the backpack of the player, and the hero has the boost at once
 pickUp :: method (game: *Game, index: int, kind: ItemKind) {
     player := &game.players[index];
-    if player.backpack.isFull() { return; }
+    if !player.backpack.canTake() { return; }
+    given: ?ItemKind = null;
+    if player.backpack.isFull() { given = player.backpack.remove(player.backpack.oldestUnlocked()); }
     player.backpack.items[player.backpack.count] = kind;
     player.backpack.count += 1;
     player.stats.items += 1;
     player.applyBoost();
-    game.announce(index, player.color, "% picked up %", player.name, kind.itemDefinition().name);
+    if given.hasValue() {
+        game.announce(index, player.color, "% picked up %, in place of %", player.name, kind.itemDefinition().name, given.value().itemDefinition().name);
+    } else {
+        game.announce(index, player.color, "% picked up %", player.name, kind.itemDefinition().name);
+    }
     game.sounds.playAt("item.pickup", player.hero.position, 0.9);
 }
 
@@ -178,6 +212,14 @@ applyBoost :: method (player: *Player) {
     hero.boost = boostOf(player.backpack.list());
     hero.health = share * hero.maxHealth();
     hero.savesLeft = math.max(0, hero.boost.saves - savesUsed);
+}
+
+// How much of the cooldown of an item is left, 0 to 1, and the seconds of it, for the HUD. 1 and 0 seconds for one that
+// is used up until the next hero, the clover
+itemCooldown :: (hero: *Hero, kind: ItemKind) -> f32, f32 {
+    if kind == .springShoes { return hero.bounceLeft / BounceCooldown, hero.bounceLeft; }
+    if kind == .clover && hero.savesLeft <= 0 { return 1, 0; }
+    return 0, 0;
 }
 
 // With Spring Shoes, a car that hits the hero bounces it over the car, towards the side it is going to. True when it did
@@ -283,19 +325,16 @@ spawnItem :: (game: *Game, kind: ?ItemKind, z: ?f32) {
     game.placeItem(item, Vector2{0, at});
 }
 
-@console.command("Puts an item in the backpack of a player, you when no player is given. In a full backpack it takes the place of the oldest")
+@console.command("Puts an item in the backpack of a player, you when no player is given. In a full backpack it takes the place of the oldest that isn't locked")
 giveItem :: (game: *Game, kind: ItemKind, player: ?int) {
     index := player ?? game.watched;
     if index < 0 || index >= game.players.count {
         console.fail("There is no player %. status lists them", index);
         return;
     }
-    backpack := &game.players[index].backpack;
-    if backpack.isFull() {
-        console.print("% takes the place of % in the backpack of %", kind.itemDefinition().name,
-            backpack.items[0].itemDefinition().name, game.players[index].name);
-        for i in 1..BackpackSize { backpack.items[i - 1] = backpack.items[i]; }
-        backpack.count -= 1;
+    if !game.players[index].backpack.canTake() {
+        console.fail("The backpack of % is full of locked items", game.players[index].name);
+        return;
     }
     game.pickUp(index, kind);
 }

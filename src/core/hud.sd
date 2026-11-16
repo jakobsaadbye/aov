@@ -203,6 +203,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     width  := math.max(12 + portraitSize + 20 + buttonsWidth + backpackWidth + 16, 500);
     height := 150;
     panel := Rectangle{(GetScreenWidth() - width) as f32 * 0.5, (GetScreenHeight() - height - 16) as f32, width as f32, height as f32};
+    game.mouseOnHud = CheckCollisionPointRec(GetMousePosition(), panel);
     drawPanel(panel);
 
     x := panel.x as int + 12;
@@ -238,6 +239,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
         }
         button := Rectangle{bx as f32, (y + 36) as f32, AbilityButtonSize, AbilityButtonSize};
         drawAbilityButton(game, assets, abilities[slot], slot, button);
+        if slot == game.aiming { DrawRectangleLinesEx({button.x - 3, button.y - 3, button.width + 6, button.height + 6}, 3, {255, 210, 90, 255}); }
         if CheckCollisionPointRec(mouse, button) {
             game.hoveredAbility = slot;
             hoveredButton = button;
@@ -262,15 +264,23 @@ drawBackpack :: (game: *Game, assets: *Assets, panel: Rectangle) {
     y := panel.y as int + 52;
     drawText("Backpack", x, y - 18, 14, DimColor);
     mouse := GetMousePosition();
+    game.hoveredItem = -1;
     for slot in 0..BackpackSize {
         box := Rectangle{(x + slot as int * (ItemSlotSize + 6)) as f32, y as f32, ItemSlotSize, ItemSlotSize};
         DrawRectangleRec(box, {12, 12, 14, 255});
         DrawRectangleLinesEx(box, 1, {120, 110, 90, 200});
         if slot >= backpack.count { continue; }
-        item := backpack.items[slot].itemDefinition();
+        kind := backpack.items[slot];
+        item := kind.itemDefinition();
         icon := assets.icons[item.icon];
         DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, box, {0, 0}, 0, White);
-        if CheckCollisionPointRec(mouse, box) { drawItemTooltip(item, box); }
+        left, seconds := itemCooldown(&game.you().hero, kind);
+        drawCooldown(box, left, seconds, 20);
+        if backpack.locked[slot] { drawLock(box); }
+        if CheckCollisionPointRec(mouse, box) {
+            game.hoveredItem = slot as int;
+            drawItemTooltip(item, box, backpack.locked[slot]);
+        }
     }
 }
 
@@ -286,12 +296,41 @@ drawWatching :: (game: *Game) {
     drawText(text, x + 28, y + 6, 17, TextColor);
 }
 
-drawItemTooltip :: (item: ItemDefinition, box: Rectangle) {
-    width := math.max(textWidth(item.description, 16), titleWidth(item.name, 20)) + 28;
-    tip := Rectangle{box.x + box.width - width as f32, box.y - 90, width as f32, 72};
+drawItemTooltip :: (item: ItemDefinition, box: Rectangle, locked: bool) {
+    hint := "Right click: lock it, so a new item doesn't take its place";
+    if locked { hint = "Locked. Right click: unlock it"; }
+    width := math.max(math.max(textWidth(item.description, 16), textWidth(hint, 14)), titleWidth(item.name, 20)) + 28;
+    tip := Rectangle{box.x + box.width - width as f32, box.y - 104, width as f32, 92};
     drawPanel(tip);
     drawTitle(item.name, tip.x as int + 14, tip.y as int + 10, 20, item.color);
     drawText(item.description, tip.x as int + 14, tip.y as int + 40, 16, TextColor);
+    drawText(hint, tip.x as int + 14, tip.y as int + 64, 14, DimColor);
+}
+
+// A padlock in the corner of an item that is locked
+drawLock :: (box: Rectangle) {
+    x := (box.x + box.width) as int - 16;
+    y := (box.y + box.height) as int - 16;
+    DrawRectangle(x - 2, y - 2, 16, 16, {0, 0, 0, 170});
+    DrawRing({(x + 6) as f32, (y + 5) as f32}, 3, 5, 180, 360, 12, {230, 220, 200, 255});
+    DrawRectangle(x + 1, y + 5, 10, 7, {230, 200, 90, 255});
+}
+
+// The dark part of a cooldown that shrinks clockwise from the top, like in Warcraft 3 and Dota 2, with the seconds left
+drawCooldown :: (box: Rectangle, left: f32, seconds: f32, textSize: int) {
+    if left <= 0 { return; }
+    x := box.x as int;
+    y := box.y as int;
+    BeginScissorMode(x, y, box.width as int, box.height as int);
+    DrawCircleSector({box.x + box.width * 0.5, box.y + box.height * 0.5}, box.width, -90 + (1 - left) * 360, 270, 48, {0, 0, 0, 170});
+    EndScissorMode();
+    if seconds <= 0 { return; }
+    text := tprint("%", math.ceilf(seconds) as int);
+    if seconds < 1 { text = tprint("%", fmt.fixed(seconds, 1)); }
+    textX := x + (box.width as int - textWidth(text, textSize)) / 2;
+    textY := y + (box.height as int - textSize) / 2 - 2;
+    drawText(text, textX + 2, textY + 2, textSize, Black);
+    drawText(text, textX, textY, textSize, White);
 }
 
 drawAbilityButton :: (game: *Game, assets: *Assets, ability: Ability, slot: int, button: Rectangle) {
@@ -417,6 +456,7 @@ drawHelp :: () {
     lines := [
         HelpLine{"Right click", "Walk there"},
         HelpLine{"Q W E R", "The abilities"},
+        HelpLine{"Left click", "An ability's icon: cast it"},
         HelpLine{"S", "Stop"},
         HelpLine{"Y", "Lock or unlock the camera"},
         HelpLine{"Space", "Camera to the hero"},

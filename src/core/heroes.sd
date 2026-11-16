@@ -73,6 +73,13 @@ Ability :: struct {
     isPassive :: method () -> bool {
         return self.effect.isPassive();
     }
+
+    // Cast at a point the player picks: clicking its icon then waits for a click on the ground. The others are cast
+    // at once
+    aimsAtPoint :: method () -> bool {
+        kind := self.effect.kind;
+        return kind == .hook || kind == .blink || kind == .leap || kind == .timeLock;
+    }
 }
 
 HeroDefinition :: struct {

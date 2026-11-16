@@ -37,6 +37,7 @@ Command :: union {
     move: Vector2;
     stop;
     cast: struct { slot: int; target: Vector2; };
+    lockItem: int;                          // Locks the item in a slot of the backpack, or unlocks it
 }
 
 Player :: struct {
@@ -151,6 +152,9 @@ Game :: struct {
     debug:       DebugToggles;
     mouseGround: ?Vector3;                  // The point on the ground under the mouse
     hoveredAbility: int = -1;               // The slot of the ability whose icon the mouse is on, set by the HUD
+    hoveredItem: int = -1;                  // and of the item in the backpack
+    mouseOnHud:  bool;                      // The mouse is on the hero card: a click there isn't on the ground
+    aiming:      int = -1;                  // An ability whose icon was clicked: the next left click on the ground casts it
     sounds:      SoundPlayer;               // Silent until it is loaded, e.g in simulation_test.sd
     inspector:   Inspector;                 // F4: what a bot thinks (inspector.sd)
     recording:   Recording;                 // What was played so far (recording.sd)
@@ -415,10 +419,38 @@ readInput :: method (game: *Game) {
     if !player.isPlaying() { return; }
     if game.keyboardTaken { return; }
 
-    if (IsMouseButtonPressed(.right) || IsMouseButtonPressed(.left)) && game.mouseGround.hasValue() {
-        point := game.mouseGround.value().xz();
-        player.order(Command{move: point});
-        game.effects.clickMarker(point);
+    // Right click: walks there, or on an item in the backpack, locks it. It also stops aiming an ability
+    if IsMouseButtonPressed(.right) {
+        game.aiming = -1;
+        if game.hoveredItem >= 0 {
+            player.order(Command{lockItem: game.hoveredItem});
+        } else if !game.mouseOnHud && game.mouseGround.hasValue() {
+            point := game.mouseGround.value().xz();
+            player.order(Command{move: point});
+            game.effects.clickMarker(point);
+        }
+    }
+
+    // Left click on the icon of an ability: cast at once, or aimed with the next left click on the ground
+    if IsMouseButtonPressed(.left) {
+        if game.hoveredAbility >= 0 {
+            game.aiming = -1;
+            ability := player.hero.abilities()[game.hoveredAbility];
+            if ability.isPassive() {
+                // Nothing to cast
+            } else if !player.hero.abilityReady(game.hoveredAbility) {
+                game.sounds.play("ui.not_ready");
+            } else if ability.aimsAtPoint() {
+                game.aiming = game.hoveredAbility;
+            } else {
+                player.order(Command{cast: {slot: game.hoveredAbility, target: player.hero.ground()}});
+            }
+        } else if game.aiming >= 0 && !game.mouseOnHud && game.mouseGround.hasValue() {
+            if player.hero.abilityReady(game.aiming) {
+                player.order(Command{cast: {slot: game.aiming, target: game.mouseGround.value().xz()}});
+            }
+            game.aiming = -1;
+        }
     }
     if IsKeyPressed(.s) { player.order(.stop); }
 
@@ -434,6 +466,7 @@ readInput :: method (game: *Game) {
         target := player.hero.ground();
         if game.mouseGround.hasValue() { target = game.mouseGround.value().xz(); }
         player.order(Command{cast: {slot: slot, target: target}});
+        game.aiming = -1;
     }
 }
 
@@ -527,6 +560,9 @@ carryOut :: method (game: *Game, index: int) {
             case .move { player.hero.moveTo(v.at()); }
             case .stop { player.hero.stop(); }
             case .cast { game.cast(index, v.slot, v.target); }
+            case .lockItem {
+                if v >= 0 && v < player.backpack.count { player.backpack.locked[v] = !player.backpack.locked[v]; }
+            }
         }
     }
 }
