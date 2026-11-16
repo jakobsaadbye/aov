@@ -35,6 +35,8 @@ PlanRequest :: struct {
     sprintLeft:  f32;
     now:         f32;               // The time of the game when the forecast was made
     maxExpanded: int = 6000;
+    waitOnRoad:  f32 = 5;                    // How long a place on the road must stay free for a plan that doesn't get
+                                            // across to end there
 }
 
 @private
@@ -121,7 +123,7 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
             leaveBy = forecast.safe[state.interval].end;
             toGoal := field.distances[state.cell];
             wait: f32 = FallbackWait;
-            if math.fabsf(center.x) < RoadHalfWidth + CellSize { wait = FallbackWaitOnRoad; }
+            if math.fabsf(center.x) < RoadHalfWidth + CellSize { wait = request.waitOnRoad; }
             if leaveBy - state.arrive >= wait && toGoal < fallbackDistance {
                 fallback = entry.state;
                 fallbackDistance = toGoal;
@@ -205,7 +207,8 @@ DistanceField :: struct {
     distances: [GridCells]f32;      // Forever where the goal can't be reached from
 }
 
-@private
+// Each thread keeps its own, so games can run on many threads at once, e.g in bot_train.sd
+@private @threadLocal
 distanceFields: Map<int, *DistanceField>;
 
 distanceField :: (forecast: *Forecast, goalSide: Side) -> *DistanceField {

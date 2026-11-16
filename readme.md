@@ -104,6 +104,7 @@ After `--`, e.g `saad run main.sd -- --bots 5 --seed 7`. Most are for trying thi
 | | |
 | --- | --- |
 | `--bots N` | How many bots race you, 0 to 5 (3 when not given) |
+| `--difficulty D` | How good the bots are: `easy`, `normal` (when not given), `hard` or `expert`. Also on the pause screen, with the arrow keys, for the next game |
 | `--spectate` | No hero of your own: the camera follows the first bot |
 | `--seed N` | The same seed gives the same game |
 | `--hero NAME` | Your first hero, e.g `--hero butcher` |
@@ -165,8 +166,48 @@ thinks in three parts, which can each be changed on its own:
    a stop sign while it waits for a gap, or a hook at an enemy that is ahead. Under the plan is a reflex that steps away
    from a car that is about to hit it, e.g after an enemy moved it.
 
-How a bot plays is a `BotPersonality`: how often it plans, how quick it reacts, how much room it keeps to the cars, and
-how keen it is to use abilities and to cast on enemies. The bots of a game get the ones in `BotPersonalities` in turn.
+How a bot plays is its **genome** (`genome.sd`): every number of the planner, the reflex and the tactics is a gene, e.g
+how often it plans, how quick it reacts, how much time it keeps before a car, when it thinks it is in danger, and how much
+it values escaping, stopping the traffic, sprinting, shortcuts and casting on enemies. A new gene is a value of `Gene`
+with a range in `GeneRanges`, read with `genome.get(.name)`.
+
+### Training the bots
+
+`src/bot_train.sd` evolves the genomes with a genetic algorithm. A population plays games against each other, three to
+a game with one of the hall of fame (the best of earlier generations) as the fourth, and the fittest have the children of
+the next generation (tournaments, crossover of the genes, and mutations that get smaller as it goes). The best are kept
+as they are and played again, so a lucky genome doesn't stay. Fitness (`fitnessOf` in `genome.sd`) is crossings, deaths,
+kills (an enemy a car gets within 3 seconds of being hooked, bashed or locked), how far across the hero is at the end,
+and how fast the best crossing was.
+
+The best of a generation is often just the luckiest in its few games, so at the end there is a playoff (`--playoff N`
+games each): the hall of fame, the last elite and the hand tuned genome play against each other, and the one with the
+best mean is written to `data/bots/genomes.json` (it is also written after each generation, in case training is
+stopped). It is saved by the names of the genes, so it can be read and changed by hand, and the game plays with it. Games run on many threads; build it with LLVM, which makes the bots
+think about 10 times as fast:
+
+```
+cd src
+saad build bot_train.sd --llvm
+build/out.exe --generations 60 --population 24 --games 8 --seconds 120 --threads 4
+```
+
+It starts from the trained genome (or the hand tuned one with `--from-default`), so training again goes on from where
+it was.
+
+### Difficulty
+
+Every difficulty plays the trained genome. Expert plays it as it is; hard, normal and easy with a handicap (`difficulty.sd`):
+slower to react, planning less often, later to dodge, less keen on abilities and enemies, and hesitant: it waits for
+bigger gaps than it needs. `bot_arena.sd --mixed` plays a bot of each difficulty in every game, in a different seat each
+game, and says how each did. With the trained genome, 40 games of 120 s:
+
+| Difficulty | Across | Run over | Kills | Fitness a game |
+|------------|-------:|---------:|------:|---------------:|
+| easy       | 24     | 37       | 0     | 0.5            |
+| normal     | 29     | 40       | 6     | 2.3            |
+| hard       | 47     | 42       | 19    | 8.0            |
+| expert     | 61     | 31       | 19    | 13.7           |
 
 ### The inspector
 

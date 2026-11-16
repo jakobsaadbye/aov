@@ -1,0 +1,319 @@
+// Trains the bots with a genetic algorithm: a population of genomes (aov/genome.sd) plays games against each other and
+// against the best of earlier generations (the hall of fame), and the fitter ones (aov.fitnessOf: crossings, deaths,
+// kills, progress, speed) have the children of the next generation. The best genome is written to
+// data/bots/genomes.json after each generation, which the game plays with (aov/difficulty.sd).
+//
+//     saad build bot_train.sd --llvm             the bots think about 10 times as fast with LLVM
+//     build/out.exe --generations 40 --threads 4
+//
+// Options: --generations N, --population N, --games N (games each genome plays a generation), --seconds N (of a game),
+// --threads N, --seed N, --playoff N (games each finalist plays at the end), --from-default (start from the hand tuned genes instead of the trained ones), --out FILE
+
+import aov;
+import fmt;
+import json;
+import math;
+import os;
+import random;
+import thread;
+import time;
+
+Config :: struct {
+    generations: int = 40;
+    population:  int = 24;
+    games:       int = 6;           // Games each genome plays in a generation
+    seconds:     int = 90;          // Of each game
+    threads:     int = 4;
+    seed:        u64 = 1;
+    elite:       int = 4;           // The best, kept as they are (and played again, so luck doesn't keep them)
+    tournament:  int = 3;
+    fromDefault: bool;
+    playoff:     int = 32;          // Games each finalist plays at the end
+    out:         string;
+}
+
+Candidate :: struct {
+    genome:    aov.Genome;
+    fitness:   f32;
+    games:     int;
+    crossings: int;
+    deaths:    int;
+    kills:     int;
+    index:     int;         // In the playoff
+}
+
+// A game of three candidates and one of the hall of fame
+PerGame :: 4;
+Candidates :: 3;
+
+GameJob :: struct {
+    genomes:    [PerGame]aov.Genome;
+    candidates: [PerGame]int;       // The candidate of each bot, -1 for the one of the hall of fame
+    seed:       u64;
+    seconds:    int;
+    fitness:    [PerGame]f32;
+    crossings:  [PerGame]int;
+    deaths:     [PerGame]int;
+    kills:      [PerGame]int;
+}
+
+Queue :: struct {
+    jobs:  [..]GameJob;
+    next:  int;
+    mutex: thread.Mutex;
+    group: thread.WaitGroup;
+}
+
+Worker :: struct {
+    queue: *Queue;
+}
+
+Dt :: 1.0 / 60.0;
+
+// Plays a game of a job, on a thread of its own
+playGame :: (job: *GameJob) {
+    personalities: [..]aov.BotPersonality;
+    defer personalities.free();
+    for genome in job.genomes { personalities.add(aov.BotPersonality{label: "trained", genome: genome}); }
+    game := aov.newGameWith(job.seed, personalities, humans: 0);
+    defer game.free();
+
+    steps := (job.seconds as f32 / Dt) as int;
+    for 0..steps { game.simulate(Dt); }
+
+    for i in 0..PerGame {
+        job.fitness[i] = aov.fitnessOf(game, i as int);
+        job.crossings[i] = game.players[i].stats.crossings;
+        job.deaths[i] = game.players[i].stats.deaths;
+        job.kills[i] = game.players[i].stats.kills;
+    }
+}
+
+// Takes the next job until there are none
+work :: (worker: *Worker) {
+    queue := worker.queue;
+    for {
+        queue.mutex.lock();
+        index := queue.next;
+        queue.next += 1;
+        queue.mutex.unlock();
+        if index >= queue.jobs.count { break; }
+        playGame(&queue.jobs[index]);
+    }
+    queue.group.done();
+}
+
+// Plays the jobs on the threads, and waits for all of them
+playAll :: (jobs: [..]GameJob, threads: int) {
+    queue := Queue{jobs: jobs};
+    workers: [..]Worker;
+    defer workers.free();
+    for 0..threads { workers.add(Worker{&queue}); }
+    queue.group.add(threads);
+    for i in 0..threads { thread.spawn(work, &workers[i]); }
+    queue.group.wait();
+}
+
+readConfig :: () -> Config {
+    config: Config;
+    args := os.args();
+    i := 1;
+    while i < args.count {
+        next := "";
+        if i + 1 < args.count { next = args[i + 1]; }
+        switch args[i] {
+            case "--generations"  { config.generations = (next.toInt() ?? 40) as int; i += 1; }
+            case "--population"   { config.population = (next.toInt() ?? 24) as int; i += 1; }
+            case "--games"        { config.games = (next.toInt() ?? 6) as int; i += 1; }
+            case "--seconds"      { config.seconds = (next.toInt() ?? 90) as int; i += 1; }
+            case "--threads"      { config.threads = (next.toInt() ?? 4) as int; i += 1; }
+            case "--seed"         { config.seed = (next.toInt() ?? 1) as u64; i += 1; }
+            case "--from-default" { config.fromDefault = true; }
+            case "--playoff"      { config.playoff = (next.toInt() ?? 32) as int; i += 1; }
+            case "--out"          { config.out = next; i += 1; }
+            else                  { fmt.print("Unknown option '%'", args[i]); }
+        }
+        i += 1;
+    }
+    config.population = math.max(config.population - config.population % Candidates, Candidates);
+    return config;
+}
+
+main :: () {
+    config := readConfig();
+    if config.out.len == 0 {
+        folder := aov.dataFolder();
+        config.out = fmt.sprint("%%", folder, aov.TrainedGenomesFile);
+    }
+    rng := random.newRandom(config.seed);
+    _ := aov.HeroKind.allan.definition();      // Made before the threads start, which only read it
+
+    // The first generation: the best genome there is, and variations of it
+    start := aov.defaultGenome();
+    if !config.fromDefault { start = aov.trainedGenome(); }
+    population: [..]Candidate;
+    population.add(Candidate{genome: start});
+    for i in 1..config.population {
+        strength: f32 = 0.15;
+        if i > config.population * 2 / 3 { population.add(Candidate{genome: aov.randomGenome(&rng)}); continue; }
+        population.add(Candidate{genome: aov.mutate(start, &rng, 0.6, strength)});
+    }
+    hallOfFame: [..]aov.Genome;
+    hallOfFame.add(start);
+
+    fmt.print("Training % generations of %, % games of % s each, on % threads", config.generations, config.population, config.games, config.seconds, config.threads);
+    best: Candidate;
+    for generation in 0..config.generations {
+        started := time.clock();
+        for *candidate in population { *candidate = Candidate{genome: candidate.genome}; }
+
+        // Each round, the candidates in a new order, three to a game, with one of the hall of fame
+        jobs: [..]GameJob;
+        defer jobs.free();
+        order: [..]int;
+        defer order.free();
+        for i in 0..population.count { order.add(i as int); }
+        for round in 0..config.games {
+            rng.shuffle(order);
+            for g in 0..population.count / Candidates {
+                job := GameJob{seed: config.seed * 1000003 + (generation * 1000 + round * 100 + g) as u64, seconds: config.seconds};
+                for k in 0..Candidates {
+                    index := order[g * Candidates + k];
+                    job.genomes[k] = population[index].genome;
+                    job.candidates[k] = index;
+                }
+                job.genomes[Candidates] = rng.choice(hallOfFame);
+                job.candidates[Candidates] = -1;
+                jobs.add(job);
+            }
+        }
+        playAll(jobs, config.threads);
+
+        for job in jobs {
+            for k in 0..PerGame {
+                index := job.candidates[k];
+                if index < 0 { continue; }
+                candidate := &population[index];
+                candidate.fitness += job.fitness[k];
+                candidate.games += 1;
+                candidate.crossings += job.crossings[k];
+                candidate.deaths += job.deaths[k];
+                candidate.kills += job.kills[k];
+            }
+        }
+        for *candidate in population { candidate.fitness /= math.max(candidate.games, 1) as f32; }
+        population.sort();        // The fittest first, see operator < below
+
+        best = population[0];
+        average: f32 = 0;
+        for candidate in population { average += candidate.fitness; }
+        average /= population.count as f32;
+        fmt.print("Generation %: best % (each game % across, % run over, % kills), average %, % s",
+            generation + 1, fmt.fixed(best.fitness, 2),
+            fmt.fixed(best.crossings as f32 / best.games as f32, 2), fmt.fixed(best.deaths as f32 / best.games as f32, 2),
+            fmt.fixed(best.kills as f32 / best.games as f32, 2), fmt.fixed(average, 2), fmt.fixed((time.clock() - started) as f32, 1));
+        save(config.out, best, generation + 1);
+        if (generation + 1) % 5 == 0 { hallOfFame.add(best.genome); }
+
+        // The next generation: the elite as they are, and children of parents picked by tournaments
+        next: [..]Candidate;
+        for i in 0..config.elite { next.add(Candidate{genome: population[i].genome}); }
+        strength := math.lerp(0.15, 0.04, generation as f32 / math.max(config.generations - 1, 1) as f32);
+        while next.count < population.count {
+            a := tournament(population, config.tournament, &rng);
+            b := tournament(population, config.tournament, &rng);
+            child := aov.crossover(a, b, &rng);
+            child = aov.mutate(child, &rng, 0.25, strength);
+            next.add(Candidate{genome: child});
+        }
+        population.free();
+        population = next;
+    }
+
+    // The playoff: the best of each generation is the one that was luckiest in a few games, so the hall of fame, the
+    // elite and the hand tuned genes play many games against each other, and the best of those is the one that is kept
+    finalists: [..]aov.Genome;
+    defer finalists.free();
+    finalists.add(aov.defaultGenome());
+    for genome in hallOfFame { finalists.add(genome); }
+    for i in 0..config.elite { finalists.add(population[i].genome); }
+    results := playoff(finalists, config.playoff, config, &rng);
+    defer results.free();
+    fmt.print("Playoff of % genomes, % games each:", finalists.count, config.playoff);
+    for result, i in results {
+        label := "";
+        if result.index == 0 { label = " (hand tuned)"; }
+        fmt.print("  %. fitness % (each game % across, % run over, % kills)%", i + 1, fmt.fixed(result.fitness, 2),
+            fmt.fixed(result.crossings as f32 / result.games as f32, 2), fmt.fixed(result.deaths as f32 / result.games as f32, 2),
+            fmt.fixed(result.kills as f32 / result.games as f32, 2), label);
+    }
+    save(config.out, results[0], config.generations);
+    fmt.print("Done. The best genome is in %", config.out);
+}
+
+// Each finalist plays games against three others, picked at random, and their fitness is the mean of their games
+playoff :: (finalists: []aov.Genome, games: int, config: Config, rng: *random.Random) -> [..]Candidate {
+    jobs: [..]GameJob;
+    defer jobs.free();
+    order: [..]int;
+    defer order.free();
+    for i in 0..finalists.count { order.add(i as int); }
+    for round in 0..games {
+        rng.shuffle(order);
+        for g in 0..finalists.count / PerGame {
+            job := GameJob{seed: config.seed * 7919 + (round * 100 + g) as u64 + 99999, seconds: config.seconds};
+            for k in 0..PerGame {
+                index := order[g * PerGame + k];
+                job.genomes[k] = finalists[index];
+                job.candidates[k] = index;
+            }
+            jobs.add(job);
+        }
+    }
+    playAll(jobs, config.threads);
+
+    results: [..]Candidate;
+    for genome, i in finalists { results.add(Candidate{genome: genome, index: i as int}); }
+    for job in jobs {
+        for k in 0..PerGame {
+            result := &results[job.candidates[k]];
+            result.fitness += job.fitness[k];
+            result.games += 1;
+            result.crossings += job.crossings[k];
+            result.deaths += job.deaths[k];
+            result.kills += job.kills[k];
+        }
+    }
+    for *result in results { result.fitness /= math.max(result.games, 1) as f32; }
+    results.sort();
+    return results;
+}
+
+// The fittest first
+operator < :: (a: Candidate, b: Candidate) -> bool {
+    return a.fitness > b.fitness;
+}
+
+// The fittest of a few candidates picked at random
+tournament :: (population: []Candidate, size: int, rng: *random.Random) -> aov.Genome {
+    best := rng.choice(population);
+    for 1..size {
+        other := rng.choice(population);
+        if other.fitness > best.fitness { best = other; }
+    }
+    return best.genome;
+}
+
+save :: (path: string, best: Candidate, generations: int) {
+    trained := aov.TrainedGenomes{
+        best:        best.genome.toJson(),
+        fitness:     best.fitness,
+        generations: generations,
+        trained:     time.now().format("2006-01-02 15:04"),
+    };
+    text := json.encode(trained, json.Pretty);
+    defer text.free();
+    _ := os.makeDir(path.slice(0, path.lastIndexOf("/")));
+    err := os.writeFile(path, text);
+    if err != null { fmt.print("ERROR: Couldn't write %: %", path, err.message); }
+}

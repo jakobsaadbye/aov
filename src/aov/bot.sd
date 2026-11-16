@@ -28,6 +28,9 @@ Brain :: interface {
     // Forgets what it was doing, e.g for a new game
     reset :: method * ();
 
+    // Gives back its memory, when the game is over
+    free :: method * ();
+
     // What it means to do, for the debug overlay (F4): the points of its way
     plannedPath :: method () -> []Waypoint;
 
@@ -63,26 +66,13 @@ BotDecision :: struct {
     chosen:     string;             // The ability the last look chose, if any
 }
 
+// How a bot plays: its genes (genome.sd), trained by bot_train.sd or tuned by hand, and a name for it
 BotPersonality :: struct {
-    label:          string;
-    replanEvery:    f32 = 0.3;      // Seconds between two plans
-    reactionTime:   f32 = 0.2;      // Seconds between two looks at the abilities
-    margin:         f32 = 0.1;      // Room it keeps to the cars, besides half a cell that the forecast keeps anyway
-    leadTime:       f32 = 0.5;      // Seconds it keeps between itself and a car that is coming
-    trailTime:      f32 = 0.1;      // and one that has gone past
-    aggression:     f32 = 0.5;      // 0 to 1: how keen it is to cast on enemies
-    abilityUse:     f32 = 0.7;      // 0 to 1: how keen it is to use abilities at all
+    label:  string;
+    genome: Genome;
 }
 
-BotPersonalities :: [
-    BotPersonality{label: "steady"},
-    BotPersonality{label: "bully",  aggression: 0.9, reactionTime: 0.25},
-    BotPersonality{label: "daring", margin: 0.0, leadTime: 0.35, trailTime: 0.05, abilityUse: 0.9},
-    BotPersonality{label: "timid",  margin: 0.3, leadTime: 0.75, trailTime: 0.2, aggression: 0.2, reactionTime: 0.3},
-    BotPersonality{label: "quick",  replanEvery: 0.2, reactionTime: 0.12},
-];
-
-BotNames :: ["Lars", "Mette", "Søren", "Freja", "Jens"];
+BotNames :: ["Lars", "Mette", "Søren", "Freja", "Jens", "Ida", "Bo", "Karen"];
 
 DefaultBots :: 3;
 
@@ -137,6 +127,16 @@ reset :: method (bot: *Bot) {
     bot.arena.clear();
 }
 
+free :: method (bot: *Bot) {
+    bot.arena.free();
+    bot.plan.free();
+    mem.delete(bot);
+}
+
+gene :: method (bot: *Bot, gene: Gene) -> f32 {
+    return bot.personality.genome.get(gene);
+}
+
 plannedPath :: method (bot: *Bot) -> []Waypoint {
     return bot.plan;
 }
@@ -172,12 +172,12 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     if bot.isBehindPlan(game.time) { bot.mustSearch = true; }
     if bot.replanIn <= 0 || bot.mustSearch {
         bot.replan(game, me);
-        bot.replanIn = bot.personality.replanEvery * bot.rng.uniform(0.8, 1.2) as f32;
+        bot.replanIn = bot.gene(.replanEvery) * bot.rng.uniform(0.8, 1.2) as f32;
     }
 
     bot.thinkIn -= dt;
     if bot.thinkIn <= 0 {
-        bot.thinkIn = bot.personality.reactionTime;
+        bot.thinkIn = bot.gene(.reactionTime);
         cast := bot.chooseAbility(game, me);
         if cast.hasValue() {
             player.order(cast.value());
@@ -209,7 +209,7 @@ dodge :: method (bot: *Bot, game: *Game, me: int) -> bool {
     hit := bot.forecast.hitTime(here, now, 0);
     hasPlan := bot.next < bot.plan.count;
     stranded := !hasPlan && isOnRoad(here);
-    if hit - now > DodgeTime && !stranded { return false; }
+    if hit - now > bot.gene(.dodgeTime) && !stranded { return false; }
 
     // The plan moves on before the car gets here: it leaves for its next point in time
     if hasPlan && bot.plan[bot.next].depart - bot.forecastAt < hit - 0.1 {
@@ -255,7 +255,6 @@ wayIsFree :: method (bot: *Bot, from: Vector2, to: Vector2, start: f32, speed: f
     return true;
 }
 
-DodgeTime   :: 1.0;     // Seconds before a car gets there that the reflex steps away
 
 // Makes a new forecast of the cars. When the plan doesn't hold up against it, or it is time to look for a better one,
 // it searches for a new plan through them
@@ -269,9 +268,9 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     bot.forecast = newForecast(game, ForecastOptions{
         radius:       hero.info().hitRadius,
         throughWalls: hero.walksThroughWalls(),
-        margin:       bot.personality.margin,
-        leadTime:     bot.personality.leadTime,
-        trailTime:    bot.personality.trailTime,
+        margin:       bot.gene(.margin),
+        leadTime:     bot.gene(.leadTime),
+        trailTime:    bot.gene(.trailTime),
     });
     bot.forecastAt = game.time;
     bot.hasForecast = true;
@@ -302,6 +301,7 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         sprintSpeed: sprintSpeed,
         sprintLeft:  hero.sprintLeft,
         now:         game.time,
+        waitOnRoad:  bot.gene(.waitOnRoad),
     });
 
     bot.stats.plans += 1;
@@ -327,13 +327,12 @@ planHolds :: method (bot: *Bot) -> bool {
         if i + 1 < bot.plan.count { leave = bot.plan[i + 1].depart; }
         cell := cellAt(waypoint.point);
         if cell < 0 { return false; }
-        interval := bot.forecast.intervalAt(cell, waypoint.arrive - bot.forecastAt + PlanSlack);
-        if interval < 0 || bot.forecast.safe[interval].end < leave - bot.forecastAt - PlanSlack { return false; }
+        interval := bot.forecast.intervalAt(cell, waypoint.arrive - bot.forecastAt + bot.gene(.planSlack));
+        if interval < 0 || bot.forecast.safe[interval].end < leave - bot.forecastAt - bot.gene(.planSlack) { return false; }
     }
     return true;
 }
 
-PlanSlack :: 0.15;      // Seconds a plan may be off in the new forecast, which isn't quite the same as the old
 
 // Late for the next point of the plan: the cars won't be where the plan thought
 isBehindPlan :: method (bot: *Bot, now: f32) -> bool {
@@ -403,7 +402,7 @@ chooseAbility :: method (bot: *Bot, game: *Game, me: int) -> ?Command {
         healthShare: hero.health / hero.info().maxHealth,
     };
 
-    bestScore: f32 = 1 - bot.personality.abilityUse * 0.7;     // The bar: from 0.3 for the keenest to 1 for none
+    bestScore := bot.gene(.castBar);
     bot.decision.bar = bestScore;
     best: ?Command = null;
     for ability, slot in hero.abilities() {
@@ -426,65 +425,59 @@ AbilityChoice :: struct {
 }
 
 // How much it wants to cast an ability now, and at what
+// How much it wants to cast an ability now, and at what. The weights are genes, so training decides what is worth it
 scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Ability) -> AbilityChoice {
     no := AbilityChoice{0, view.ground};
     here := AbilityChoice{0, view.ground};
-    inDanger := view.danger < 0.6;
-    aggression := bot.personality.aggression;
+    inDanger := view.danger < bot.gene(.dangerTime);
+    waiting := view.onRoad && bot.isWaiting(game);
+    aggression := bot.gene(.aggression);
 
     switch v in ability.effect {
         case .sprint {
-            // Across the road faster, or away from a car
-            if inDanger            { here.score = 0.8; }
-            else if view.nearRoad  { here.score = 0.5; }
+            if inDanger            { here.score = bot.gene(.speedUpDanger); }
+            else if view.nearRoad  { here.score = bot.gene(.speedUp); }
             return here;
         }
         case .hook {
             // An enemy that is ahead, or on the road, is dragged back. Else it is a way out of trouble
             enemy := bot.enemyToPunish(game, view, v.range * 0.9);
             if enemy >= 0 && aggression > 0 {
-                return AbilityChoice{0.2 + 0.7 * aggression, game.players[enemy].hero.ground()};
+                return AbilityChoice{aggression * bot.punishScore(game, view, enemy), game.players[enemy].hero.ground()};
             }
             if inDanger {
                 // It pulls him through what is between, so the way must be free too
-                choice := bot.escape(game, view, v.range, v.range / HookSpeed, 0.9);
+                choice := bot.escape(game, view, v.range, v.range / HookSpeed, bot.gene(.escape));
                 if choice.score > 0 && bot.wayIsFree(view.ground, choice.target, game.time - bot.forecastAt + v.range / HookSpeed, v.pullSpeed, 0.3) {
                     return choice;
                 }
             }
             return no;
         }
-        case .freeze {
-            if inDanger { here.score = 0.9; }
-            else if view.onRoad && bot.isWaiting(game) { here.score = 0.6; }
+        case .freeze
+        case .halt
+        case .timeWarp {
+            if inDanger     { here.score = bot.gene(.stopCars); }
+            else if waiting { here.score = bot.gene(.stopCarsWaiting); }
             return here;
         }
         case .blink {
-            if inDanger { return bot.escape(game, view, v.range, 0, 1.0); }
-            if view.nearRoad { return bot.shortcut(game, view, v.range, 0, 0.45); }
+            if inDanger { return bot.escape(game, view, v.range, 0, bot.gene(.escape)); }
+            if view.nearRoad { return bot.shortcut(game, view, v.range, 0, bot.gene(.shortcut)); }
             return no;
         }
         case .fade {
-            if view.danger < 0.35 { here.score = 1.0; }
+            if view.danger < bot.gene(.dangerTime) * 0.6 { here.score = bot.gene(.escape); }
             return here;
         }
         case .leap {
-            if inDanger { return bot.escape(game, view, v.range, v.duration, 1.0); }
-            if view.nearRoad { return bot.shortcut(game, view, v.range, v.duration, 0.5); }
+            if inDanger { return bot.escape(game, view, v.range, v.duration, bot.gene(.escape)); }
+            if view.nearRoad { return bot.shortcut(game, view, v.range, v.duration, bot.gene(.shortcut)); }
             return no;
         }
-        case .halt {
-            if inDanger { here.score = 0.8; }
-            else if view.onRoad && bot.isWaiting(game) { here.score = 0.65; }
-            return here;
-        }
-        case .timeWarp {
-            if inDanger { here.score = 0.85; }
-            else if view.onRoad && bot.isWaiting(game) { here.score = 0.5; }
-            return here;
-        }
         case .rewind {
-            if view.danger < 0.4 || view.healthShare < 0.4 { here.score = 0.9; }
+            if view.danger < bot.gene(.dangerTime) * 0.7 { here.score = bot.gene(.escape); }
+            else if view.healthShare < bot.gene(.rewindHealth) { here.score = 0.9; }
             return here;
         }
         case .bash {
@@ -495,7 +488,7 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
         case .timeLock {
             enemy := bot.enemyToPunish(game, view, v.range);
             if enemy < 0 || aggression <= 0 { return no; }
-            return AbilityChoice{0.2 + 0.8 * aggression, game.players[enemy].hero.ground()};
+            return AbilityChoice{aggression * bot.punishScore(game, view, enemy), game.players[enemy].hero.ground()};
         }
         case .phaseWalk
         case .quickFeet
@@ -505,6 +498,18 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: Abil
         }
     }
 }
+
+// How much an enemy is worth casting on: on the road, where it can be run over, and ahead of this bot, weighed by the
+// gene punishAhead. From 0 to 1
+punishScore :: method (bot: *Bot, game: *Game, view: TacticsView, enemy: int) -> f32 {
+    target := game.players[enemy];
+    score: f32 = 0;
+    if isOnRoad(target.hero.ground()) { score += 0.5; }
+    ahead := progressOf(target.hero.ground(), target.startSide) - view.progress;
+    if ahead > 0 { score += ahead * bot.gene(.punishAhead); }
+    return math.min(score, 1);
+}
+
 
 // An enemy in reach worth casting on: on the road, where a stun or a drag can get it run over, or further across than
 // this bot. -1 when there is none

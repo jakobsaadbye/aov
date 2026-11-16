@@ -1,0 +1,154 @@
+namespace aov;
+
+// The genome of a bot: every number that says how it plays, as genes that bot_train.sd can evolve. The planner, the
+// reflex and the tactics of bot.sd read them instead of numbers of their own, so a trained genome changes how careful
+// it is, how quickly it thinks, and when it casts what.
+//
+// A new gene is a value of Gene and a range in GeneRanges, and the code that reads it with genome.get(.name). Genomes are
+// saved by the names of their genes (data/bots/genomes.json), so a gene can be added or removed without breaking the
+// ones that were trained: a missing gene starts at its default.
+
+import json;
+import math;
+import random;
+
+Gene :: enum {
+    // Planning and the reflex
+    replanEvery,            // Seconds between two looks at the cars
+    reactionTime,           // Seconds between two looks at the abilities
+    margin,                 // Room it keeps to the cars, besides what the forecast keeps anyway
+    leadTime,               // Seconds a cell must be free before a car comes
+    trailTime,              // and after one has gone
+    dodgeTime,              // How soon before a car hits it the reflex steps away
+    waitOnRoad,             // Seconds a place on the road must stay free for a plan to stop there
+    planSlack,              // How much a plan may be off in a new forecast before it plans again
+
+    // Tactics: when to cast. A score of each ability is compared with castBar
+    castBar,
+    dangerTime,             // A car closer than this, in seconds, is danger
+    escape,                 // Blink, leap, a hook out, fade, rewind: away from a car
+    stopCars,               // Freeze, a stop sign, a time warp: in danger
+    stopCarsWaiting,        // and while it waits on the road for a gap
+    speedUp,                // Sprint, charge: near the road
+    speedUpDanger,          // and in danger
+    shortcut,               // Blink, leap: a good way across at once, near the road
+    rewindHealth,           // Rewinds when its health is below this share
+    aggression,             // How keen it is to cast on enemies at all
+    punishAhead,            // How much more it wants an enemy that is ahead of it than one on the road
+}
+
+GeneRange :: struct {
+    low:     f32;
+    high:    f32;
+    default: f32;
+}
+
+// The range and the default of each gene, in the order of Gene. The defaults are the hand tuned values
+GeneRanges :: [
+    GeneRange{0.1, 0.8, 0.3},       // replanEvery
+    GeneRange{0.05, 0.6, 0.2},      // reactionTime
+    GeneRange{0, 0.8, 0.1},         // margin
+    GeneRange{0.1, 1.2, 0.5},       // leadTime
+    GeneRange{0, 0.5, 0.1},         // trailTime
+    GeneRange{0.3, 2.0, 1.0},       // dodgeTime
+    GeneRange{1, 8, 5},             // waitOnRoad
+    GeneRange{0.02, 0.4, 0.15},     // planSlack
+    GeneRange{0.1, 1.0, 0.51},      // castBar
+    GeneRange{0.2, 1.5, 0.6},       // dangerTime
+    GeneRange{0, 1, 1.0},           // escape
+    GeneRange{0, 1, 0.85},          // stopCars
+    GeneRange{0, 1, 0.6},           // stopCarsWaiting
+    GeneRange{0, 1, 0.5},           // speedUp
+    GeneRange{0, 1, 0.8},           // speedUpDanger
+    GeneRange{0, 1, 0.5},           // shortcut
+    GeneRange{0, 1, 0.4},           // rewindHealth
+    GeneRange{0, 1, 0.5},           // aggression
+    GeneRange{0, 3, 1.0},           // punishAhead
+];
+
+Genome :: struct {
+    genes: [Gene.count]f32;
+
+    get :: method (gene: Gene) -> f32 {
+        return self.genes[gene];
+    }
+
+    set :: method * (gene: Gene, value: f32) {
+        range := GeneRanges[gene];
+        self.genes[gene] = math.clamp(value, range.low, range.high);
+    }
+}
+
+// The hand tuned bot
+defaultGenome :: () -> Genome {
+    genome: Genome;
+    for gene in Gene.values { genome.genes[gene] = GeneRanges[gene].default; }
+    return genome;
+}
+
+// Any genes, for the start of a training
+randomGenome :: (rng: *random.Random) -> Genome {
+    genome: Genome;
+    for gene in Gene.values {
+        range := GeneRanges[gene];
+        genome.genes[gene] = rng.uniform(range.low, range.high) as f32;
+    }
+    return genome;
+}
+
+// Each gene from one of the parents, at random
+crossover :: (a: Genome, b: Genome, rng: *random.Random) -> Genome {
+    child := a;
+    for gene in Gene.values {
+        if rng.chance(0.5) { child.genes[gene] = b.genes[gene]; }
+    }
+    return child;
+}
+
+// Each gene, with a chance, moved by a normal step of strength times its range
+mutate :: (genome: Genome, rng: *random.Random, chance: f64, strength: f32) -> Genome {
+    child := genome;
+    for gene in Gene.values {
+        if !rng.chance(chance) { continue; }
+        range := GeneRanges[gene];
+        child.set(gene, child.genes[gene] + rng.gauss(0, 1) as f32 * strength * (range.high - range.low));
+    }
+    return child;
+}
+
+// A genome as JSON: an object of the genes by their names
+GenomeJson :: Map<string, f32>;
+
+toJson :: method (genome: Genome) -> GenomeJson {
+    values: GenomeJson;
+    for gene in Gene.values { values[Gene.names[gene]] = genome.genes[gene]; }
+    return values;
+}
+
+fromJson :: (values: GenomeJson) -> Genome {
+    genome := defaultGenome();
+    for gene in Gene.values {
+        value := values.tryGet(Gene.names[gene]);
+        if value.hasValue() { genome.set(gene, value.value()); }
+    }
+    return genome;
+}
+
+// How well a player did in a game, for training: crossings, few deaths, enemies it got run over, how far across its
+// hero is at the end, and how fast its best crossing was. The weights are what training aims for
+FitnessWeights :: struct {
+    crossing: f32 = 10;
+    death:    f32 = 7;
+    kill:     f32 = 4;
+    progress: f32 = 3;      // For the hero it has at the end, from 0 at its start to 1 across
+    fastest:  f32 = 2;      // For a best crossing of 20 seconds, less for a slower one
+}
+
+fitnessOf :: (game: *Game, index: int, weights: FitnessWeights = FitnessWeights{}) -> f32 {
+    player := &game.players[index];
+    stats := player.stats;
+    fitness := weights.crossing * stats.crossings as f32 - weights.death * stats.deaths as f32 + weights.kill * stats.kills as f32;
+    if player.isPlaying() { fitness += weights.progress * progressOf(player.hero.ground(), player.startSide); }
+    if stats.bestTime.hasValue() { fitness += weights.fastest * math.min(1, 20 / stats.bestTime.value()); }
+    return fitness;
+}

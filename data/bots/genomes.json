@@ -1,0 +1,26 @@
+{
+  "best": {
+    "replanEvery": 0.22436224,
+    "reactionTime": 0.12880819,
+    "margin": 0,
+    "leadTime": 0.1,
+    "trailTime": 0,
+    "dodgeTime": 1.6935899,
+    "waitOnRoad": 7.6900764,
+    "planSlack": 0.02,
+    "castBar": 0.1,
+    "dangerTime": 0.2,
+    "escape": 0,
+    "stopCars": 0.39932477,
+    "stopCarsWaiting": 0.30156177,
+    "speedUp": 1,
+    "speedUpDanger": 0.8720517,
+    "shortcut": 0.8884414,
+    "rewindHealth": 0.34966636,
+    "aggression": 0.4302385,
+    "punishAhead": 0.83769083
+  },
+  "fitness": 12.289118,
+  "generations": 20,
+  "trained": "2026-11-15 23:38"
+}
