@@ -6,7 +6,7 @@ namespace core;
 use raylib;
 
 defineHugo :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Hugo", title: "the Hypnotist", color: {120, 50, 140, 255}, width: 2.4, height: 5.0, moveSpeed: 8, hitRadius: 0.75, maxHealth: 26};
+    hero := HeroDefinition{name: "Hugo", title: "the Hypnotist", color: {120, 50, 140, 255}, width: 2.2, height: 5.2, moveSpeed: 8, hitRadius: 0.75, maxHealth: 26};
     hero.abilities.add(Ability{
         name: "Puppet", icon: "puppet", sound: "ability.puppet", cooldown: 12, targeting: .enemy, cast: castPuppet, bot: .disableEnemy,
         description: "The enemy nearest the cursor, up to 14 away, walks back the way it came for 1.6 seconds, and can't cast",

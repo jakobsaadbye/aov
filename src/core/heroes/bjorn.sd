@@ -6,7 +6,7 @@ use raylib;
 // Bjørn: a heavy viking that leaps over the traffic and bashes his enemies into it
 
 defineBjorn :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Bjørn", title: "the Shieldbearer", color: {176, 120, 70, 255}, width: 3.0, height: 4.8, moveSpeed: 7.5, hitRadius: 1.0, maxHealth: 60};
+    hero := HeroDefinition{name: "Bjørn", title: "the Shieldbearer", color: {176, 120, 70, 255}, width: 3.8, height: 5.8, moveSpeed: 7.5, hitRadius: 1.15, maxHealth: 60};
     hero.abilities.add(Ability{
         name: "Leap", icon: "leap", sound: "ability.leap", cooldown: 7, targeting: .point, cast: castLeap, bot: .escape,
         description: "Leaps to the cursor, up to 16 away, high over the cars and the walls",

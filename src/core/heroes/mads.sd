@@ -6,7 +6,7 @@ import math;
 use raylib;
 
 defineMads :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Mads", title: "the Skater", color: {250, 90, 40, 255}, width: 2.2, height: 4.2, moveSpeed: 7.6, hitRadius: 0.7, maxHealth: 25, drawExtras: drawMads};
+    hero := HeroDefinition{name: "Mads", title: "the Skater", color: {250, 90, 40, 255}, width: 2.2, height: 4.1, moveSpeed: 7.6, hitRadius: 0.7, maxHealth: 25, drawExtras: drawMads};
     hero.abilities.add(Ability{
         name: "Ollie", icon: "ollie", sound: "ability.ollie", cooldown: 6, targeting: .point, cast: castLeap, bot: .escape,
         description: "Pops the board up and jumps to the cursor, up to 7 away, over a car",

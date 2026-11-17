@@ -235,6 +235,12 @@ def lathe(profile, pos=(0, 0, 0), rot=(0, 0, 0), sx=1.0, sz=1.0, smooth=True, nu
     return Surface(fn, nu, nv, pos, rot, wrap_u=True, **kw)
 
 
+def torus(pos, R, t, rot=(0, 0, 0), sz=1.0, nu=24, nv=10, **kw):
+    """A ring of radius R round y, as thick as t, e.g a cuff or a belt. sz squashes it front to back"""
+    prof = [(t * math.sin(a), R + t * math.cos(a)) for a in np.linspace(-math.pi / 2, 1.5 * math.pi, 13)]
+    return lathe(prof, pos, rot, sz=sz, smooth=True, nu=nu, nv=nv, **kw)
+
+
 def cylinder(pos, r, h, rot=(0, 0, 0), r_top=None, caps=True, **kw):
     """Standing on pos, h tall (along y before rot)"""
     rt = r if r_top is None else r_top
@@ -555,6 +561,37 @@ def stripes(c, count, width=0.5, axis="v", angle=0.0):
     return fn
 
 
+def scales(c, size=0.12):
+    """Rows of overlapping scales or rings, e.g mail or a scale armor: each lit on top and dark at its rim"""
+    def fn(ctx, base):
+        x = ctx.u * ctx.lu / size
+        y = ctx.v * ctx.lv / (size * 0.7)
+        row = np.floor(y)
+        fx = (x + 0.5 * (row % 2)) % 1.0 - 0.5
+        fy = y - row
+        r = np.sqrt(fx * fx + (fy - 1.0) ** 2)
+        rim = smoothstep(0.45, 0.6, r) * smoothstep(0.75, 0.6, r)
+        lit = smoothstep(0.6, 0.0, r)
+        k = 0.75 + 0.45 * lit - 0.5 * rim
+        return base * 0 + _varied(ctx, c, 0.08, 3) * k[..., None]
+    return fn
+
+
+def stitches(c, at, axis="v", length=0.06, width=0.012):
+    """Dashed lines of stitching along the surface, at places of v (or u)"""
+    def fn(ctx, base):
+        t = ctx.v if axis == "v" else ctx.u
+        along = ctx.u * ctx.lu if axis == "v" else ctx.v * ctx.lv
+        across_len = ctx.lv if axis == "v" else ctx.lu
+        a = np.zeros(ctx.shape)
+        for p in at:
+            near = np.abs((t - p) * across_len) < width
+            dash = ((along / length) % 1.0) < 0.55
+            a = np.maximum(a, (near & dash).astype(float))
+        return _over(base, rgb(c), a * 0.85)
+    return fn
+
+
 def checks(c, size=0.25):
     def fn(ctx, base):
         x = np.floor(ctx.u * ctx.lu / size) + np.floor(ctx.v * ctx.lv / size)
@@ -735,8 +772,10 @@ def face(eye=(0.25, 0.45, 0.75), v=0.52, spacing=0.19, size=0.11, mouth="smile",
 
 
 class Model:
-    def __init__(self, name, size=512, ground_ao=True, light=0.3, detail=0.13):
+    def __init__(self, name, size=512, ground_ao=True, light=0.3, detail=0.13, ao=0.0):
         self.name = name
+        self.ao = ao                    # How dark it gets where parts are close to each other (ambient occlusion)
+        self._cloud = None
         self.detail = detail            # The shortest edges, in model units: smaller parts get fewer segments
         self.size = size
         self.surfaces = []
@@ -745,11 +784,12 @@ class Model:
         self.seed = sum(ord(c) for c in name)
         self.post = (1.0, np.zeros(3))     # A scale and an offset put on the mesh when it is written (fit_height)
 
-    def add(self, surface, paint, tint=False, crease=0.0, share=None):
+    def add(self, surface, paint, tint=False, crease=0.0, share=None, weight=1.0):
         """A surface, or a list of them (a box), with a painter. share: a surface whose texture it uses too, e.g the
-        second wheel"""
+        second wheel. weight: how many more texels it gets than its size would give it, e.g 3 for a face"""
         if isinstance(surface, (list, tuple)):
-            return [self.add(s, paint, tint, crease) for s in surface]
+            return [self.add(s, paint, tint, crease, weight=weight) for s in surface]
+        surface.weight = weight
         # Small parts need fewer segments: no edge much shorter than detail
         lu, lv = surface.lengths()
         surface.nu = int(np.clip(round(lu / self.detail), 6, surface.nu))
@@ -801,7 +841,11 @@ class Model:
 
     def _pack(self):
         owners = [s for s in self.surfaces if s.share is None]
-        dims = {id(s): s.lengths() for s in owners}
+        dims = {}
+        for s in owners:
+            lu, lv = s.lengths()
+            k = math.sqrt(getattr(s, "weight", 1.0))
+            dims[id(s)] = (lu * k, lv * k)
         total = sum(lu * lv for lu, lv in dims.values())
         density = math.sqrt(self.size * self.size * 0.62 / max(total, 1e-6))
         pad = 3
@@ -856,6 +900,8 @@ class Model:
         if s.crease:
             d = np.minimum(vv * lv, (1 - vv) * lv)
             shade *= 1 - s.crease * np.exp(-d / 0.12)
+        if self.ao > 0:
+            shade *= self._occlusion(s, uu, vv)
         stroke = fbm(p * np.array([1.0, 3.0, 1.0]), 1.4, 3, self.seed + 101)
         shade *= 0.93 + 0.14 * stroke
         col = col * shade[..., None]
@@ -863,6 +909,46 @@ class Model:
         grey = col.mean(axis=-1, keepdims=True)
         col = grey + (col - grey) * 1.12
         return np.clip(col, 0, 1)
+
+    def _points(self):
+        """Points all over the model, for the ambient occlusion"""
+        if self._cloud is None:
+            from scipy.spatial import cKDTree
+            pts = []
+            for s in self.surfaces:
+                lu, lv = s.lengths()
+                nu = int(np.clip(lu / 0.05, 6, 160))
+                nv = int(np.clip(lv / 0.05, 4, 160))
+                u, v = np.meshgrid((np.arange(nu) + 0.5) / nu, (np.arange(nv) + 0.5) / nv)
+                pts.append(s.points(u, v).reshape(-1, 3))
+            pts = np.vstack(pts)
+            self._cloud = (cKDTree(pts), pts)
+        return self._cloud
+
+    def _occlusion(self, s, uu, vv, radius=0.5):
+        """How much light reaches each texel, 0..1: less where other parts are near, in front of it. Worked out on a
+        coarser grid and smoothed up"""
+        from scipy import ndimage
+        tree, pts = self._points()
+        step = 3
+        cu, cv = uu[::step, ::step], vv[::step, ::step]
+        p, n = s.frame(cu, cv)
+        flat_p, flat_n = p.reshape(-1, 3) + n.reshape(-1, 3) * 0.02, n.reshape(-1, 3)
+        d, idx = tree.query(flat_p, k=40, distance_upper_bound=radius)
+        valid = np.isfinite(d)
+        idx = np.where(valid, idx, 0)
+        q = pts[idx] - flat_p[:, None, :]
+        dist = np.maximum(np.linalg.norm(q, axis=-1), 1e-6)
+        cos = np.einsum("ijk,ik->ij", q, flat_n) / dist
+        w = np.clip(cos - 0.2, 0, 1) * np.clip(1 - dist / radius, 0, 1) * valid
+        occ = w.sum(axis=1) / 9.0
+        ao = np.clip(1 - self.ao * occ, 0.3, 1).reshape(cu.shape)
+        ao = ndimage.gaussian_filter(ao, 0.8)
+        full = ndimage.zoom(ao, (uu.shape[0] / ao.shape[0], uu.shape[1] / ao.shape[1]), order=1)
+        out = np.ones(uu.shape)
+        h, w_ = min(full.shape[0], uu.shape[0]), min(full.shape[1], uu.shape[1])
+        out[:h, :w_] = full[:h, :w_]
+        return out
 
     def texture(self):
         img = np.zeros((self.size, self.size, 3))

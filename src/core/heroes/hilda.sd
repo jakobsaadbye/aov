@@ -7,7 +7,7 @@ import math;
 use raylib;
 
 defineHilda :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Hilda", title: "the Crossing Guard", color: {240, 214, 40, 255}, width: 2.2, height: 4.4, moveSpeed: 8, hitRadius: 0.75, maxHealth: 30};
+    hero := HeroDefinition{name: "Hilda", title: "the Crossing Guard", color: {240, 214, 40, 255}, width: 2.3, height: 4.2, moveSpeed: 8, hitRadius: 0.75, maxHealth: 30};
     hero.abilities.add(Ability{
         name: "Stop!", icon: "stop_sign", sound: "ability.stop_sign", cooldown: 9, cast: castStopSign, bot: .stopCars,
         description: "Raises her stop sign: the five lanes around her stop for 3 seconds, and their cars queue up",

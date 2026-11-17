@@ -7,7 +7,7 @@ import math;
 use raylib;
 
 defineKenji :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Kenji", title: "the Ninja", color: {40, 40, 48, 255}, width: 2.2, height: 4.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 24, drawExtras: drawSubstitute};
+    hero := HeroDefinition{name: "Kenji", title: "the Ninja", color: {40, 40, 48, 255}, width: 2.1, height: 4.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 24, drawExtras: drawSubstitute};
     hero.abilities.add(Ability{
         name: "Substitution", icon: "substitution", sound: "ability.smoke", cooldown: 14, cast: castSubstitution, bot: .untouchable,
         description: "Leaves a log where he stands for 5 seconds. If a car hits him in that time, it hits the log instead, and he is back where he left it",

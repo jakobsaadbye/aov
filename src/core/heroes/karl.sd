@@ -5,7 +5,7 @@ namespace core;
 use raylib;
 
 defineKarl :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Karl", title: "the Mechanic", color: {60, 110, 170, 255}, width: 2.6, height: 4.3, moveSpeed: 7.8, hitRadius: 0.85, maxHealth: 45};
+    hero := HeroDefinition{name: "Karl", title: "the Mechanic", color: {60, 110, 170, 255}, width: 2.8, height: 4.4, moveSpeed: 7.8, hitRadius: 0.85, maxHealth: 45};
     hero.abilities.add(Ability{
         name: "Jack", icon: "jack", sound: "ability.jack", cooldown: 9, targeting: .point, cast: castJack, bot: .stopCarsAhead,
         description: "Jacks up the car nearest the cursor, up to 14 away, for 3 seconds: it stands still, and anyone can walk under it",

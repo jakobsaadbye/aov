@@ -49,8 +49,11 @@ same function gives the mesh and, sampled once for each texel, the texture: a pa
 is on the model (its position, its normal and its place on the surface). So cloth folds, stripes, faces, bricks, rust and
 blood run on across the parts without seams, and the light, the dark creases and the darker feet of a hand-painted
 texture are worked out from the shape. `python3 tools/sculpt.py preview data/models/car.obj` draws a model in software,
-from the front and from three quarters. The heroes are made in chunky proportions (big heads, hands and boots, short
-legs) so they read from high above, about 4.2 tall, and then fitted to their height.
+from the front and from three quarters. Each hero is a `Build` of proportions (a brute with huge
+shoulders and hands and a small head pushed forward, a stout one, a slim one, an old one bent over, a kid), with a
+cranium, jaw and brow ridge for a face that has a serious look of its own, and is fitted to the height of its hero:
+the Butcher, Ivar and Bjørn tower over Gudrun and the twins. Where parts are close to each other, under a brim or
+where an arm meets the body, the texture is darker (ambient occlusion, worked out from points all over the model).
 
 **Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape
 as a layer, and paints them like raised objects: a bevel lit from the top left, lighter at the top, a shine, a little
