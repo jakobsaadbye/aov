@@ -61,7 +61,14 @@ bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its
 fits them and the clips they play: idle, walk, and one for each ability, named by its icon. The game plays a hero's
 GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
 hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
-else idle. Only the Butcher has one so far; the others are still OBJ. `tools/make_butcher_concepts.py` draws the
+else idle. Only the Butcher has one so far; the others are still OBJ.
+
+The Butcher's face has bones of its own: a jaw, two brows and two eyelids, over sculpted eyeballs, lips, teeth and
+tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks, chews and sneers while he stands,
+scowls as he winds up a throw and roars as the hook flies, grimaces under a car and bellows as he heaves it. The
+portrait of the HUD looks at his head bone, close up, and plays the face of the clip he is in (`<clip>_face`, the
+same face on a body that stands still, so his arm never swings in front of it). His hook is a part of its own in the
+GLB (`part="hook"`), which the game leaves out while the hook is thrown; the chain comes from his hand bone. `tools/make_butcher_concepts.py` draws the
 directions he was picked from, as sketch sheets.
 
 **Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape

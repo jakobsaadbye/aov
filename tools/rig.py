@@ -52,7 +52,7 @@ class Rig:
     def mirror(self):
         """A twin on the -x side for every bone whose name ends in _r"""
         for name in list(self.order):
-            if not name.endswith("_r"):
+            if not name.endswith("_r") or mirror_bone_name(name) in self.bones:
                 continue
             b = self.bones[name]
             F = np.array([-1.0, 1.0, 1.0])
@@ -114,8 +114,21 @@ def quaternion(M):
     return ((m[0, 2] + m[2, 0]) / s, (m[1, 2] + m[2, 1]) / s, 0.25 * s, (m[1, 0] - m[0, 1]) / s)
 
 
+def layered(*clips):
+    """Clips played together, e.g the body and the face, each with its own keys and length. The first one says how
+    long the whole is, and whether it is played once"""
+    out = dict(clips[0])
+    out["layers"] = list(clips)
+    return out
+
+
 def sample(clip, t):
     """The pose of a clip at a time: its keys blended, the clip looping (or held at its last key, if it is played once)"""
+    if "layers" in clip:
+        pose = {}
+        for layer in clip["layers"]:
+            pose.update(sample(layer, t))
+        return pose
     keys = clip["keys"]
     duration = clip["duration"]
     if clip.get("once"):
@@ -129,7 +142,8 @@ def sample(clip, t):
             k = (t - t0) / max(t1 - t0, 1e-9)
             k = k * k * (3 - 2 * k)
             return blend(p0, p1, k)
-    return keys[-1][1] if clip.get("once") else keys[0][1]
+    last = keys[-1][1] if clip.get("once") else keys[0][1]
+    return blend(last, last, 0.0)
 
 
 def blend(a, b, k):
@@ -175,7 +189,7 @@ def skinned_mesh(m):
         N.append(norms)
         U.append(uvs)
         T.extend([(a + count, b + count, c + count) for a, b, c in tris])
-        tint.extend([s.tint] * len(tris))
+        tint.extend([getattr(s, "part", None) or ("body" if s.tint else "paint")] * len(tris))
         joints = np.zeros((len(verts), 4), dtype=int)
         weights = np.zeros((len(verts), 4))
         if rig is not None:
@@ -270,7 +284,7 @@ def render(mesh, tex, pose=None, size=420, yaw=30.0, pitch=15.0, tint_color=(0.8
         tx = np.clip((t[..., 0] * tex.shape[1]).astype(int), 0, tex.shape[1] - 1)
         ty = np.clip(((1 - t[..., 1]) * tex.shape[0]).astype(int), 0, tex.shape[0] - 1)
         col = tex[ty, tx]
-        if tint[fi]:
+        if tint[fi] == "body":
             col = col * np.array(tint_color)
         d = np.clip(n @ light, 0, 1)
         if sketch:
@@ -362,7 +376,9 @@ def write_glb(m, out=OUT, fps=15):
         attrs["WEIGHTS_0"] = add_accessor(W.astype(np.float32), 5126, "VEC4", 34962)
     big = len(V) > 65535
     prims = []
-    for mat, which in ((0, False), (1, True)):
+    parts = sorted(set(tint) - {"paint", "body"})
+    groups = ["paint", "body"] + parts
+    for mat, which in enumerate(groups):
         tris = T[tint == which]
         if len(tris) == 0:
             continue
@@ -378,7 +394,8 @@ def write_glb(m, out=OUT, fps=15):
         "materials": [
             {"name": "paint", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "baseColorFactor": [0.98, 0.98, 0.98, 1], "metallicFactor": 0}},
             {"name": "body", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "baseColorFactor": [1, 1, 1, 1], "metallicFactor": 0}},
-        ],
+        ] + [{"name": p, "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "baseColorFactor": [0.98, 0.98, 0.98, 1], "metallicFactor": 0}}
+             for p in parts],
         "meshes": [{"name": m.name, "primitives": prims}],
     }
     # The bones come first, in the order of the skin, and the mesh last: raylib counts on it

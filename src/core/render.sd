@@ -248,7 +248,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     } else if hero.has(.hex) {
         drawToad(hero.position + Vector3{0, bob, 0}, hero.facing, game.time);
     } else {
-        assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
+        assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint, hero.hook.hasValue());
     }
     drawHeroExtras(game, index, bob);
 
@@ -270,7 +270,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
         hook := hero.hook.value();
         forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
         right   := Vector3{forward.z, 0, -forward.x};
-        hand := hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45;
+        hand := assets.heroHand(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing) ?? (hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45);
         head := game.hookHead(hook, hand);
         if hook.car < 0 { head += Vector3{0, 1.2, 0}; }
         drawMeatHook(hand, head, hook.car >= 0);
@@ -301,7 +301,7 @@ drawMeatHook :: (hand: Vector3, head: Vector3, caught: bool) {
 
     // The ring the chain is tied to, the shank on from it, and the curve that bends round to the side and back into a
     // point: a J lying flat, so it reads as a hook from the camera above. Big enough to be seen from there
-    S :: 2.0;
+    S :: 2.6;
     side := Vector3{forward.z, 0, -forward.x};
     DrawSphere(head, 0.2 * S, HookSteel);
     DrawCylinderEx(head, head + forward * 0.25 * S, 0.06 * S, 0.06 * S, 8, HookDark);

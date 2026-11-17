@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from sculpt import (Model, Paint, blob, horn, loft, bands, cloth, color, cylinder, edges, ellipsoid, fbm, fur, ghostly, glass,
+from sculpt import (Model, Paint, blob, horn, loft, lumps, push, bands, cloth, color, cylinder, edges, ellipsoid, fbm, fur, ghostly, glass,
                     grime, hair, knit, lathe, leather, metal, painted, patch, plane, rect, rgb, scales, skin,
                     smoothstep, snow, sphere, spots, stains, stitches, stripes, flowers, torus, tube, wood, _ellipse,
                     _over, _varied)
@@ -575,6 +575,208 @@ def make_ghosty():
     print("models/ghosty.obj")
 
 
+
+#
+# A sculpted face with bones: eyeballs under lids that blink, brows that frown and lift, a jaw that opens on teeth.
+# Its clips are layered over the clips of the body (rig.layered)
+#
+
+
+def eyeball(center, look=(0, -0.1, 1), iris=(0.9, 0.6, 0.08), sclera=(0.86, 0.8, 0.52), iris_size=40, pupil_size=13):
+    """An eye: yellowed white with red at its edges, a big iris that is lighter at its middle, a pupil, a glint"""
+    c = np.asarray(center, float)
+    f = np.asarray(look, float)
+    f = f / np.linalg.norm(f)
+    g = f + np.array([-0.35, 0.4, 0.0])
+    g = g / np.linalg.norm(g)
+    ci, cp, cg = math.cos(math.radians(iris_size)), math.cos(math.radians(pupil_size)), math.cos(math.radians(9))
+
+    def fn(ctx):
+        d = ctx.p - c
+        d = d / np.maximum(np.linalg.norm(d, axis=-1, keepdims=True), 1e-9)
+        k = d @ f
+        out = np.ones(ctx.shape + (3,)) * rgb(sclera)
+        veins = smoothstep(0.3, -0.2, k) * 0.5 + (fbm(ctx.p, 30, 2, 5) > 0.62) * smoothstep(0.6, 0.2, k) * 0.5
+        out = out * (1 - 0.35 * veins[..., None]) + veins[..., None] * np.array([0.25, 0.02, 0.0])
+        t = np.clip((k - ci) / (1 - ci), 0, 1)
+        iris_c = rgb(iris) * (0.55 + 0.75 * t)[..., None]
+        streak = 0.85 + 0.3 * fbm(np.stack([np.arctan2(d[..., 1], d[..., 0]) * 6, k * 2, k * 0], -1), 1, 2, 3)
+        out = np.where((k > ci)[..., None], iris_c * streak[..., None], out)
+        ring = (k > ci) & (k < ci + 0.04)
+        out = np.where(ring[..., None], rgb(iris) * 0.25, out)
+        out = np.where((k > cp)[..., None], np.array([0.03, 0.02, 0.02]), out)
+        out = np.where(((d @ g) > cg)[..., None], np.array([1.0, 1.0, 0.95]), out)
+        return out
+    return Paint(fn)
+
+
+def wrinkles(hd, eyes_x=0.2, eye_y=0.08, eye_z=0.36, brow_y=0.24, furrows=3, depth=0.35):
+    """The lines of a face that scowls: shadowed sockets, furrows across the forehead that dip at the middle, two
+    creases between the brows, and folds from the nose to the corners of the mouth, all lit on their upper edge"""
+    h = np.asarray(hd, float)
+
+    def fn(ctx, base):
+        p = ctx.p - h
+        front = smoothstep(0.0, 0.5, ctx.n[..., 2])
+        out = base
+        for ex in (eyes_x, -eyes_x):
+            d = np.linalg.norm(p - np.array([ex, eye_y, eye_z]), axis=-1)
+            out = out * (1 - 0.5 * np.exp(-(d / 0.16) ** 2) * front)[..., None]
+        dark = np.zeros(ctx.shape)
+        light = np.zeros(ctx.shape)
+        ax = np.abs(p[..., 0])
+        for k in range(furrows):
+            y0 = brow_y + 0.07 + k * 0.055
+            line = p[..., 1] - (y0 + 0.07 * ax - 0.03 * ax * ax)
+            span = smoothstep(0.32, 0.2, ax)
+            dark = np.maximum(dark, smoothstep(0.012, 0.0, np.abs(line)) * span)
+            light = np.maximum(light, smoothstep(0.02, 0.008, np.abs(line - 0.016)) * span * 0.6)
+        for sx in (0.04, -0.04):
+            crease = smoothstep(0.012, 0.0, np.abs(p[..., 0] - sx - 0.15 * (p[..., 1] - brow_y))) * smoothstep(brow_y - 0.04, brow_y + 0.02, p[..., 1]) * \
+                smoothstep(brow_y + 0.17, brow_y + 0.1, p[..., 1])
+            dark = np.maximum(dark, crease)
+        for side in (1, -1):
+            t = np.clip((eye_y - 0.1 - p[..., 1]) / 0.22, 0, 1)
+            x = side * (0.17 + 0.13 * t)
+            fold = smoothstep(0.016, 0.0, np.abs(p[..., 0] - x)) * (t > 0) * (t < 1)
+            dark = np.maximum(dark, fold * 0.8)
+        out = out * (1 - depth * dark * front)[..., None] + (light * front * 0.12)[..., None]
+        return out
+    return fn
+
+
+def lash_line(at_bottom=True, c=(0.12, 0.08, 0.05), width=0.14):
+    """A dark rim along the edge of an eyelid (the bottom of an upper lid, the top of a lower one)"""
+    def fn(ctx, base):
+        v = ctx.v if at_bottom else 1 - ctx.v
+        return _over(base, rgb(c), smoothstep(width, width * 0.5, v))
+    return fn
+
+
+def face_pose(jaw=4, brow=10, lid=22, drop=0.0, lift=0.0):
+    """The face: how far the jaw is open, how much the brows frown (degrees, inner ends down), how far the lids are
+    closed (degrees), and how far the brows are dropped or lifted"""
+    return {"jaw": (jaw, 0, 0), "brow_r": {"rot": (0, 0, brow), "pos": (0, lift - drop, 0)},
+            "brow_l": {"rot": (0, 0, -brow), "pos": (0, lift - drop, 0)}, "lid_r": (lid, 0, 0), "lid_l": (lid, 0, 0)}
+
+
+def face_clips():
+    """What the face does in each clip of the body"""
+    from rig import clip
+    from anatomy import once
+    calm, chew, blink = face_pose(), face_pose(jaw=11, brow=12, lid=26), face_pose(lid=88)
+    sneer = face_pose(jaw=6, brow=18, lid=30, drop=0.015)
+    scowl, roar = face_pose(jaw=0, brow=30, lid=42, drop=0.03), face_pose(jaw=36, brow=24, lid=4, lift=0.01)
+    grimace = face_pose(jaw=3, brow=34, lid=58, drop=0.035)
+    pant0, pant1 = face_pose(jaw=7, brow=18, lid=28), face_pose(jaw=13, brow=18, lid=28)
+    return {
+        "idle": clip(2.0, (0.0, calm), (0.5, chew), (0.8, calm), (1.3, sneer), (1.6, calm), (1.72, calm), (1.77, blink), (1.84, calm)),
+        "walk": clip(1.0, (0.0, pant0), (0.25, pant1), (0.5, pant0), (0.75, pant1)),
+        "cast": once(0.9, (0.0, calm), (0.3, scowl), (0.5, roar), (0.75, face_pose(jaw=20, brow=20, lid=12)), (0.9, calm)),
+        "hook": once(0.8, (0.0, calm), (0.1, scowl), (0.24, roar), (0.5, face_pose(jaw=22, brow=22, lid=10)), (0.8, calm)),
+        "heave": once(0.9, (0.0, calm), (0.2, grimace), (0.42, roar), (0.6, face_pose(jaw=24, brow=22, lid=10)), (0.9, calm)),
+    }
+
+
+def swamp_face(m, hd, sk, rig_, S=1.3):
+    """The Butcher's head: a wide, low skull with drooping ears; big amber eyes deep under heavy, fleshy brows; fat
+    cheeks; a broad snout; a wide frog's mouth with an overhanging upper lip, and an underbite whose tusks stand up
+    over it; a dark mouth and a tongue behind the teeth. S scales it. Adds the bones of the face to the rig"""
+    from anatomy import skin_paint
+    h = np.asarray(hd, float)
+
+    def P(x, y, z):
+        return h + S * np.array([x, y, z], float)
+
+    def R(*r):
+        return tuple(S * v for v in r)
+    E = 0.2                                         # How far apart the eyes are, from the middle
+    eye_r = P(E, 0.07, 0.4)
+    detail = m.detail
+    m.detail = 0.03                                 # The face is looked at: smooth, not faceted
+    rig_.bone("jaw", P(0, -0.1, -0.1), P(0, -0.28, 0.5), "head")
+    rig_.bone("brow_r", P(0.06, 0.2, 0.46), P(0.36, 0.25, 0.36), "head")
+    rig_.bone("lid_r", eye_r, eye_r + S * np.array([0, 0, 0.12]), "head")
+    rig_.mirror()
+    sp = skin_paint(sk, warts=0.4) + flush(h, S)
+    dark_sk = tuple(c * 0.82 for c in sk)
+    W = 4                                           # Texels: the face gets many
+    wr = wrinkles(h, eyes_x=E * S, eye_y=0.07 * S, eye_z=0.38 * S, brow_y=0.21 * S)
+    # The skull, with its wrinkles and sockets
+    m.add(blob(P(0, 0.06, -0.06), R(0.5, 0.4, 0.48), (0.7, 0.75)).deform(lumps(0.01, 4, 3)), skin_paint(sk, warts=0.5) + flush(h, S) + wr, bones="head", weight=W)
+    # Eyes, the lids over them, and the lower lids
+    m.mirror(m.add(sphere(eye_r, 0.105 * S, nu=18, nv=12), eyeball(eye_r, look=(0.08, 0.05, 1), iris_size=42), bones="head", weight=W))
+    m.mirror(m.add(ellipsoid(eye_r, R(0.122, 0.122, 0.122), vrange=(0.55, 1.0), nu=18, nv=6), sp + lash_line(True), bones="lid_r", weight=W))
+    m.mirror(m.add(ellipsoid(eye_r + S * np.array([0, -0.004, 0.004]), R(0.126, 0.114, 0.124), vrange=(0.0, 0.3), nu=18, nv=5),
+                   sp + lash_line(False, width=0.2), bones="head", weight=W))
+    # The brows: heavy ridges of flesh from beside the nose out over the eyes, that the brow bones turn
+    brow = skin_paint(sk, warts=0.2) + flush(h, S) + bristles((0.15, 0.16, 0.08))
+    m.mirror(m.add(loft([P(0.05, 0.19, 0.47), P(0.16, 0.215, 0.47), P(0.28, 0.235, 0.42), P(0.38, 0.24, 0.32)],
+                        [(0.05, 0.075, 2.2), (0.065, 0.085, 2.2), (0.06, 0.08, 2.2), (0.035, 0.05, 2.2)], facing=(0, 0.2, 1), nu=12, nv=12),
+                   brow, bones="brow_r", weight=W))
+    # Cheeks, low and round, and the snout with its nostrils
+    m.mirror(m.add(ellipsoid(P(0.29, -0.06, 0.3), R(0.16, 0.12, 0.13)).deform(lumps(0.008, 6, 2)), sp + wr, bones="head", weight=W))
+    m.add(blob(P(0, 0.0, 0.5), R(0.15, 0.1, 0.12), (0.7, 0.7)), sp, bones="head", weight=W)
+    for side in (1, -1):
+        m.add(torus(P(side * 0.07, -0.03, 0.6), 0.035 * S, 0.016 * S, rot=(75, 0, 0)), color(dark_sk), bones="head")
+        m.add(ellipsoid(P(side * 0.07, -0.03, 0.598), R(0.03, 0.02, 0.012)), color((0.08, 0.06, 0.04)), bones="head")
+    m.add(ellipsoid(P(0, 0.12, 0.47), R(0.06, 0.07, 0.06)), sp, bones="head", weight=W)
+    # The mouth: a dark inside, the upper lip over it, fangs down from it
+    m.add(ellipsoid(P(0, -0.17, 0.26), R(0.36, 0.08, 0.24)), color((0.22, 0.04, 0.05)), bones="head")
+    lip_c = skin_paint((sk[0] * 0.92, sk[1] * 0.8, sk[2] * 0.75)) + flush(h, S, 0.05)
+    m.add(loft([P(-0.37, -0.18, 0.22), P(-0.22, -0.14, 0.43), P(0, -0.128, 0.5), P(0.22, -0.14, 0.43), P(0.37, -0.18, 0.22)],
+               [(0.025, 0.035, 2.2), (0.055, 0.075, 2.2), (0.065, 0.085, 2.2), (0.055, 0.075, 2.2), (0.025, 0.035, 2.2)], facing=(0, 0, 1), nu=14, nv=20),
+          lip_c, bones="head", weight=W)
+    tooth = color((0.86, 0.79, 0.55)) + bands((0.55, 0.45, 0.3), [(0.0, 0.25)])
+    for x in (0.12, -0.24):
+        m.add(horn(P(x, -0.15, 0.5 - abs(x) * 0.3), (0, -1, 0.1), 0.06 * S, 0.022 * S), tooth, bones="head")
+    # The jaw, its lower lip, its teeth and tusks, a tongue: all turned by the jaw bone
+    m.add(blob(P(0, -0.27, 0.12), R(0.47, 0.16, 0.4), (0.5, 0.6)).deform(push(P(0, -0.3, 0.5), 0.3 * S, (0, -0.01 * S, 0.04 * S))),
+          skin_paint(sk, warts=0.4) + wr, bones="jaw", weight=W)
+    m.add(loft([P(-0.35, -0.21, 0.24), P(-0.2, -0.19, 0.46), P(0, -0.185, 0.53), P(0.2, -0.19, 0.46), P(0.35, -0.21, 0.24)],
+               [(0.025, 0.035, 2.2), (0.05, 0.07, 2.2), (0.058, 0.08, 2.2), (0.05, 0.07, 2.2), (0.025, 0.035, 2.2)], facing=(0, 0, 1), nu=14, nv=20),
+          lip_c, bones="jaw", weight=W)
+    m.add(ellipsoid(P(0, -0.21, 0.3), R(0.22, 0.035, 0.18)), color((0.58, 0.24, 0.24)), bones="jaw")
+    for x, length, lean in ((-0.26, 0.07, -0.15), (-0.13, 0.055, 0.1), (-0.02, 0.06, -0.05), (0.08, 0.05, 0.12)):
+        m.add(horn(P(x, -0.185, 0.53 - abs(x) * 0.35), (lean, 1, 0.05), length * S, 0.026 * S), tooth, bones="jaw")
+    for x, length in ((0.21, 0.22), (-0.33, 0.14)):
+        m.add(horn(P(x, -0.18, 0.5 - abs(x) * 0.25), (0.12 * np.sign(x), 1, 0.2), length * S, 0.05 * S, curl=(0.04 * np.sign(x), 0, 0.06)),
+              tooth, bones="jaw")
+    # Warts
+    for p_ in ((0.32, -0.01, 0.4), (-0.34, -0.08, 0.36), (0.09, 0.05, 0.58), (-0.1, -0.32, 0.47), (0.4, 0.18, 0.24)):
+        m.add(sphere(P(*p_), 0.025 * S, nu=6, nv=4), color(dark_sk), bones="jaw" if p_[1] < -0.25 else "head")
+    # Drooping ears with a notch
+    for side in (1, -1):
+        m.add(loft([P(side * 0.44, 0.12, -0.05), P(side * 0.82, 0.05, -0.07), P(side * 1.12, -0.22, -0.07)],
+                   [(0.19, 0.06, 2.4), (0.21, 0.06, 2.4), (0.06, 0.035, 2)], facing=(0, 1, 0), nu=10, nv=10),
+              skin_paint(sk) + patch(dark_sk, 0.5, 0.62, 0.04, 0.04), bones="head")
+    m.detail = detail
+
+
+def flush(hd, S=1.0, amount=0.18):
+    """Warmer, redder skin on the snout, the cheeks and the lips, where the blood is near"""
+    h = np.asarray(hd, float)
+
+    def fn(ctx, base):
+        p = (ctx.p - h) / S
+        a = np.exp(-(np.linalg.norm(p - np.array([0, -0.02, 0.5]), axis=-1) / 0.16) ** 2)
+        for side in (1, -1):
+            a = np.maximum(a, 0.7 * np.exp(-(np.linalg.norm(p - np.array([side * 0.3, -0.08, 0.35]), axis=-1) / 0.13) ** 2))
+        a = np.maximum(a, 0.6 * np.exp(-((p[..., 1] + 0.16) / 0.06) ** 2) * (p[..., 2] > 0.3))
+        top = smoothstep(0.3, 0.9, ctx.n[..., 1]) * 0.1
+        return base * (1 + top)[..., None] + (a * amount)[..., None] * np.array([0.9, 0.15, -0.1])
+    return fn
+
+
+def bristles(c):
+    """Coarse hairs along a brow: dark, in streaks"""
+    def fn(ctx, base):
+        hairs = fbm(np.stack([ctx.v * 60, ctx.u * 6, ctx.u * 0], -1), 1, 2, 17)
+        a = smoothstep(0.45, 0.6, hairs) * smoothstep(0.15, 0.4, ctx.u % 1.0) * smoothstep(0.85, 0.6, ctx.u % 1.0)
+        return _over(base, rgb(c), a * 0.85)
+    return fn
+
+
 def make_butcher():
     """The Butcher, a swamp brute of a butcher-monger: as wide as he is tall, olive skin, a wide frog mouth with a
     snaggletooth, drooping ears, a bloodied hide apron round his gut, a shell on one shoulder, a big fish on his belt,
@@ -592,21 +794,7 @@ def make_butcher():
     trousers = (0.3, 0.25, 0.2)
     brute_body(m, J, skin_p, cloth(trousers, folds=4), skin_p, gut=1.6, shoulders=1.1, forearm=1.15, legs_thick=1.15,
                chest_p=skin_p + bands(trousers, [(0.0, 0.2)]), right_hand=False)
-    # The head: a wide, low skull, a frog's jaw, a heavy brow, a flat nose, drooping ears
-    hd = J["head"]
-    m.add(blob(hd + [0, 0.05, -0.05], (0.55, 0.38, 0.5), (0.7, 0.75)),
-          skin_paint(sk, warts=0.6) + eyes(v=0.6, spacing=0.21, size=0.075, iris=(0.95, 0.72, 0.1), lid=0.42, tilt=0.15, socket=0.45,
-                                           white=(0.88, 0.82, 0.6)), bones="head", weight=3)
-    m.add(blob(hd + [0, -0.2, 0.12], (0.62, 0.24, 0.5), (0.5, 0.6)), skin_paint(sk) + mouth("frown", v=0.55, width=0.36, lips=(0.35, 0.22, 0.2)),
-          bones="head", weight=3)
-    m.add(blob(hd + [0, 0.22, 0.33], (0.48, 0.09, 0.15), (0.5, 0.7)), skin_paint(sk) + brows((0.18, 0.2, 0.12), 0.8, 0.2, spacing=0.21, length=0.12, v=0.62),
-          bones="head", weight=2)
-    m.add(blob(hd + [0, 0.02, 0.5], (0.16, 0.1, 0.1), (0.7, 0.7)), skin_paint(sk) + patch((0.15, 0.15, 0.08), 0.42, 0.3, 0.03, 0.02) +
-          patch((0.15, 0.15, 0.08), 0.58, 0.3, 0.03, 0.02), bones="head")
-    m.add(horn(hd + [0.2, -0.13, 0.6], (0.1, 1, 0.3), 0.2, 0.055, curl=(0, 0, 0.08)), color((0.86, 0.8, 0.6)), bones="head")
-    for side in (1, -1):
-        m.add(loft([hd + [side * 0.45, 0.12, -0.05], hd + [side * 0.85, 0.05, -0.05], hd + [side * 1.2, -0.25, -0.05]],
-                   [(0.2, 0.07, 2.4), (0.22, 0.07, 2.4), (0.06, 0.04, 2)], facing=(0, 1, 0), nu=10, nv=10), skin_paint(sk), bones="head")
+    swamp_face(m, J["head"] + np.array([0, 0.08, 0.18]), sk, m.rig)
     # The apron: hide, light and stained, wrapped round the gut, on a strap round his neck, and a thick belt
     apron = leather((0.6, 0.48, 0.34)) + stains((0.45, 0.07, 0.05), 0.32, 1.0) + stains((0.32, 0.26, 0.16), 0.2, 2.2, 21) + edges(0.35, 0.12, dark=True)
     wrap_apron(m, J, apron, gut=1.6, low=0.8, wide=1.15)
@@ -627,19 +815,31 @@ def make_butcher():
     w, he = J["wrist_r"], J["hand_end_r"]
     m.add(loft([w + [0, 0.28, -0.05], w, w + (he - w) * 0.6], [(0.36, 0.36, 2.2), (0.32, 0.32, 2.2), (0.25, 0.25, 2.2)], nu=12, caps="flat"),
           wood((0.42, 0.28, 0.15)) + bands((0.42, 0.42, 0.45), [(0.1, 0.28), (0.72, 0.9)]), bones="fore_r")
-    m.add(horn(w + (he - w) * 0.6, (0, -1, 0.25), 0.95, 0.1, curl=(0, 1.3, 0.9), tip=0.02), metal((0.5, 0.5, 0.54), 0.45) + edges(0.3, 0.05) +
-          stains((0.42, 0.06, 0.05), 0.15, 3), bones="fore_r")
+    # The hook: as long as his arm, a heavy collar where it goes into the socket. A part of its own, which the game
+    # leaves out while he has thrown it
+    base = w + (he - w) * 0.6
+    m.add(torus(base, 0.2, 0.07, rot=(20, 0, 0)), metal((0.42, 0.42, 0.46), 0.4), bones="fore_r", part="hook")
+    m.add(horn(base, (0, -1, 0.3), 1.75, 0.17, curl=(0, 2.1, 1.4), tip=0.03), metal((0.52, 0.52, 0.56), 0.5) + edges(0.35, 0.06) +
+          stains((0.42, 0.06, 0.05), 0.2, 2.5) + stains((0.35, 0.22, 0.12), 0.15, 4, 9), bones="fore_r", part="hook")
     # The cleaver in his left hand
     gp = L(J["hand_end_r"])
     m.add(loft([gp + [0, -0.25, 0], gp + [0, 0.45, 0.05]], [(0.08, 0.08, 2), (0.08, 0.08, 2)], nu=10), wood((0.35, 0.22, 0.12)), bones="hand_l")
-    m.add(loft([gp + [0, 0.45, 0.05], gp + [0, 0.65, 0.6], gp + [0, 0.55, 1.2]], [dict(w=0.06, d=0.48, e=5), dict(w=0.055, d=0.6, e=5), dict(w=0.05, d=0.55, e=4)],
+    m.add(loft([gp + [0, 0.4, 0.05], gp + [0, 0.52, 0.42], gp + [0, 0.45, 0.8]], [dict(w=0.05, d=0.3, e=5), dict(w=0.045, d=0.38, e=5), dict(w=0.04, d=0.34, e=4)],
                facing=(0, 1, 0), nu=12, nv=10, caps="flat"), metal((0.55, 0.55, 0.58), 0.45) + edges(0.5, 0.07) + stains((0.42, 0.06, 0.05), 0.15, 3),
           bones="hand_l")
     m.add(tube([gp + (L(J["elbow_r"]) - gp) * 0.15, gp + (L(J["elbow_r"]) - gp) * 0.38], [0.36, 0.42], nu=12, caps=False),
           leather((0.36, 0.25, 0.15)) + stripes((0.25, 0.17, 0.1), 5, 0.2, axis="v", angle=30), bones="fore_l")
-    m.clips = clips()
+    from rig import layered, clip
+    body, face = clips(), face_clips()
+    m.clips = {name: layered(body[name], face[name]) for name in body}
+    # For the portrait: the face of each clip on a body that stands still, so nothing swings in front of it
+    still = body["idle"]["keys"][0][1]
+    for name in body:
+        stand = clip(body[name]["duration"], (0.0, still))
+        stand["once"] = body[name].get("once", False)
+        m.clips[name + "_face"] = layered(stand, face[name])
     finish(m, "butcher")
-    print(write_glb(m))
+    print(write_glb(m, fps=30))
 
 
 def make_frosty():

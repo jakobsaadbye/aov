@@ -219,7 +219,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     // drawn with a negative height
     portraitRect := Rectangle{x as f32, top as f32, PortraitBox, PortraitBox};
     uiSlot(portraitRect);
-    assets.drawPortrait(hero.kind);
+    assets.drawPortrait(hero.kind, game, hero);
     size := PortraitResolution as f32;
     DrawTexturePro(assets.portrait.texture, {0, 0, size, -size}, {portraitRect.x + 5, portraitRect.y + 5, PortraitBox - 10, PortraitBox - 10}, {0, 0}, 0, White);
     uiIconFrame(portraitRect);

@@ -204,19 +204,49 @@ drawVehicle :: method (assets: *Assets, kind: CarKind, position: Vector3, color:
 }
 
 // Draws a hero turned to look along the angle, in radians around y (0 looks towards +z)
-drawHero :: method (assets: *Assets, kind: HeroKind, position: Vector3, facing: f32, tint: Color) {
+drawHero :: method (assets: *Assets, kind: HeroKind, position: Vector3, facing: f32, tint: Color, hookThrown := false) {
+    hook := assets.heroAnimations[kind].hookMesh;
+    if hookThrown && hook >= 0 {
+        assets.drawHeroWithout(kind, position, facing, tint, hook);
+        return;
+    }
     DrawModelEx(assets.heroes[kind], position, {0, 1, 0}, facing * Rad2Deg, {1, 1, 1}, tint);
 }
 
 PortraitResolution :: 256;
 
 // Draws the hero into the portrait of the HUD, from the front, slowly turning, against a backdrop of its color
-drawPortrait :: method (assets: *Assets, kind: HeroKind) {
+drawPortrait :: method (assets: *Assets, kind: HeroKind, game: *Game = null, hero: *Hero = null) {
     info := kind.definition();
     height := info.height;
+    anims := &assets.heroAnimations[kind];
+
+    // Doing what the hero does, when its model has clips: the face roars when it throws its hook
+    if game == null || hero == null || !assets.poseHero(game, hero, portrait: true) { assets.poseIdle(kind, GetTime() as f32); }
+
     target := Vector3{0, height * 0.66, 0};
+    distance := height * 1.05 + 1.5;
+    turn := math.sinf(GetTime() as f32 * 0.7) * 0.45;
+    at := Vector3{0, 0, 0};
+    if anims.headBone >= 0 {
+        // A hero with a skeleton: its face, close up, wherever the clip puts the head, and turned about the head, not
+        // the feet, so the face stays in the middle
+        head := assets.heroes[kind].bindPose[anims.headBone].translation;
+        turn *= 0.6;
+        if anims.lastClip >= 0 {
+            pose := anims.clips[anims.lastClip].framePoses[anims.lastFrame][anims.headBone];
+            head = pose.translation;
+            // And turned back by as much as the clip turns the head, so the face looks at us
+            facing := Vector3RotateByQuaternion({0, 0, 1}, pose.rotation);
+            turn -= math.atan2f(facing.x, facing.z);
+        }
+        turned := Vector3Transform({head.x, 0, head.z}, MatrixRotateY(turn));
+        at = Vector3{head.x - turned.x, 0, head.z - turned.z};
+        target = head + Vector3{0, 0.05, 0};
+        distance = height * 0.55 + 1.6;
+    }
     camera := Camera3D{
-        position:   target + Vector3{0, height * 0.12, height * 1.05 + 1.5},
+        position:   target + Vector3{0, height * 0.06, distance},
         target:     target,
         up:         {0, 1, 0},
         fovy:       34,
@@ -231,10 +261,10 @@ drawPortrait :: method (assets: *Assets, kind: HeroKind) {
     DrawCircleGradient(PortraitResolution / 2, PortraitResolution * 2 / 5, PortraitResolution * 0.45, ColorAlpha(ColorBrightness(info.color, 0.2), 0.45), Blank);
 
     assets.lighting.setCamera(camera);
+    // Nothing nearer than just in front of the face, e.g an arm that swings past it (drawScene sets them back)
+    if anims.headBone >= 0 { rlSetClipPlanes(math.max(distance - 2.6, 0.5), distance + 40); }
     BeginMode3D(camera);
-    turn := math.sinf(GetTime() as f32 * 0.7) * 0.45;
-    assets.poseIdle(kind, GetTime() as f32);
-    assets.drawHero(kind, {0, 0, 0}, turn, White);
+    assets.drawHero(kind, at, turn, White, hero != null && hero.hook.hasValue());
     EndMode3D();
 }
 

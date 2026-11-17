@@ -956,12 +956,13 @@ class Model:
         self.seed = sum(ord(c) for c in name)
         self.post = (1.0, np.zeros(3))     # A scale and an offset put on the mesh when it is written (fit_height)
 
-    def add(self, surface, paint, tint=False, crease=0.0, share=None, weight=1.0, bones=None):
+    def add(self, surface, paint, tint=False, crease=0.0, share=None, weight=1.0, bones=None, part=None):
         """A surface, or a list of them (a box), with a painter. share: a surface whose texture it uses too, e.g the
         second wheel. weight: how many more texels it gets than its size would give it, e.g 3 for a face"""
         if isinstance(surface, (list, tuple)):
-            return [self.add(s, paint, tint, crease, weight=weight, bones=bones) for s in surface]
+            return [self.add(s, paint, tint, crease, weight=weight, bones=bones, part=part) for s in surface]
         surface.weight = weight
+        surface.part = part             # A part of its own in a GLB (rig.py), that the game can leave out, e.g the hook
         if bones is not None:
             surface.bones = [bones] if isinstance(bones, str) else list(bones)
         elif getattr(self, "default_bones", None):
