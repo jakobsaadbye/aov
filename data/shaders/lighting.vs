@@ -1,5 +1,5 @@
 #version 330
-// The lit shader of the game: the sun, ambient light and a haze in the distance. See lighting.sd
+// The lit shader of the game: the sun, light from the sky and the ground, a rim light and a haze. See lighting.sd
 in vec3 vertexPosition;
 in vec2 vertexTexCoord;
 in vec3 vertexNormal;

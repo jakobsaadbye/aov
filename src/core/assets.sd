@@ -54,10 +54,10 @@ loadAssets :: () -> Assets {
     assets.cube     = GenMeshCube(1, 1, 1);
     assets.lit      = assets.lighting.newMaterial(White);
 
-    // The field: the pavement of a city, slabs of 2.5 meters
+    // The field: the pavement of a city, slabs of 2.5 meters, 8 by 8 in the texture
     pavement := loadTexture("textures/pavement/pavement.png");
     assets.ground = GenMeshPlane(MapHalfWidth * 2, MapHalfLength * 2, 1, 1);
-    tileTexture(&assets.ground, MapHalfWidth * 2 / 10, MapHalfLength * 2 / 10);
+    tileTexture(&assets.ground, MapHalfWidth * 2 / 20, MapHalfLength * 2 / 20);
     assets.groundMaterial = assets.lighting.newMaterial(White);
     assets.groundMaterial.maps[MaterialMapIndex.materialMapAlbedo].texture = pavement;
 

@@ -28,23 +28,38 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | | |
 | --- | --- |
 | `data/textures/` | The pavement (`pavement/pavement.png`), the road (`road/asphalt.png`), the particles and the frames of the UI, the Warcraft cursor |
-| `data/models/` | The vehicles (car, van, truck, bus), the heroes and a segment of the wall, as OBJ with a MTL of their colors |
-| `data/icons/` | A 64x64 icon for each ability, by the name in `heroes.sd` |
+| `data/models/` | The vehicles (car, van, truck, bus), the heroes, the city and a segment of the wall, as OBJ, each with its hand-painted texture (`car.png` for `car.obj`) |
+| `data/icons/` | A 128x128 icon for each ability, item, perk and status, by the name in the code |
 | `data/sounds/` | The sound effects, by group: `hero/`, `car/`, `ability/`, `ui/` |
 | `data/music/` | The music (`theme.ogg`) and the hum of the traffic (`traffic.ogg`), looped |
 | `data/fonts/` | Cinzel (titles) and Fira Sans (text), both under the SIL Open Font License |
-| `data/shaders/` | `lighting.vs` and `lighting.fs`: the sun, ambient light and the haze in the distance |
+| `data/shaders/` | `lighting.vs` and `lighting.fs`: the warm sun, cool light from the sky and warm light from the ground, a rim light and the haze in the distance |
 | `data/window_icon.png` | |
 
-The models were made by `tools/make_models.py` (`city` for the buildings, lamps, trees, benches, hydrants and bins) and
-`tools/make_heroes.py` (the heroes after the first seven), the pavement, the asphalt and the first icons by
-`tools/make_textures.py`, the other icons by `tools/make_icons.py`, and the sounds and the music by
-`tools/make_sounds.py` and `tools/make_hero_sounds.py`
-(run them with python3 to write the files again), but they are plain files that can just as well be edited in Blender or
-painted over. `Grass_02.png` and `Ground_03.png` aren't used any more. The game expects a model to look towards +z and stand on y = 0, in the units
-of the game. Mind the names of the materials: raylib's OBJ loader hangs on some sets of them, so `Model.write()` checks
-them against a copy of its table of names and gives a suffix to one that would make it hang. The body of a vehicle, the part that gets the color of the car, is the material that is pure white
-(`Kd 1 1 1`), and the sizes of the vehicles are those of `config.sd` (`CarWidth`, `CarLength`, ...).
+The models are made by `tools/make_heroes.py` (the heroes) and `tools/make_models.py` (the vehicles, the wall, the city
+and what is on the grass), with `tools/sculpt.py`; the pavement, the asphalt, the particles and the frames of the UI by
+`tools/make_textures.py`; the icons by `tools/make_textures.py` and `tools/make_icons.py`, painted by `tools/iconkit.py`;
+and the sounds and the music by `tools/make_sounds.py` and `tools/make_hero_sounds.py`. Run them with python3 to write
+the files again, e.g `python3 tools/make_heroes.py frosty`. They are plain files that can just as well be edited in
+Blender or painted over. `Grass_02.png` and `Ground_03.png` aren't used any more.
+
+**Sculpt** (`tools/sculpt.py`) makes a model out of smooth surfaces: ellipsoids, rounded boxes, lathes (a profile turned
+round), tubes (a circle swept along a curve), extrusions and planes. Each is a function from (u, v) to a point, so the
+same function gives the mesh and, sampled once for each texel, the texture: a painter colors every texel from where it
+is on the model (its position, its normal and its place on the surface). So cloth folds, stripes, faces, bricks, rust and
+blood run on across the parts without seams, and the light, the dark creases and the darker feet of a hand-painted
+texture are worked out from the shape. `python3 tools/sculpt.py preview data/models/car.obj` draws a model in software,
+from the front and from three quarters. The heroes are made in chunky proportions (big heads, hands and boots, short
+legs) so they read from high above, about 4.2 tall, and then fitted to their height.
+
+**Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape
+as a layer, and paints them like raised objects: a bevel lit from the top left, lighter at the top, a shine, a little
+brush texture and a soft shadow under each, with light behind the symbol and darker corners.
+
+The game expects a model to look towards +z and stand on y = 0, in the units of the game, and puts `<name>.png` on every
+material of `<name>.obj`. The body of a vehicle, the part that gets the color of the car, is the material that is pure
+white (`Kd 1 1 1`, a part made with `tint=True`), painted light grey so the color shows; the sizes of the vehicles are
+those of `config.sd` (`CarWidth`, `CarLength`, ...).
 
 ## Sounds
 
@@ -171,7 +186,7 @@ tough one (the Butcher, 100) survives a car driving over it.
 
 Each hero is a file in `src/core/heroes/`: its definition (`defineKarl()`), and the casts of the abilities that are its
 own. A new hero is a value of `HeroKind`, its file, its line in `defineHero()` (`heroes.sd`), a model
-(`tools/make_heroes.py`), the icons of its abilities (`tools/make_icons.py`) and their sounds
+(`tools/make_heroes.py`, with `tools/sculpt.py`), the icons of its abilities (`tools/make_icons.py`) and their sounds
 (`tools/make_hero_sounds.py`).
 
 * **An ability** is an `Ability` (`abilities.sd`) with the function that casts it, and numbers whose meaning its cast says
