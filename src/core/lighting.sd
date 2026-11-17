@@ -2,8 +2,10 @@ namespace core;
 
 use raylib;
 
-// The sun: a directional light with a bit of shine, plus ambient light, and a haze in the distance. The shader is
-// data/shaders/lighting.vs and lighting.fs
+// The sun: a warm directional light with a bit of shine, cool light from the sky above and warm light bounced off the
+// ground below, a rim of light round what stands up, and a haze in the distance. The shader is data/shaders/lighting.vs
+// and lighting.fs. A model of the data folder with a texture of the same name (models/car.png for models/car.obj) is
+// painted with it
 
 Lighting :: struct {
     shader:       Shader;
@@ -11,9 +13,11 @@ Lighting :: struct {
 }
 
 SunDirection :: Vector3{-0.45, -1, -0.35};
-SunColor     :: Vector3{1.0, 0.95, 0.85};
-AmbientColor :: Vector3{0.42, 0.45, 0.52};
-HazeColor    :: Vector3{0.36, 0.46, 0.38};
+SunColor     :: Vector3{0.86, 0.79, 0.66};
+SkyLight     :: Vector3{0.36, 0.42, 0.56};
+GroundLight  :: Vector3{0.3, 0.25, 0.2};
+RimColor     :: Vector3{1.0, 0.92, 0.75};
+HazeColor    :: Vector3{0.55, 0.68, 0.82};
 
 newLighting :: () -> Lighting {
     shader := LoadShader(dataPath("shaders/lighting.vs"), dataPath("shaders/lighting.fs"));
@@ -25,7 +29,9 @@ newLighting :: () -> Lighting {
     lighting := Lighting{shader: shader, viewPosition: GetShaderLocation(shader, "viewPos")};
     lighting.setVector("sunDirection", SunDirection.normalize());
     lighting.setVector("sunColor", SunColor);
-    lighting.setVector("ambientColor", AmbientColor);
+    lighting.setVector("skyColor", SkyLight);
+    lighting.setVector("groundColor", GroundLight);
+    lighting.setVector("rimColor", RimColor);
     lighting.setVector("hazeColor", HazeColor);
     return lighting;
 }
@@ -48,11 +54,17 @@ newMaterial :: method (lighting: *Lighting, color: Color) -> Material {
     return material;
 }
 
-// A model of the data folder, e.g models/car.obj, with all of its materials lit by the sun
+// A model of the data folder, e.g models/car.obj, with all of its materials lit by the sun, and painted with its
+// texture when it has one (models/car.png)
 loadModel :: method (lighting: *Lighting, file: string) -> Model {
     model := LoadModel(dataPath(file));
+    painted := tprint("%.png", file.slice(0, file.len - 4));
+    hasTexture := file.endsWith(".obj") && FileExists(dataPath(painted));
+    texture: Texture;
+    if hasTexture { texture = loadTexture(painted); }
     for i in 0..model.materialCount {
         model.materials[i].shader = lighting.shader;
+        if hasTexture { model.materials[i].maps[MaterialMapIndex.materialMapAlbedo as int].texture = texture; }
     }
     return model;
 }

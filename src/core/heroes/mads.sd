@@ -39,16 +39,9 @@ castGrind :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> b
 // His skateboard, under his feet, with sparks while he grinds
 drawMads :: (game: *Game, index: int, bob: f32) {
     hero := &game.players[index].hero;
+    if !hero.dash.hasValue() || !game.effects.particles.isOn { return; }
+    // Sparks off the trucks of his board (the board is in his model)
     forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
-    right := Vector3{forward.z, 0, -forward.x};
     deck := hero.position + Vector3{0, bob + 0.3, 0};
-    DrawCylinderEx(deck - forward * 0.9, deck + forward * 0.9, 0.42, 0.42, 10, {40, 40, 44, 255});
-    for k in [-0.6, 0.6] {
-        for side in [-0.3, 0.3] {
-            DrawSphere(deck + forward * k + right * side - Vector3{0, 0.18, 0}, 0.13, {250, 230, 120, 255});
-        }
-    }
-    if hero.dash.hasValue() && game.effects.particles.isOn {
-        game.effects.particles.emit(.sparks, deck - forward * 0.8, 1, push: (forward * -6).xz().at(2));
-    }
+    game.effects.particles.emit(.sparks, deck - forward * 0.8, 1, push: (forward * -6).xz().at(2));
 }

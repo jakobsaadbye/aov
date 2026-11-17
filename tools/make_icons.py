@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Writes the icons of the abilities of the heroes after the first seven, of the items with abilities, and of the perks,
-to data/icons/, in the style of make_textures.py: a gradient, a bold shape with a dark outline, a gold frame.
+Writes the icons of the abilities of the heroes after the first seven, of the items, the perks and the statuses, to
+data/icons/, like make_textures.py: shapes drawn on a background, which tools/iconkit.py paints as raised, lit objects.
 
     python3 tools/make_icons.py                  all of them
     python3 tools/make_icons.py jack hex         only these

@@ -3,11 +3,13 @@
 Writes the textures and the ability icons of the game to data/:
 
     data/textures/grass/grass.png       calm, even grass that the heroes stand out on. It tiles
-    data/textures/road/asphalt.png      grey asphalt with a bit of grit. It tiles
-    data/icons/<ability>.png            a 64x64 icon for each ability, by the name of the icon in heroes.sd
+    data/textures/road/asphalt.png      painted asphalt: stones, mended patches, cracks, oil. It tiles
+    data/textures/pavement/pavement.png painted stone slabs, every 20 units. It tiles
+    data/icons/<ability>.png            a 128x128 icon for each ability, by the name of the icon in heroes.sd
     data/icons/item_<name>.png          and for each item, by the name in items.sd
 
     python3 tools/make_textures.py items      only the icons of the items
+    python3 tools/make_textures.py pavement   only the pavement
     python3 tools/make_textures.py particles  only the textures of the particles (data/textures/particles/)
     python3 tools/make_textures.py ui         only the frames of the UI (data/textures/ui/)
 
@@ -89,55 +91,129 @@ def make_grass():
     save(image, "textures", "grass", "grass.png")
 
 
+def _wrap_stamp(img, x, y, r, value, mode="mul"):
+    """Paints a soft dot that wraps around the edges of a tiling image"""
+    size = img.shape[0]
+    rr = int(math.ceil(r)) + 1
+    ys, xs = np.mgrid[-rr:rr + 1, -rr:rr + 1]
+    w = np.clip(1 - np.sqrt(xs * xs + ys * ys) / max(r, 0.5), 0, 1)
+    yy, xx = (ys + int(y)) % size, (xs + int(x)) % size
+    if mode == "mul":
+        img[yy, xx] *= (1 - w[..., None] * (1 - np.asarray(value)))
+    else:
+        img[yy, xx] = img[yy, xx] * (1 - w[..., None]) + np.asarray(value) * w[..., None]
+
+
+def _cracks(img, count, length, value, width=1.2, seed=3):
+    r = np.random.default_rng(seed)
+    size = img.shape[0]
+    for _ in range(count):
+        x, y = r.uniform(0, size, 2)
+        a = r.uniform(0, 2 * math.pi)
+        for k in range(int(length * r.uniform(0.5, 1.2))):
+            a += r.normal(0, 0.35)
+            x, y = x + math.cos(a) * 1.5, y + math.sin(a) * 1.5
+            _wrap_stamp(img, x, y, width * r.uniform(0.6, 1.1), value)
+            if r.random() < 0.01:
+                a += r.choice([-1, 1]) * 1.2
+
+
 def make_asphalt():
-    size = 256
-    n = fractal(size, 4)
+    """Painted asphalt: dark blue-grey with lighter stones in it, darker repaired patches, cracks, oil, and the wear of
+    the wheels running along the road (v). It tiles"""
+    size = 512
+    n = fractal(size, 5)
+    big = tiling_noise(size, 4)
     grit = rng.random((size, size))
-    value = 80 + (n - 0.5) * 14 + (grit - 0.5) * 22
-    rgb = np.clip(np.stack([value, value + 1, value + 5], axis=2), 0, 255).astype(np.uint8)
+    stones = (grit > 0.93) * rng.uniform(0.1, 0.25, (size, size))
+    base = np.array([0.33, 0.34, 0.37])
+    value = 1 + (n - 0.5) * 0.35 + (big - 0.5) * 0.25 + (grit - 0.5) * 0.12 + stones
+    img = base[None, None, :] * value[..., None]
+    img[..., 2] += (big - 0.5)[..., ] * 0.03
+    # The wear of the wheels: smoother, a little lighter, in long streaks along the road
+    streak = tiling_noise(size, 16)
+    y, x = np.mgrid[0:size, 0:size]
+    along = tiling_noise(size, 32)[:, :][np.zeros(size, int)[:, None] + 0, x]
+    img *= (1 + (along - 0.5) * 0.12)[..., None]
+    # Patches where it was mended: darker, with an edge
+    r = np.random.default_rng(11)
+    for _ in range(4):
+        px, py = r.integers(0, size, 2)
+        w, h = r.integers(40, 120, 2)
+        yy, xx = (np.arange(py, py + h) % size), (np.arange(px, px + w) % size)
+        img[np.ix_(yy, xx)] *= np.array([0.9, 0.9, 0.92])
+        for edge in (yy[0], yy[-1]):
+            img[edge, xx] *= 0.85
+        for edge in (xx[0], xx[-1]):
+            img[yy, edge] *= 0.85
+    _cracks(img, 18, 70, (0.55, 0.55, 0.57), 1.1, 5)
+    for _ in range(10):
+        px, py = r.uniform(0, size, 2)
+        _wrap_stamp(img, px, py, r.uniform(6, 16), (0.75, 0.73, 0.78))
+    rgb = np.clip(img * 255, 0, 255).astype(np.uint8)
     save(Image.fromarray(rgb, "RGB"), "textures", "road", "asphalt.png")
 
 
 def make_pavement():
-    """Square slabs of pale concrete, each a little different, with dark joints between them. It tiles: 4 by 4 slabs"""
-    size = 256
-    slabs = 4
+    """Painted paving: 8 by 8 slabs of stone in warm and cool tones, each lit like it has a bevel, with darker joints,
+    moss in some of them, cracks, stains and pebbles. It tiles, every 20 units"""
+    size = 1024
+    slabs = 8
     cell = size // slabs
-    n = fractal(size, 4)
-    grit = rng.random((size, size))
     y, x = np.mgrid[0:size, 0:size]
-    shade = rng.uniform(-10, 10, (slabs, slabs))[(y // cell) % slabs, (x // cell) % slabs]
-    value = 168 + shade + (n - 0.5) * 18 + (grit - 0.5) * 16
-    joint = (x % cell < 3) | (y % cell < 3)
-    value = np.where(joint, value * 0.62, value)
-    rgb = np.clip(np.stack([value, value - 2, value - 6], axis=2), 0, 255).astype(np.uint8)
+    sx, sy = (x // cell) % slabs, (y // cell) % slabs
+    r = np.random.default_rng(21)
+    tones = np.array([[0.68, 0.64, 0.57], [0.64, 0.63, 0.6], [0.7, 0.65, 0.56], [0.62, 0.62, 0.61], [0.67, 0.62, 0.55]])
+    pick = r.integers(0, len(tones), (slabs, slabs))
+    shade = r.uniform(0.95, 1.04, (slabs, slabs))
+    color = tones[pick[sy, sx]] * shade[sy, sx][..., None]
+    n = fractal(size, 6)
+    grit = rng.random((size, size))
+    img = color * (1 + (n - 0.5) * 0.22 + (grit - 0.5) * 0.08)[..., None]
+    # The bevel of each slab: lit on its upper left edge, shaded on its lower right
+    fx, fy = (x % cell) / cell, (y % cell) / cell
+    bevel = 0.05
+    light = smoothstep_np(bevel, 0, fx) * 0.12 + smoothstep_np(bevel, 0, fy) * 0.12
+    dark = smoothstep_np(1 - bevel, 1, fx) * 0.18 + smoothstep_np(1 - bevel, 1, fy) * 0.18
+    img *= (1 + light - dark)[..., None]
+    joint = (fx < 0.016) | (fy < 0.016) | (fx > 0.984) | (fy > 0.984)
+    moss = (tiling_noise(size, 8) > 0.72) & joint
+    img[joint] = np.array([0.36, 0.34, 0.31]) * (0.8 + 0.4 * grit[joint])[..., None]
+    img[moss] = np.array([0.3, 0.36, 0.2]) * (0.8 + 0.4 * grit[moss])[..., None]
+    # Stains, cracks and pebbles
+    for _ in range(14):
+        px, py = r.uniform(0, size, 2)
+        _wrap_stamp(img, px, py, r.uniform(15, 45), (0.88, 0.86, 0.84))
+    _cracks(img, 10, 60, (0.55, 0.53, 0.5), 1.2, 8)
+    for _ in range(160):
+        px, py = r.uniform(0, size, 2)
+        _wrap_stamp(img, px, py, r.uniform(1.5, 3.0), r.uniform(0.55, 0.9, 3), mode="paint")
+    rgb = np.clip(img * 255, 0, 255).astype(np.uint8)
     save(Image.fromarray(rgb, "RGB"), "textures", "pavement", "pavement.png")
 
 
+def smoothstep_np(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
 #
-# Icons: a symbol on a colored, shaded background with a frame, drawn at 4x and scaled down
+# Icons: shapes on a background, painted by tools/iconkit.py, drawn at 2x and scaled down
 #
 
-S = 256       # The size it is drawn at
-OUT = 64
+from iconkit import S, OUT, canvas as _canvas, paint as _paint
 
 
 def icon_base(top, bottom):
-    image = Image.new("RGB", (S, S))
-    draw = ImageDraw.Draw(image)
-    for y in range(S):
-        t = y / (S - 1)
-        color = tuple(int(top[i] * (1 - t) + bottom[i] * t) for i in range(3))
-        draw.line([(0, y), (S, y)], fill=color)
+    """A canvas for an icon, its background going from the top color to the bottom one. The shapes drawn on it are
+    painted by tools/iconkit.py when it is finished"""
+    image, draw = _canvas(top, bottom)
+    image.canvas = draw
     return image, draw
 
 
 def finish(image, name):
-    draw = ImageDraw.Draw(image)
-    draw.rectangle([0, 0, S - 1, S - 1], outline=(20, 18, 16), width=10)
-    draw.rectangle([10, 10, S - 11, S - 11], outline=(160, 140, 100), width=4)
-    image = image.resize((OUT, OUT), Image.LANCZOS)
-    save(image, "icons", name + ".png")
+    save(_paint(image.canvas), "icons", name + ".png")
 
 
 def poly(draw, points, fill, outline=(20, 20, 20), width=6):
@@ -216,18 +292,13 @@ def icon_phase_walk():
         for col in range(-1, 5):
             x = offset + col * 60
             draw.rectangle([x, y, x + 56, y + 36], fill=(150, 90, 60), outline=(70, 40, 30), width=4)
-    overlay = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    ghost(ImageDraw.Draw(overlay), (235, 240, 255, 200))
-    image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+    ghost(draw, (225, 232, 255))
     finish(image, "phase_walk")
 
 
 def icon_fade():
     image, draw = icon_base((60, 60, 90), (15, 15, 30))
-    overlay = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    ghost(ImageDraw.Draw(overlay), (200, 210, 255, 110), outline=(200, 210, 255))
-    overlay = overlay.filter(ImageFilter.GaussianBlur(3))
-    image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+    ghost(draw, (170, 180, 230), outline=(220, 228, 255))
     finish(image, "fade")
 
 
@@ -399,7 +470,7 @@ def item_icons():
 # Particles (core/particles.sd): white, so the particles color them, with the shape in the alpha
 #
 
-P = 64
+P = 128
 
 
 def save_rgba(alpha, name):
@@ -418,19 +489,29 @@ def particle_grid():
 def make_particles():
     x, y = particle_grid()
     r = np.sqrt(x * x + y * y)
-    save_rgba(np.clip(1 - r, 0, 1) ** 1.6, "soft")                                    # A soft dot
-    save_rgba(np.clip(1 - np.abs(x) * 3.5, 0, 1) * np.clip(1 - np.abs(y), 0, 1) ** 0.6, "spark")   # Long and thin
-    # Smoke: a soft blob with lumps in it
+    # A soft dot with a hot middle
+    save_rgba(np.clip(1 - r, 0, 1) ** 2.2 * 0.75 + np.clip(1 - r * 3, 0, 1) ** 1.5 * 0.4, "soft")
+    # A spark: long and thin, in a glow
+    core = np.clip(1 - np.abs(x) * 5, 0, 1) * np.clip(1 - np.abs(y), 0, 1) ** 0.6
+    glow = np.clip(1 - np.sqrt((x * 2.2) ** 2 + (y * 0.9) ** 2), 0, 1) ** 2 * 0.35
+    save_rgba(np.maximum(core, glow), "spark")
+    # Smoke: a puff of round lumps, soft inside and with an edge you can see, like painted smoke
     noise = fractal(P, 4)
-    save_rgba(np.clip(1 - r * 1.1, 0, 1) ** 1.2 * (0.55 + 0.45 * noise), "smoke")
+    puff = np.zeros_like(r)
+    for (cx, cy, cr) in ((0, 0.05, 0.55), (-0.38, -0.12, 0.38), (0.36, -0.15, 0.4), (-0.15, 0.4, 0.36), (0.25, 0.35, 0.34), (0.05, -0.42, 0.32)):
+        d = np.sqrt((x - cx) ** 2 + (y - cy) ** 2) / cr
+        puff = np.maximum(puff, np.clip(1 - d, 0, 1) ** 0.6)
+    save_rgba(np.clip(puff * 1.4, 0, 1) * (0.6 + 0.4 * noise) * np.clip(1.1 - r, 0, 1), "smoke")
     # A drop, round at the bottom and pointed at the top
     shape = np.sqrt(x * x / np.clip(0.35 + 0.65 * (y + 1) / 2, 0.05, 1) ** 2 + (y * 0.9) ** 2)
     save_rgba(np.clip((1 - shape) * 4, 0, 1), "drop")
     # A four pointed star, for sparkles
     star = np.clip(1 - np.minimum(np.abs(x), np.abs(y)) * 9, 0, 1) * np.clip(1 - r, 0, 1) ** 1.5
-    save_rgba(np.maximum(star, np.clip(1 - r * 3, 0, 1)), "star")
-    # A ring
-    save_rgba(np.clip(1 - np.abs(r - 0.75) * 8, 0, 1), "ring")
+    diag = np.clip(1 - np.minimum(np.abs(x - y), np.abs(x + y)) * 9, 0, 1) * np.clip(1 - r * 1.6, 0, 1) ** 1.5 * 0.6
+    halo = np.clip(1 - r * 1.4, 0, 1) ** 3 * 0.35
+    save_rgba(np.maximum(np.maximum(star, diag), np.maximum(np.clip(1 - r * 3, 0, 1), halo)), "star")
+    # A ring, with a soft glow round it
+    save_rgba(np.maximum(np.clip(1 - np.abs(r - 0.75) * 9, 0, 1), np.clip(1 - np.abs(r - 0.72) * 3.5, 0, 1) ** 2 * 0.4), "ring")
     # A stain: a blob with an uneven edge and drops around it
     angle = np.arctan2(y, x)
     # A splash: a round puddle with a gently uneven edge, darker where it is thick, and a few drops around it
