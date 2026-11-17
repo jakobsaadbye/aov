@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from sculpt import (Model, Paint, blob, bands, cloth, color, cylinder, edges, ellipsoid, fbm, fur, ghostly, glass,
+from sculpt import (Model, Paint, blob, horn, loft, bands, cloth, color, cylinder, edges, ellipsoid, fbm, fur, ghostly, glass,
                     grime, hair, knit, lathe, leather, metal, painted, patch, plane, rect, rgb, scales, skin,
                     smoothstep, snow, sphere, spots, stains, stitches, stripes, flowers, torus, tube, wood, _ellipse,
                     _over, _varied)
@@ -576,35 +576,70 @@ def make_ghosty():
 
 
 def make_butcher():
-    """A huge, hunched butcher: a striped shirt with the sleeves rolled up over enormous arms, a heavy apron with
-    blood and a pocket, a bald scarred head, a broken nose, a scowl, a cleaver and a string of sausages"""
-    m = hero_model("butcher")
-    bd = replace(BRUTE, belly=0.9, hunch=0.4)
-    shirt = cloth((0.78, 0.84, 0.92)) + stripes((0.25, 0.38, 0.65), 12, 0.35, axis="u") + stains((0.55, 0.06, 0.05), 0.08, 3)
-    arm = skin(SKIN_RUDDY) + bands((0.78, 0.84, 0.92), [(0.85, 1.0)])
-    b = person(m, bd, shirt, cloth((0.24, 0.22, 0.26), folds=4), arms=arm, skin_c=SKIN_RUDDY, arm_pose=("ready", "down"),
-               head_paint=skin(SKIN_RUDDY) + eyes(iris=(0.3, 0.2, 0.12), lid=0.45, size=0.065, socket=0.5) + patch((0.7, 0.4, 0.35), 0.62, 0.72, 0.05, 0.18),
-               jaw_paint=skin(SKIN_RUDDY) + mouth("grim", width=0.17) + stubble((0.22, 0.15, 0.12), 0.7),
-               brows_kw=dict(c=(0.22, 0.14, 0.1), tilt=0.9, thick=1.0), nose="crooked", ears=True)
-    apron = cloth((0.94, 0.92, 0.86), folds=3) + stains((0.6, 0.05, 0.05), 0.24, 2.0) + stitches((0.6, 0.58, 0.55), [0.05, 0.95]) + \
-        rect((0.86, 0.84, 0.78), 0.4, 0.6, 0.45, 0.62)
-    y0, y1 = b.hip_y - 0.6, b.chest_y + 0.2
-    m.add(lathe([(y0, bd.hip * 1.3), (b.waist_y, bd.waist * 1.25, 0.35 + b.lean(b.waist_y)), (b.hip_y + bd.torso * 0.5, bd.waist * 1.32, 0.42 + b.lean(b.hip_y + bd.torso * 0.5)),
-                 (y1, bd.chest * 1.04, 0.15 + b.lean(y1))], sz=bd.depth + 0.12, urange=(0.3, 0.7), nu=14), apron, crease=0.1)
+    """The Butcher, a swamp brute of a butcher-monger: as wide as he is tall, olive skin, a wide frog mouth with a
+    snaggletooth, drooping ears, a bloodied hide apron round his gut, a shell on one shoulder, a big fish on his belt,
+    an iron meat hook for a right hand and a cleaver in his left. Simple, bold shapes, painted broadly. He is rigged,
+    with clips for standing, walking, throwing his hook and heaving a car, written as models/butcher.glb too"""
+    from anatomy import joints, make_rig, clips, skin_paint, brute_body, wrap_apron, L
+    from rig import write_glb
+    m = Model("butcher", size=1024, light=0.55, ao=1.5, detail=0.1)
+    J = joints(hips=(0, 1.15, 0), spine=(0, 1.75, 0.15), chest=(0, 2.4, 0.25), neck=(0, 2.95, 0.55), head=(0, 3.2, 0.8),
+               shoulder_r=(1.45, 2.75, 0.3), elbow_r=(1.95, 1.8, 0.45), wrist_r=(1.95, 0.95, 0.75), hand_end_r=(1.95, 0.55, 0.95),
+               hip_r=(0.65, 1.1, 0.0), knee_r=(0.85, 0.65, 0.2), ankle_r=(0.9, 0.25, 0.05), toe_r=(0.95, 0.08, 0.7))
+    m.rig = make_rig(J)
+    sk = (0.42, 0.46, 0.3)
+    skin_p = skin_paint(sk, warts=0.4)
+    trousers = (0.3, 0.25, 0.2)
+    brute_body(m, J, skin_p, cloth(trousers, folds=4), skin_p, gut=1.6, shoulders=1.1, forearm=1.15, legs_thick=1.15,
+               chest_p=skin_p + bands(trousers, [(0.0, 0.2)]), right_hand=False)
+    # The head: a wide, low skull, a frog's jaw, a heavy brow, a flat nose, drooping ears
+    hd = J["head"]
+    m.add(blob(hd + [0, 0.05, -0.05], (0.55, 0.38, 0.5), (0.7, 0.75)),
+          skin_paint(sk, warts=0.6) + eyes(v=0.6, spacing=0.21, size=0.075, iris=(0.95, 0.72, 0.1), lid=0.42, tilt=0.15, socket=0.45,
+                                           white=(0.88, 0.82, 0.6)), bones="head", weight=3)
+    m.add(blob(hd + [0, -0.2, 0.12], (0.62, 0.24, 0.5), (0.5, 0.6)), skin_paint(sk) + mouth("frown", v=0.55, width=0.36, lips=(0.35, 0.22, 0.2)),
+          bones="head", weight=3)
+    m.add(blob(hd + [0, 0.22, 0.33], (0.48, 0.09, 0.15), (0.5, 0.7)), skin_paint(sk) + brows((0.18, 0.2, 0.12), 0.8, 0.2, spacing=0.21, length=0.12, v=0.62),
+          bones="head", weight=2)
+    m.add(blob(hd + [0, 0.02, 0.5], (0.16, 0.1, 0.1), (0.7, 0.7)), skin_paint(sk) + patch((0.15, 0.15, 0.08), 0.42, 0.3, 0.03, 0.02) +
+          patch((0.15, 0.15, 0.08), 0.58, 0.3, 0.03, 0.02), bones="head")
+    m.add(horn(hd + [0.2, -0.13, 0.6], (0.1, 1, 0.3), 0.2, 0.055, curl=(0, 0, 0.08)), color((0.86, 0.8, 0.6)), bones="head")
     for side in (1, -1):
-        m.add(tube([(side * bd.chest * 0.38, y1 - 0.05, b.lean(y1) + 0.62), (side * bd.chest * 0.32, b.neck_y, b.lean(b.neck_y) + 0.2),
-                    (0, b.neck_y + 0.1, b.lean(b.neck_y) - 0.3)], 0.05, flat=0.4), color((0.85, 0.83, 0.78)))
-    belt(m, b, leather((0.25, 0.15, 0.1)), y=b.waist_y - 0.1)
-    # The cleaver
-    hx, hy, hz = b.right
-    m.add(tube([(hx, hy - 0.08, hz - 0.1), (hx, hy - 0.08, hz + 0.6)], 0.09), wood((0.38, 0.22, 0.12)) + bands((0.6, 0.6, 0.62), [(0.85, 1.0)]))
-    m.add(blob((hx, hy + 0.2, hz + 1.25), (0.06, 0.5, 0.65), (0.15, 0.15)), metal((0.78, 0.8, 0.84), 0.5) + edges(0.35, 0.06) + stains((0.5, 0.05, 0.05), 0.2, 4))
-    # A meat hook hanging from his belt
-    hx2 = -bd.waist * 0.8
-    m.add(tube([(hx2, b.waist_y - 0.1, 0.55), (hx2, b.waist_y - 0.5, 0.62)], 0.03), metal((0.6, 0.6, 0.62)))
-    m.add(tube([(hx2, b.waist_y - 0.5, 0.62), (hx2, b.waist_y - 0.85, 0.66), (hx2 + 0.2, b.waist_y - 0.95, 0.7), (hx2 + 0.28, b.waist_y - 0.75, 0.7)],
-               [0.05, 0.05, 0.04, 0.015]), metal((0.7, 0.7, 0.74)) + stains((0.5, 0.05, 0.05), 0.2, 6))
+        m.add(loft([hd + [side * 0.45, 0.12, -0.05], hd + [side * 0.85, 0.05, -0.05], hd + [side * 1.2, -0.25, -0.05]],
+                   [(0.2, 0.07, 2.4), (0.22, 0.07, 2.4), (0.06, 0.04, 2)], facing=(0, 1, 0), nu=10, nv=10), skin_paint(sk), bones="head")
+    # The apron: hide, light and stained, wrapped round the gut, on a strap round his neck, and a thick belt
+    apron = leather((0.6, 0.48, 0.34)) + stains((0.45, 0.07, 0.05), 0.32, 1.0) + stains((0.32, 0.26, 0.16), 0.2, 2.2, 21) + edges(0.35, 0.12, dark=True)
+    wrap_apron(m, J, apron, gut=1.6, low=0.8, wide=1.15)
+    c = J["chest"]
+    m.add(tube([c + [0.55, 0.4, 0.95], J["neck"] + [0, 0.15, 0.25], c + [-0.55, 0.4, 0.95]], 0.07, flat=0.45), leather((0.35, 0.24, 0.15)), bones="chest")
+    m.add(torus(J["hips"] + [0, 0.25, 0.35], 1.25, 0.11, sz=0.85), leather((0.3, 0.2, 0.13)), bones="hips")
+    m.add(blob(J["hips"] + [0, 0.25, 1.45], (0.24, 0.2, 0.07), (0.3, 0.3)), metal((0.55, 0.5, 0.42), 0.4) + edges(0.4, 0.04), bones="hips")
+    # A big fish hanging from his belt
+    top = np.array([-1.15, J["hips"][1] + 0.25, 0.65])
+    m.add(loft([top, top + [0, -0.35, 0.05], top + [0, -0.95, 0.06], top + [0, -1.2, 0.02]], [(0.06, 0.05, 2), (0.13, 0.28, 2), (0.1, 0.22, 2), (0.03, 0.2, 1.2)],
+               facing=(0, 0, 1), nu=12, nv=12), color((0.55, 0.64, 0.68)) + bands((0.38, 0.45, 0.5), [(0.6, 1.0)], axis="u") +
+          patch((0.08, 0.08, 0.08), 0.5, 0.88, 0.025, 0.025), bones="hips")
+    # A great shell on his left shoulder
+    p = L(J["shoulder_r"]) + [-0.05, 0.32, 0]
+    m.add(ellipsoid(p, (0.7, 0.45, 0.7), vrange=(0.4, 1.0)), color((0.74, 0.66, 0.52)) + stripes((0.52, 0.42, 0.32), 6, 0.3, axis="u") + edges(0.25, 0.1, dark=True),
+          bones="chest")
+    # The meat hook for a right hand, on a wooden socket bound with iron
+    w, he = J["wrist_r"], J["hand_end_r"]
+    m.add(loft([w + [0, 0.28, -0.05], w, w + (he - w) * 0.6], [(0.36, 0.36, 2.2), (0.32, 0.32, 2.2), (0.25, 0.25, 2.2)], nu=12, caps="flat"),
+          wood((0.42, 0.28, 0.15)) + bands((0.42, 0.42, 0.45), [(0.1, 0.28), (0.72, 0.9)]), bones="fore_r")
+    m.add(horn(w + (he - w) * 0.6, (0, -1, 0.25), 0.95, 0.1, curl=(0, 1.3, 0.9), tip=0.02), metal((0.5, 0.5, 0.54), 0.45) + edges(0.3, 0.05) +
+          stains((0.42, 0.06, 0.05), 0.15, 3), bones="fore_r")
+    # The cleaver in his left hand
+    gp = L(J["hand_end_r"])
+    m.add(loft([gp + [0, -0.25, 0], gp + [0, 0.45, 0.05]], [(0.08, 0.08, 2), (0.08, 0.08, 2)], nu=10), wood((0.35, 0.22, 0.12)), bones="hand_l")
+    m.add(loft([gp + [0, 0.45, 0.05], gp + [0, 0.65, 0.6], gp + [0, 0.55, 1.2]], [dict(w=0.06, d=0.48, e=5), dict(w=0.055, d=0.6, e=5), dict(w=0.05, d=0.55, e=4)],
+               facing=(0, 1, 0), nu=12, nv=10, caps="flat"), metal((0.55, 0.55, 0.58), 0.45) + edges(0.5, 0.07) + stains((0.42, 0.06, 0.05), 0.15, 3),
+          bones="hand_l")
+    m.add(tube([gp + (L(J["elbow_r"]) - gp) * 0.15, gp + (L(J["elbow_r"]) - gp) * 0.38], [0.36, 0.42], nu=12, caps=False),
+          leather((0.36, 0.25, 0.15)) + stripes((0.25, 0.17, 0.1), 5, 0.2, axis="v", angle=30), bones="fore_l")
+    m.clips = clips()
     finish(m, "butcher")
+    print(write_glb(m))
 
 
 def make_frosty():

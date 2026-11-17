@@ -55,6 +55,15 @@ cranium, jaw and brow ridge for a face that has a serious look of its own, and i
 the Butcher, Ivar and Bjørn tower over Gudrun and the twins. Where parts are close to each other, under a brim or
 where an arm meets the body, the texture is darker (ambient occlusion, worked out from points all over the model).
 
+**Rig** (`tools/rig.py`) gives a model bones: a skeleton, its parts bound to bones (smoothly between two where a limb
+bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its texture, skin and clips.
+`tools/anatomy.py` has the bodies the heroes are built from (a brute's, from where its joints are) with the rig that
+fits them and the clips they play: idle, walk, and one for each ability, named by its icon. The game plays a hero's
+GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
+hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
+else idle. Only the Butcher has one so far; the others are still OBJ. `tools/make_butcher_concepts.py` draws the
+directions he was picked from, as sketch sheets.
+
 **Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape
 as a layer, and paints them like raised objects: a bevel lit from the top left, lighter at the top, a shine, a little
 brush texture and a soft shadow under each, with light behind the symbol and darker corners.
@@ -162,7 +171,7 @@ hero is run over, the player gets another at random.
 | --- | --- |
 | Allan, the Runner | **Sprint** (Q): twice as fast for a moment. **Adrenaline** (passive): a car that misses him by a hair makes his abilities ready again |
 | Ghosty, the Restless | **Possess** (Q): slips into a car for 4 seconds; a click beside it steers it a lane over, and it still hits whoever is in its way. He comes out on the side he is going. **Phase walk** (passive): floats through the walls |
-| The Butcher | **Meat hook** (Q): bites into the first car it meets, up to 34 away, and he is pulled to the side of the car as it drives on. He can walk while it flies. **Heave** (W): throws a car next to him two lanes over |
+| The Butcher, a swamp brute of a butcher-monger | **Meat hook** (Q): bites into the first car it meets, up to 34 away, and he is pulled to the side of the car as it drives on. He can walk while it flies. **Heave** (W): throws a car next to him two lanes over |
 | Frosty, the Snowman | **Cold snap** (Q): freezes the cars around him. **Igloo** (W): safe inside an igloo for 3 seconds; the cars that run into it are stuck until it melts. **Chill aura** (passive): cars near him drive 40% slower |
 | Bjørn, the Shieldbearer | **Leap** (Q): high over cars and walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away. **Iron hide** (passive): half the damage |
 | Hilda, the Crossing Guard | **Stop!** (Q): the five lanes around her stop for 3 seconds. **Wave through** (W): the lanes at the cursor drive two and a half times as fast for a moment. **Lollipop lady** (passive): her sign stays up as long as she stands by it, up to 8 seconds |

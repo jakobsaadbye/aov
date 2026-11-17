@@ -24,6 +24,7 @@ Assets :: struct {
     particleTextures: [ParticleTexture.count]Texture;
     vehicleBody: [CarKind.count]int;   // The material of each vehicle that gets the color of the car
     heroes:   [HeroKind.count]Model;
+    heroAnimations: [HeroKind.count]HeroAnimations;    // The clips of the heroes whose models have skeletons (hero_animation.sd)
     portrait: RenderTexture;          // The hero of the HUD, drawn in 3D
     wall:     Model;                   // A segment of the wall, repeated along it
 
@@ -87,7 +88,10 @@ loadAssets :: () -> Assets {
         assets.vehicleBody[kind] = findBodyMaterial(assets.vehicles[kind]);
     }
     for kind in HeroKind.values {
-        assets.heroes[kind] = assets.lighting.loadModel(tprint("models/%.obj", HeroKind.names[kind]));
+        // A model with a skeleton and clips when there is one, else the still one
+        glb := tprint("models/%.glb", HeroKind.names[kind]);
+        if FileExists(dataPath(glb)) { assets.loadAnimatedHero(kind, glb); }
+        else                         { assets.heroes[kind] = assets.lighting.loadModel(tprint("models/%.obj", HeroKind.names[kind])); }
 
         for ability in kind.definition().abilities {
             if assets.icons.has(ability.icon) { continue; }
@@ -139,6 +143,7 @@ unload :: method (assets: *Assets) {
 
     for model in assets.vehicles { UnloadModel(model); }
     for model in assets.heroes   { UnloadModel(model); }
+    assets.unloadHeroAnimations();
     UnloadModel(assets.wall);
     UnloadRenderTexture(assets.portrait);
     for model in assets.sceneryModels { UnloadModel(model); }
@@ -228,6 +233,7 @@ drawPortrait :: method (assets: *Assets, kind: HeroKind) {
     assets.lighting.setCamera(camera);
     BeginMode3D(camera);
     turn := math.sinf(GetTime() as f32 * 0.7) * 0.45;
+    assets.poseIdle(kind, GetTime() as f32);
     assets.drawHero(kind, {0, 0, 0}, turn, White);
     EndMode3D();
 }

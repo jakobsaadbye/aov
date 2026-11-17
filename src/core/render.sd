@@ -214,9 +214,12 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     info := hero.info();
     isYou := index == game.watched;
 
+    // In the pose of its clip, when its model has them: then the walk does its own bobbing
+    animated := assets.poseHero(game, hero);
+
     // Bobbing while walking, jumping when across
     bob: f32 = 0;
-    if hero.isMoving || hero.hook.hasValue() { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
+    if (hero.isMoving || hero.hook.hasValue()) && !animated { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
     if player.phase.kind == .crossed         { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
     if hero.walksThroughWalls()             { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
     if hero.leap.hasValue()                 { bob = math.sinf(hero.leap.value().flight * Pi) * hero.leap.value().height; }

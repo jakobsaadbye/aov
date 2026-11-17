@@ -54,12 +54,12 @@ newMaterial :: method (lighting: *Lighting, color: Color) -> Material {
     return material;
 }
 
-// A model of the data folder, e.g models/car.obj, with all of its materials lit by the sun, and painted with its
-// texture when it has one (models/car.png)
+// A model of the data folder, e.g models/car.obj or models/butcher.glb, with all of its materials lit by the sun, and
+// painted with its texture when it has one (models/car.png)
 loadModel :: method (lighting: *Lighting, file: string) -> Model {
     model := LoadModel(dataPath(file));
     painted := tprint("%.png", file.slice(0, file.len - 4));
-    hasTexture := file.endsWith(".obj") && FileExists(dataPath(painted));
+    hasTexture := (file.endsWith(".obj") || file.endsWith(".glb")) && FileExists(dataPath(painted));
     texture: Texture;
     if hasTexture { texture = loadTexture(painted); }
     for i in 0..model.materialCount {

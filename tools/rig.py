@@ -115,16 +115,21 @@ def quaternion(M):
 
 
 def sample(clip, t):
-    """The pose of a clip at a time: its keys blended, the clip looping"""
+    """The pose of a clip at a time: its keys blended, the clip looping (or held at its last key, if it is played once)"""
     keys = clip["keys"]
     duration = clip["duration"]
-    t = t % duration
-    for (t0, p0), (t1, p1) in zip(keys, keys[1:] + [(duration + keys[0][0], keys[0][1])]):
+    if clip.get("once"):
+        t = min(max(t, 0.0), duration)
+        loop = []
+    else:
+        t = t % duration
+        loop = [(duration + keys[0][0], keys[0][1])]
+    for (t0, p0), (t1, p1) in zip(keys, keys[1:] + loop):
         if t0 <= t <= t1:
             k = (t - t0) / max(t1 - t0, 1e-9)
             k = k * k * (3 - 2 * k)
             return blend(p0, p1, k)
-    return keys[0][1]
+    return keys[-1][1] if clip.get("once") else keys[0][1]
 
 
 def blend(a, b, k):

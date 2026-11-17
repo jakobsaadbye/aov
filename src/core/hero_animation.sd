@@ -1,0 +1,105 @@
+namespace core;
+
+// The clips of a hero whose model has a skeleton: models/<name>.glb, made by tools/make_heroes.py with tools/rig.py.
+// It stands (idle), walks (walk), and has a clip for an ability, named by the ability's icon (e.g hook, heave), that is
+// played when the ability is cast. Which clip plays, and where in it, is worked out from the hero each frame (its
+// cooldowns, whether it walks, how far), so nothing of it is kept in the game, and replays look the same
+
+import math;
+use raylib;
+
+HeroAnimations :: struct {
+    clips: *ModelAnimation;
+    count: int;
+    idle:  int = -1;
+    walk:  int = -1;
+}
+
+AnimationFrameSeconds :: 0.017;     // raylib samples the clips of a GLB every 17 ms
+WalkCycleDistance     :: 7.0;       // How far a hero walks in one cycle of its walk clip
+
+// The name of a clip, as it is in the GLB
+clipName :: (anim: *ModelAnimation) -> string {
+    n := 0;
+    while n < 32 && anim.name[n] != 0 { n += 1; }
+    s: string;
+    s.data = &anim.name[0];
+    s.len = n;
+    return s;
+}
+
+clipIndex :: method (anims: *HeroAnimations, name: string) -> int {
+    for i in 0..anims.count {
+        if clipName(&anims.clips[i]) == name { return i as int; }
+    }
+    return -1;
+}
+
+clipSeconds :: method (anims: *HeroAnimations, clip: int) -> f32 {
+    return anims.clips[clip].frameCount as f32 * AnimationFrameSeconds;
+}
+
+// The model of a GLB with its clips, for a hero
+loadAnimatedHero :: method (assets: *Assets, kind: HeroKind, file: string) {
+    assets.heroes[kind] = assets.lighting.loadModel(file);
+    anims := &assets.heroAnimations[kind];
+    anims.clips = LoadModelAnimations(dataPath(file), &anims.count);
+    anims.idle = anims.clipIndex("idle");
+    anims.walk = anims.clipIndex("walk");
+}
+
+unloadHeroAnimations :: method (assets: *Assets) {
+    for *anims in assets.heroAnimations {
+        if anims.count > 0 { UnloadModelAnimations(anims.clips, anims.count); }
+    }
+}
+
+// Puts the model of a hero in the pose it is in now: the clip of an ability it has just cast, else walking, else
+// standing. False when its model has no clips, and is drawn as it is
+poseHero :: method (assets: *Assets, game: *Game, hero: *Hero) -> bool {
+    anims := &assets.heroAnimations[hero.kind];
+    if anims.count == 0 { return false; }
+    clip := -1;
+    time: f32 = 0;
+    loops := true;
+    for ability, slot in hero.abilities() {
+        if ability.isPassive() || hero.cooldowns[slot] <= 0 { continue; }
+        k := anims.clipIndex(ability.icon);
+        if k < 0 { continue; }
+        elapsed := ability.cooldown * hero.stats.cooldown - hero.cooldowns[slot];
+        if elapsed >= 0 && elapsed < anims.clipSeconds(k) {
+            clip = k;
+            time = elapsed;
+            loops = false;
+            break;
+        }
+    }
+    if clip < 0 && hero.isMoving && anims.walk >= 0 {
+        clip = anims.walk;
+        time = hero.walkCycle / 1.6 / WalkCycleDistance * anims.clipSeconds(clip);
+    }
+    if clip < 0 {
+        clip = anims.idle;
+        time = game.time;
+    }
+    if clip < 0 { return false; }
+    assets.playClip(hero.kind, clip, time, loops);
+    return true;
+}
+
+// The pose of a clip at a time, on the model of a hero. A clip that doesn't loop holds its last frame
+playClip :: method (assets: *Assets, kind: HeroKind, clip: int, time: f32, loops: bool) {
+    anims := &assets.heroAnimations[kind];
+    count := anims.clips[clip].frameCount;
+    if count <= 0 { return; }
+    frame := math.max((time / AnimationFrameSeconds) as int, 0);
+    if loops { frame = frame % count; }
+    else     { frame = math.min(frame, count - 1); }
+    UpdateModelAnimation(assets.heroes[kind], anims.clips[clip], frame);
+}
+
+// Standing, for the portrait of the HUD
+poseIdle :: method (assets: *Assets, kind: HeroKind, time: f32) {
+    anims := &assets.heroAnimations[kind];
+    if anims.count > 0 && anims.idle >= 0 { assets.playClip(kind, anims.idle, time, true); }
+}
