@@ -7,7 +7,7 @@ import math;
 use raylib;
 
 defineBent :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Bent", title: "the Bus Driver", color: {40, 140, 90, 255}, width: 2.8, height: 4.3, moveSpeed: 7.5, hitRadius: 0.95, maxHealth: 55};
+    hero := HeroDefinition{name: "Bent", title: "the Bus Driver", color: {40, 140, 90, 255}, width: 3.2, height: 4.8, moveSpeed: 7.5, hitRadius: 1.0, maxHealth: 55};
     hero.abilities.add(Ability{
         name: "Hop on", icon: "hop_on", sound: "ability.hop_on", cooldown: 11, cast: castHopOn, bot: .untouchable,
         description: "Climbs onto the roof of the nearest car, within 5, and rides it for up to 2.5 seconds. Then he jumps off towards the far side",

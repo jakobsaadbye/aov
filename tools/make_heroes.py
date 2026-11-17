@@ -1,113 +1,373 @@
 #!/usr/bin/env python3
 """
-Writes the models of the heroes to data/models/, with tools/sculpt.py: smooth shapes with a hand-painted texture each,
-in chunky proportions (big heads, hands and boots, short legs) so they read from high above.
+Writes the models of the heroes to data/models/, with tools/sculpt.py: smooth shapes with a hand-painted texture each.
 
     python3 tools/make_heroes.py                 all of them
     python3 tools/make_heroes.py karl mads       only these
     python3 tools/make_heroes.py --preview       and a picture of each in the scratchpad (PREVIEW_DIR)
 
-Most heroes are a person() in their clothes, with what makes them that hero added: a hat, a beard, what they carry.
-Each is made about 4.2 tall and then fitted to the height of the hero in src/core/heroes/.
+Most heroes are a person() of a Build: the proportions of their body, from a brute (huge shoulders and hands, short
+legs, a small head pushed forward) to a slim one or an old one, bent over. Then they get their clothes, their face and
+what makes them that hero: armor, a hat, a beard, what they carry. Faces are serious: eyes under heavy lids in
+shadowed sockets, brows that say what they are like, and set mouths. A model is made in about the units of a 4.4 tall
+person and fitted to the height of its hero (HEIGHTS, the same as the height in src/core/heroes/).
 """
 
 import math
 import os
 import sys
+from dataclasses import dataclass, replace
 
-from sculpt import (Model, blob, stains, painted, smoothstep, bands, checks, cloth, color, cylinder, edges, ellipsoid, face, flowers, fur, ghostly,
-                    glass, hair, knit, lathe, leather, metal, patch, plane, rect, skin, snow, sphere, spots, stripes,
-                    tube, wood, rgb)
+import numpy as np
 
-SKIN = (0.95, 0.74, 0.58)
-SKIN_TAN = (0.82, 0.58, 0.42)
-SKIN_DARK = (0.6, 0.4, 0.28)
-SKIN_PALE = (0.98, 0.84, 0.74)
-WHITE = (0.95, 0.94, 0.9)
-BLACK = (0.12, 0.11, 0.12)
+from sculpt import (Model, Paint, blob, bands, cloth, color, cylinder, edges, ellipsoid, fbm, fur, ghostly, glass,
+                    grime, hair, knit, lathe, leather, metal, painted, patch, plane, rect, rgb, scales, skin,
+                    smoothstep, snow, sphere, spots, stains, stitches, stripes, flowers, torus, tube, wood, _ellipse,
+                    _over, _varied)
+
+SKIN = (0.93, 0.72, 0.56)
+SKIN_TAN = (0.8, 0.56, 0.4)
+SKIN_RUDDY = (0.9, 0.62, 0.5)
+SKIN_PALE = (0.96, 0.82, 0.72)
+SKIN_OLIVE = (0.84, 0.66, 0.5)
+WHITE = (0.93, 0.92, 0.88)
 BOOT = (0.32, 0.2, 0.12)
+SOLE = (0.16, 0.12, 0.1)
 
 HEIGHTS = {
-    "allan": 4.2, "ghosty": 3.2, "butcher": 4.6, "frosty": 4.3, "bjorn": 4.8, "hilda": 4.4, "mira": 5.2, "karl": 4.3,
-    "birgit": 4.4, "bent": 4.3, "sigrid": 5.0, "tobias": 4.2, "mads": 4.2, "ditte": 4.4, "gudrun": 4.0, "magnus": 4.4,
-    "stormy": 4.4, "hugo": 5.0, "twins": 3.3, "kenji": 4.2, "ivar": 4.6,
+    "allan": 4.2, "ghosty": 3.4, "butcher": 6.4, "frosty": 4.6, "bjorn": 5.8, "hilda": 4.2, "mira": 4.8, "karl": 4.4,
+    "birgit": 4.4, "bent": 4.8, "sigrid": 5.0, "tobias": 4.2, "mads": 4.1, "ditte": 4.3, "gudrun": 3.6, "magnus": 5.6,
+    "stormy": 4.3, "hugo": 5.2, "twins": 3.0, "kenji": 4.2, "ivar": 6.0,
 }
 
 
+@dataclass
+class Build:
+    leg: float = 1.3            # From the ankle to the hip
+    torso: float = 1.6          # From the hip to the neck
+    hip: float = 0.55           # Half widths
+    waist: float = 0.56
+    chest: float = 0.74
+    shoulder: float = 0.84
+    depth: float = 0.66         # How deep the body is, for its width
+    arm: float = 0.22           # The radius of the upper arm
+    fore: float = 0.19
+    arm_len: float = 1.0
+    thigh: float = 0.29
+    calf: float = 0.23
+    hand: float = 1.0
+    head: float = 1.0
+    jaw: float = 1.0
+    foot: float = 1.0
+    hunch: float = 0.0          # How far the shoulders and head lean forward
+    belly: float = 0.0
+    stance: float = 0.42        # How far apart the feet are
+    neck: float = 0.22
+    traps: float = 0.0          # The muscles between the neck and the shoulders
+
+
+HERO = Build()
+ATHLETE = Build(leg=1.45, chest=0.76, shoulder=0.86, waist=0.48, hip=0.48, arm=0.21, fore=0.18, thigh=0.27, calf=0.22)
+BRUTE = Build(leg=1.05, torso=1.85, hip=0.66, waist=0.74, chest=1.08, shoulder=1.22, depth=0.78, arm=0.36, fore=0.33,
+              arm_len=1.05, thigh=0.4, calf=0.34, hand=1.5, head=0.82, jaw=1.35, foot=1.3, hunch=0.3, stance=0.55,
+              neck=0.33, traps=1.0)
+STOCKY = Build(leg=1.15, torso=1.65, hip=0.6, waist=0.64, chest=0.86, shoulder=0.96, depth=0.72, arm=0.27, fore=0.24,
+               thigh=0.33, calf=0.27, hand=1.2, jaw=1.15, foot=1.1, stance=0.46, neck=0.26, traps=0.4)
+STOUT = Build(leg=1.0, torso=1.65, hip=0.66, waist=0.78, chest=0.82, shoulder=0.88, depth=0.82, belly=1.0, arm=0.25,
+              fore=0.22, thigh=0.34, calf=0.27, hand=1.1, jaw=1.15, neck=0.27, stance=0.46)
+SLIM = Build(leg=1.6, torso=1.65, hip=0.44, waist=0.42, chest=0.58, shoulder=0.66, depth=0.6, arm=0.16, fore=0.14,
+             arm_len=1.08, thigh=0.21, calf=0.17, hand=0.85, head=0.9, jaw=0.9, foot=0.85, stance=0.3, neck=0.18)
+OLD = Build(leg=0.95, torso=1.45, hip=0.6, waist=0.58, chest=0.62, shoulder=0.66, depth=0.72, arm=0.17, fore=0.15,
+            thigh=0.25, calf=0.19, hand=0.9, head=1.02, jaw=0.95, hunch=0.55, belly=0.35, stance=0.34, neck=0.18)
+KID = Build(leg=0.95, torso=1.15, hip=0.44, waist=0.45, chest=0.54, shoulder=0.6, arm=0.16, fore=0.14, thigh=0.21,
+            calf=0.18, hand=0.85, head=1.18, jaw=0.85, foot=0.85, stance=0.3, neck=0.17)
+
+
+#
+# The face: painted on the cranium (eyes), the jaw (mouth, stubble) and the brow ridge (brows)
+#
+
+
+def eyes(v=0.5, spacing=0.18, size=0.075, iris=(0.35, 0.28, 0.2), lid=0.3, tilt=0.0, socket=0.35, look=(0, 0),
+         white=(0.92, 0.88, 0.8), glow=None):
+    """Almond eyes under heavy lids, in shadowed sockets. lid is how much of the eye the upper lid covers, tilt > 0
+    lifts the outer corners, look moves the irises. glow paints the whole eye in a color, e.g a ghost's"""
+    def fn(ctx, base):
+        out = base
+        for side in (1, -1):
+            u0 = 0.5 + side * spacing / ctx.lu
+            du = ((ctx.u - u0 + 0.5) % 1.0 - 0.5) * ctx.lu
+            dv = (ctx.v - v) * ctx.lv
+            sock = np.exp(-((du / (size * 2.3)) ** 2 + ((dv - size * 0.4) / (size * 1.8)) ** 2))
+            out = out * (1 - socket * sock)[..., None]
+            xn = du / (size * 1.35)
+            outward = xn * side
+            yn = (dv - tilt * size * 0.45 * outward) / (size * 0.78)
+            r2 = xn ** 2 + yn ** 2 * (1 + 0.25 * xn ** 2)
+            top = 1 - 1.7 * lid
+            eye = smoothstep(1.06, 0.94, r2) * smoothstep(top + 0.08, top - 0.04, yn)
+            lidline = smoothstep(1.25, 1.0, r2) * smoothstep(top - 0.2, top - 0.02, yn) * smoothstep(top + 0.45, top + 0.2, yn)
+            lower = smoothstep(1.2, 1.0, r2) * smoothstep(-0.7, -0.95, yn) * 0.5
+            out = _over(out, base * 0.78, smoothstep(1.3, 1.0, r2) * (yn > top) * 1.0)
+            if glow is not None:
+                out = _over(out, rgb(glow), eye)
+            else:
+                out = _over(out, rgb(white), eye)
+                ix = du - look[0] * size * 0.4
+                iy = dv - (look[1] - 0.05) * size
+                ir = np.sqrt(ix ** 2 + iy ** 2) / (size * 0.62)
+                out = _over(out, rgb(iris) * (0.8 + 0.4 * smoothstep(1, 0.3, ir))[..., None], smoothstep(1.08, 0.92, ir) * eye)
+                out = _over(out, (0.04, 0.03, 0.03), smoothstep(0.5, 0.4, ir) * eye)
+                hl = np.sqrt((ix - size * 0.2) ** 2 + (iy - size * 0.18) ** 2) / (size * 0.16)
+                out = _over(out, (1, 1, 1), smoothstep(1.1, 0.8, hl) * eye * 0.9)
+            out = _over(out, (0.14, 0.07, 0.05), np.clip(lidline, 0, 1))
+            out = _over(out, (0.3, 0.16, 0.12), lower)
+        return out
+    return fn
+
+
+def mouth(kind="line", v=0.58, width=0.15, lips=(0.55, 0.28, 0.24), shadow=True):
+    """A mouth: line, frown, grim, grit (teeth set), snarl, wail (open), pout or smirk"""
+    def fn(ctx, base):
+        out = base
+        du = ((ctx.u - 0.5 + 0.5) % 1.0 - 0.5) * ctx.lu
+        dv = (ctx.v - v) * ctx.lv
+        t = du / width
+        inside = np.abs(t) < 1
+        dark = rgb(lips) * 0.45
+        if shadow:
+            # The shadow under the lower lip and round the chin, and the lines from the nose
+            out = out * (1 - 0.18 * np.exp(-(t / 0.8) ** 2 - ((dv + width * 0.5) / (width * 0.25)) ** 2))[..., None]
+            for side in (1, -1):
+                fold = np.abs((du - side * width * 1.15) - side * 0.35 * (dv - width * 0.2)) < width * 0.05
+                fold = fold & (dv > -width * 0.2) & (dv < width * 0.7)
+                out = out * (1 - 0.18 * fold)[..., None]
+        if kind in ("line", "frown", "grim", "smirk", "pout"):
+            k = {"line": -0.08, "frown": -0.35, "grim": -0.22, "smirk": 0.0, "pout": -0.15}[kind] * width
+            curve = k * t ** 2
+            if kind == "smirk":
+                curve = width * 0.18 * np.clip(t, 0, 1) ** 2 - width * 0.05 * np.clip(-t, 0, 1)
+            thick = width * (0.09 if kind != "grim" else 0.13)
+            a = (np.abs(dv - curve) < thick) & inside
+            out = _over(out, dark, a.astype(float))
+            lip = (dv - curve < -thick) & (dv - curve > -thick * 3.0) & (np.abs(t) < 0.7)
+            out = _over(out, rgb(lips), lip.astype(float) * 0.45)
+        elif kind in ("grit", "snarl"):
+            h = width * (0.22 if kind == "grit" else 0.32)
+            curve = (width * 0.15 * t ** 2) if kind == "snarl" else 0
+            box = (np.abs(dv - curve) < h) & (np.abs(t) < 0.85)
+            out = _over(out, dark * 0.6, box.astype(float))
+            teeth = (np.abs(dv - curve) < h * 0.7) & (np.abs(t) < 0.78)
+            out = _over(out, (0.9, 0.86, 0.74), teeth.astype(float))
+            gaps = teeth & ((np.abs(dv - curve) < h * 0.06) | (np.abs(((t * 4) % 1) - 0.5) < 0.06))
+            out = _over(out, (0.45, 0.35, 0.3), gaps.astype(float))
+        elif kind == "wail":
+            r = np.sqrt((du / (width * 0.55)) ** 2 + ((dv + width * 0.2) / (width * 0.8)) ** 2)
+            out = _over(out, (0.08, 0.06, 0.12), smoothstep(1.05, 0.95, r))
+        return out
+    return fn
+
+
+def stubble(c=(0.25, 0.18, 0.14), amount=0.5, below=0.62):
+    def fn(ctx, base):
+        speck = (fbm(ctx.p, 60, 1, 91) > 0.5).astype(float) * 0.6 + 0.4
+        a = smoothstep(below, below - 0.15, ctx.v) * amount * speck
+        return _over(base, rgb(c), a * 0.6)
+    return fn
+
+
+def brows(c=(0.25, 0.16, 0.1), tilt=0.5, thick=0.7, spacing=0.2, length=0.17, v=0.62, gap=1.0):
+    """Brows on the brow ridge: tilt > 0 is angry (inner ends down), < 0 worried, thick 0..1"""
+    def fn(ctx, base):
+        out = base
+        for side in (1, -1):
+            u0 = 0.5 + side * spacing * gap / ctx.lu
+            du = ((ctx.u - u0 + 0.5) % 1.0 - 0.5) * ctx.lu
+            dv = (ctx.v - v) * ctx.lv
+            t = du * side / length               # -1 at the inner end, 1 at the outer
+            centre = -tilt * 0.35 * ctx.lv * (-t) * 0.25
+            half = (0.07 + 0.09 * thick) * ctx.lv * (1 - 0.35 * np.clip(t, 0, 1)) * 0.5
+            a = (np.abs(t) < 1) & (np.abs(dv - centre) < half * 2)
+            streak = 0.75 + 0.25 * (fbm(np.stack([ctx.u * 300, ctx.v * 20, ctx.u * 0], -1), 1, 2, 7))
+            out = _over(out, rgb(c) * streak[..., None], a.astype(float))
+        return out
+    return fn
+
+
+#
+# The body
+#
+
+
 class Body:
-    """Where the parts of a person() are, for what is added to it"""
     pass
 
 
-def person(m, top, legs, shoes=None, arms=None, hands=None, head=None, hair_paint=None, hair_style="short",
-           width=1.0, belly=0.0, legs_len=1.0, x=0.0, face_kw=None, skin_c=SKIN, skirt=None, arm_pose="down",
-           neck=None, nose=1.0, ears=True):
-    """A chunky person standing on y = 0, looking at +z, about 4.2 tall. The paints are of its clothes. skirt is a paint
-    for a skirt or a long coat, over the legs. arm_pose: down, out, forward (right hand forward), up (right hand up)"""
+def _lerp(a, b, t):
+    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3))
+
+
+def _add(a, b):
+    return tuple(a[i] + b[i] for i in range(3))
+
+
+def _norm(d):
+    n = math.sqrt(sum(c * c for c in d)) or 1.0
+    return tuple(c / n for c in d)
+
+
+def person(m, bd, top, legs, shoes=None, arms=None, hands=None, skin_c=SKIN, head_paint=None, eyes_kw=None,
+           mouth_kw=None, brows_kw=None, jaw_paint=None, hair_paint=None, hair_style=None, skirt=None,
+           arm_pose="down", x=0.0, nose="round", ears=True, sole=None, cuffs=None, neck_paint=None, pecs=False,
+           boots=True, face_weight=3.0):
+    """A person standing on y = 0, looking at +z, of the proportions of the Build bd. The paints are of its clothes.
+    skirt is a paint for a skirt or a long coat over the legs. arm_pose: down, out, forward, up, ready, akimbo, or a
+    pair (right, left). Returns where its parts are, for what is added to it"""
     b = Body()
-    w = width
+    b.bd, b.x = bd, x
     shoes = shoes or leather(BOOT)
     arms = arms or top
     hands = hands or skin(skin_c)
-    face_kw = face_kw or {}
-    leg_top = 1.05 + 0.4 * legs_len
-    b.x = x
+    eyes_kw, mouth_kw, brows_kw = eyes_kw or {}, mouth_kw or {}, brows_kw or {}
 
-    # Boots, big and round, toes out a little
+    ankle = 0.3 * bd.foot
+    hip = ankle + bd.leg
+    neck_y = hip + bd.torso
+    sh_y = neck_y - 0.22
+    waist_y = hip + bd.torso * 0.28
+    chest_y = hip + bd.torso * 0.68
+
+    def lean(y):
+        return bd.hunch * 0.65 * min(max((y - waist_y) / (neck_y - waist_y), 0.0), 1.2) ** 2
+
+    b.hip_y, b.waist_y, b.chest_y, b.neck_y, b.sh_y = hip, waist_y, chest_y, neck_y, sh_y
+    b.lean = lean
+
+    # Feet: a boot with a darker sole, and a cuff round the ankle
+    fs = bd.foot
     for side in (1, -1):
-        m.add(blob((x + side * 0.4 * w, 0.2, 0.14), (0.3 * w, 0.22, 0.46), (0.55, 0.7), rot=(0, side * 8, 0)), shoes)
-    # Legs
+        fx = x + side * bd.stance
+        m.add(blob((fx, 0.21 * fs, 0.12 * fs), (0.26 * fs, 0.19 * fs, 0.42 * fs), (0.55, 0.7), rot=(0, side * 7, 0)), shoes)
+        m.add(blob((fx, 0.06 * fs, 0.12 * fs), (0.28 * fs, 0.07 * fs, 0.45 * fs), (0.3, 0.6), rot=(0, side * 7, 0)),
+              leather(sole or SOLE))
+        if boots:
+            m.add(torus((fx, ankle + 0.06, 0.0), bd.calf * 0.8, 0.07 * fs), cuffs or shoes)
+    # Legs: calf, knee and thigh
     for side in (1, -1):
-        m.add(tube([(x + side * 0.38 * w, 0.3, 0.02), (x + side * 0.37 * w, (0.3 + leg_top) / 2, 0.0),
-                    (x + side * 0.36 * w, leg_top, 0)], [0.23 * w, 0.26 * w, 0.32 * w], nu=12), legs, crease=0.25)
-    # The torso, wider at the chest, with a belly when it has one
-    torso = lathe([(leg_top - 0.25, 0.0), (leg_top - 0.22, 0.58 * w), (leg_top + 0.1, 0.68 * w, belly * 0.3),
-                   (1.95, (0.66 + belly * 0.25) * w, belly * 0.4), (2.35, 0.78 * w, belly * 0.15), (2.7, 0.8 * w),
-                   (2.88, 0.55 * w), (2.98, 0.25)], (x, 0, 0), sz=0.68 + belly * 0.1, nu=22, nv=16)
-    b.torso = m.add(torso, top, crease=0.2)
+        fx, hx = x + side * bd.stance, x + side * bd.hip * 0.55
+        L = bd.leg
+        pts = [(fx, ankle + 0.02, 0.0), (_lerp((fx, 0, 0), (hx, 0, 0), 0.3)[0], ankle + L * 0.3, -0.03),
+               (_lerp((fx, 0, 0), (hx, 0, 0), 0.5)[0], ankle + L * 0.5, 0.04), (_lerp((fx, 0, 0), (hx, 0, 0), 0.78)[0], ankle + L * 0.78, 0.0),
+               (hx, hip + 0.05, 0.0)]
+        m.add(tube(pts, [bd.calf * 0.72, bd.calf * 1.05, bd.calf * 0.85, bd.thigh, bd.thigh * 0.95], nu=12), legs, crease=0.2)
+    # The torso
+    belly = bd.belly
+    prof = [(hip - 0.25, 0.0), (hip - 0.2, bd.hip, 0.0), (hip + 0.08, bd.hip * 1.03, belly * 0.1),
+            (waist_y, bd.waist * (1 + 0.18 * belly), belly * 0.35 + lean(waist_y)),
+            (hip + bd.torso * 0.48, bd.waist * (1 + 0.28 * belly) * 1.04, belly * 0.4 + lean(hip + bd.torso * 0.48)),
+            (chest_y, bd.chest, 0.06 + belly * 0.1 + lean(chest_y)), (sh_y - 0.04, bd.shoulder * 0.9, lean(sh_y)),
+            (sh_y + 0.13, bd.shoulder * 0.6, lean(sh_y + 0.13)), (neck_y, bd.neck * 1.35, lean(neck_y)), (neck_y + 0.04, 0.0, lean(neck_y))]
+    b.torso = m.add(lathe(prof, (x, 0, 0), sz=bd.depth + belly * 0.1, nu=24, nv=18), top, crease=0.15)
+    b.depth_at = lambda y: bd.depth
+    if bd.traps:
+        m.add(ellipsoid((x, sh_y + 0.05, lean(sh_y) - 0.05), (bd.shoulder * 0.72, 0.26 * bd.traps, 0.42)), top)
+    if pecs:
+        for side in (1, -1):
+            m.add(ellipsoid((x + side * bd.chest * 0.42, chest_y + 0.05, lean(chest_y) + bd.chest * bd.depth * 0.78),
+                            (bd.chest * 0.42, 0.26, 0.16)), skin(skin_c), crease=0.1)
     if skirt is not None:
-        m.add(lathe([(0.75, 0.0), (0.76, 0.82 * w), (1.4, 0.72 * w), (leg_top + 0.2, 0.62 * w), (leg_top + 0.35, 0.0)],
-                    (x, 0, 0), sz=0.8, nu=28), skirt, crease=0.15)
+        m.add(lathe([(0.65, 0.0), (0.66, bd.hip * 1.55), (hip * 0.6, bd.hip * 1.35), (hip + 0.15, bd.hip * 1.12), (hip + 0.32, 0.0)],
+                    (x, 0, 0), sz=0.82, nu=26), skirt, crease=0.12)
     # Neck
-    m.add(cylinder((x, 2.8, 0.0), 0.24, 0.35, caps=False), neck or skin(skin_c))
+    m.add(tube([(x, sh_y, lean(sh_y)), (x, neck_y + 0.35 * bd.head, lean(neck_y) + bd.hunch * 0.2)], bd.neck, caps=False, nu=10),
+          neck_paint or skin(skin_c))
 
-    # Arms: shoulders, upper and lower arm in one tube, and big hands
-    b.hands = []
-    for side in (1, -1):
-        sh = (x + side * 0.84 * w, 2.66, 0.0)
-        pose = arm_pose if side == 1 else ("down" if arm_pose in ("forward", "up") else arm_pose)
-        if pose == "both_up":
-            pose = "up"
+    # Arms: a round shoulder, a bulging upper arm, the elbow, the forearm, and a fist
+    b.hands, b.wrists, b.elbows, b.shoulders = [], [], [], []
+    upper, fore = bd.torso * 0.42 * bd.arm_len, bd.torso * 0.4 * bd.arm_len
+    poses = arm_pose if isinstance(arm_pose, tuple) else (arm_pose, "down" if arm_pose in ("forward", "up", "ready") else arm_pose)
+    if arm_pose == "both_up":
+        poses = ("up", "up")
+    for side, pose in zip((1, -1), poses):
+        sh = (x + side * bd.shoulder * 0.98, sh_y - 0.08, lean(sh_y))
         if pose == "down":
-            elbow, wrist = (x + side * 1.08 * w, 2.12, 0.04), (x + side * 1.12 * w, 1.62, 0.26)
+            elbow = _add(sh, (side * 0.2, -upper * 0.96, -0.04))
+            wrist = _add(elbow, (side * 0.06, -fore * 0.9, 0.24))
         elif pose == "out":
-            elbow, wrist = (x + side * 1.25 * w, 2.25, 0.05), (x + side * 1.5 * w, 1.85, 0.3)
+            elbow = _add(sh, (side * 0.42, -upper * 0.82, 0.0))
+            wrist = _add(elbow, (side * 0.32, -fore * 0.62, 0.32))
         elif pose == "forward":
-            elbow, wrist = (x + side * 1.1 * w, 2.2, 0.2), (x + side * 1.05 * w, 2.15, 0.85)
+            elbow = _add(sh, (side * 0.24, -upper * 0.88, 0.1))
+            wrist = _add(elbow, (-side * 0.06, 0.06, fore * 0.96))
+        elif pose == "ready":
+            elbow = _add(sh, (side * 0.32, -upper * 0.85, 0.1))
+            wrist = _add(elbow, (-side * 0.18, 0.12, fore * 0.9))
+        elif pose == "akimbo":
+            elbow = _add(sh, (side * 0.6, -upper * 0.68, -0.12))
+            wrist = (x + side * (bd.waist + 0.12), waist_y + 0.05, 0.1)
         else:  # up
-            elbow, wrist = (x + side * 1.22 * w, 3.1, 0.1), (x + side * 1.18 * w, 3.7, 0.25)
-        m.add(tube([sh, elbow, wrist], [0.25 * w, 0.21 * w, 0.18 * w], nu=12), arms, crease=0.15)
-        m.add(sphere(sh, 0.3 * w), arms)
-        d = [wrist[i] - elbow[i] for i in range(3)]
-        n = math.sqrt(sum(c * c for c in d))
-        hand = tuple(wrist[i] + d[i] / n * 0.18 for i in range(3))
-        m.add(ellipsoid(hand, (0.21, 0.25, 0.23)), hands)
-        m.add(ellipsoid((hand[0] - side * 0.04, hand[1] + 0.05, hand[2] + 0.17), (0.08, 0.11, 0.08)), hands)
-        b.hands.append(hand)
-    b.right, b.left = b.hands[0], b.hands[1]
+            elbow = _add(sh, (side * 0.32, upper * 0.62, 0.06))
+            wrist = _add(elbow, (-side * 0.06, fore * 0.96, 0.12))
+        bicep = _add(_lerp(sh, elbow, 0.45), (side * 0.02, 0, 0.02))
+        mid = _lerp(elbow, wrist, 0.38)
+        m.add(tube([sh, bicep, elbow, mid, wrist], [bd.arm * 1.05, bd.arm * 1.14, bd.fore * 0.92, bd.fore * 1.1, bd.fore * 0.72], nu=12),
+              arms, crease=0.12)
+        m.add(sphere(sh, bd.arm * 1.3), top)
+        d = _norm(tuple(wrist[i] - elbow[i] for i in range(3)))
+        hs = bd.hand
+        palm = _add(wrist, tuple(c * 0.15 * hs for c in d))
+        m.add(ellipsoid(palm, (0.16 * hs, 0.18 * hs, 0.17 * hs)), hands)
+        lat = (1.0, 0.0, 0.0) if abs(d[0]) < 0.9 else (0.0, 0.0, 1.0)
+        for k in range(4):
+            kp = _add(palm, tuple(c * 0.13 * hs for c in d))
+            kp = _add(kp, tuple(c * (k - 1.5) * 0.075 * hs for c in lat))
+            kp = _add(kp, (0, 0, 0.05 * hs))
+            m.add(sphere(kp, 0.065 * hs), hands)
+        m.add(ellipsoid(_add(palm, (-side * 0.11 * hs, 0.03 * hs, 0.09 * hs)), (0.06 * hs, 0.09 * hs, 0.06 * hs)), hands)
+        b.hands.append(_add(palm, tuple(c * 0.08 * hs for c in d)))
+        b.wrists.append(wrist)
+        b.elbows.append(elbow)
+        b.shoulders.append(sh)
+    b.right, b.left = b.hands
+    b.forearm_dir = [_norm(tuple(b.wrists[i][k] - b.elbows[i][k] for k in range(3))) for i in range(2)]
 
-    # The head: big, with a big nose and ears
-    b.head = (x, 3.5, 0.04)
-    b.head_r = (0.6, 0.64, 0.58)
-    head_paint = head or (skin(skin_c) + face(**face_kw))
-    b.head_surface = m.add(ellipsoid(b.head, b.head_r, nu=24, nv=14), head_paint)
-    if nose:
-        m.add(ellipsoid((x, 3.4, 0.6), (0.11 * nose, 0.13 * nose, 0.13 * nose)), skin(skin_c))
+    # The head: a cranium, a jaw, a brow ridge, a nose and ears
+    hs = bd.head
+    hy = neck_y + 0.5 * hs
+    hz = lean(neck_y) + bd.hunch * 0.3 + 0.04
+    b.head = (x, hy, hz)
+    b.head_r = (0.56 * hs, 0.6 * hs, 0.54 * hs)
+    b.hs = hs
+    face_paint = head_paint or (skin(skin_c) + eyes(**eyes_kw))
+    b.cranium = m.add(ellipsoid(b.head, b.head_r, nu=24, nv=14), face_paint, weight=face_weight)
+    jw = bd.jaw
+    b.jaw_c = (x, hy - 0.3 * hs, hz + 0.12 * hs)
+    b.jaw_r = (0.45 * jw * hs, 0.32 * hs * (0.9 + 0.15 * jw), 0.42 * hs)
+    m.add(ellipsoid(b.jaw_c, b.jaw_r, nu=20, nv=12), jaw_paint or (skin(skin_c) + mouth(**mouth_kw)), weight=face_weight)
+    m.add(ellipsoid((x, hy + 0.13 * hs, hz + 0.39 * hs), (0.44 * hs, 0.085 * hs, 0.17 * hs), nu=16, nv=6),
+          skin(skin_c) + brows(**brows_kw), weight=face_weight)
+    nz = hz + 0.52 * hs
+    ny = hy - 0.07 * hs
+    sk = skin(skin_c)
+    if nose == "round":
+        m.add(ellipsoid((x, ny, nz), (0.1 * hs, 0.12 * hs, 0.11 * hs)), sk)
+    elif nose == "big":
+        m.add(ellipsoid((x, ny - 0.02, nz + 0.02), (0.14 * hs, 0.15 * hs, 0.14 * hs)), sk)
+    elif nose == "long":
+        m.add(tube([(x, ny + 0.12 * hs, nz - 0.06), (x, ny - 0.04, nz + 0.12 * hs)], [0.07 * hs, 0.06 * hs]), sk)
+    elif nose == "hook":
+        m.add(tube([(x, ny + 0.12 * hs, nz - 0.08), (x, ny + 0.02, nz + 0.25 * hs), (x, ny - 0.16 * hs, nz + 0.32 * hs)],
+                   [0.08 * hs, 0.07 * hs, 0.03 * hs]), sk)
+    elif nose == "broad":
+        m.add(ellipsoid((x, ny - 0.03, nz - 0.01), (0.15 * hs, 0.11 * hs, 0.1 * hs)), sk)
+        m.add(ellipsoid((x, ny + 0.08 * hs, nz - 0.03), (0.07 * hs, 0.1 * hs, 0.07 * hs)), sk)
+    elif nose == "crooked":
+        m.add(ellipsoid((x + 0.03, ny, nz), (0.12 * hs, 0.13 * hs, 0.12 * hs), rot=(0, 0, 18)), sk)
     if ears:
         for side in (1, -1):
-            m.add(ellipsoid((x + side * 0.58, 3.48, 0.0), (0.07, 0.15, 0.12)), skin(skin_c))
-    b.top = 3.5 + 0.64
-    if hair_paint is not None:
+            m.add(ellipsoid((x + side * 0.55 * hs, hy - 0.02, hz - 0.03), (0.07 * hs, 0.15 * hs, 0.11 * hs), rot=(0, side * 20, 0)), sk)
+    b.top = hy + 0.6 * hs
+    if hair_paint is not None and hair_style:
         hair_on(m, b, hair_paint, hair_style)
     return b
 
@@ -115,39 +375,131 @@ def person(m, top, legs, shoes=None, arms=None, hands=None, head=None, hair_pain
 def hair_on(m, b, paint, style):
     hx, hy, hz = b.head
     rx, ry, rz = b.head_r
+    hs = b.hs
+    if style in ("short", "long", "ponytail", "bun", "slick"):
+        m.add(ellipsoid((hx, hy + 0.04 * hs, hz - 0.05 * hs), (rx * 1.07, ry * 1.04, rz * 1.08), vrange=(0.48, 1.0), nu=22, nv=8), paint)
+        # Sides and back, open at the face
+        for ur in ((0.0, 0.32), (0.68, 1.0)):
+            m.add(ellipsoid((hx, hy - 0.04 * hs, hz - 0.1 * hs), (rx * 1.05, ry * 0.96, rz * 1.0), urange=ur, vrange=(0.25, 0.7)), paint)
     if style == "short":
-        # A cap over the top and the back, open at the face
-        m.add(ellipsoid((hx, hy + 0.04, hz - 0.04), (rx * 1.06, ry * 1.04, rz * 1.06), vrange=(0.45, 1.0), nu=22, nv=8),
-              paint)
-        m.add(ellipsoid((hx, hy - 0.05, hz - 0.12), (rx * 1.04, ry * 0.95, rz * 0.98), urange=(0.0, 0.3), vrange=(0.25, 0.75)), paint)
-        m.add(ellipsoid((hx, hy - 0.05, hz - 0.12), (rx * 1.04, ry * 0.95, rz * 0.98), urange=(0.7, 1.0), vrange=(0.25, 0.75)), paint)
-        # A fringe
-        m.add(ellipsoid((hx, hy + 0.36, hz + 0.32), (rx * 0.75, 0.22, 0.25)), paint)
+        m.add(ellipsoid((hx, hy + 0.4 * hs, hz + 0.3 * hs), (rx * 0.72, 0.18 * hs, 0.22 * hs), rot=(-12, 0, 0)), paint)
+    elif style == "slick":
+        m.add(ellipsoid((hx, hy + 0.42 * hs, hz + 0.18 * hs), (rx * 0.85, 0.16 * hs, 0.3 * hs), rot=(-18, 0, 0)), paint)
     elif style == "long":
-        m.add(ellipsoid((hx, hy + 0.04, hz - 0.04), (rx * 1.07, ry * 1.05, rz * 1.07), vrange=(0.45, 1.0), nu=22, nv=8), paint)
-        m.add(lathe([(hy - 1.0, 0.45), (hy - 0.5, 0.62), (hy, 0.66), (hy + 0.3, 0.6)], (hx, 0, hz - 0.1), sz=0.85,
-                    urange=(0.0, 0.36)), paint)
-        m.add(lathe([(hy - 1.0, 0.45), (hy - 0.5, 0.62), (hy, 0.66), (hy + 0.3, 0.6)], (hx, 0, hz - 0.1), sz=0.85,
-                    urange=(0.64, 1.0)), paint)
-        m.add(ellipsoid((hx, hy + 0.38, hz + 0.3), (rx * 0.8, 0.22, 0.26)), paint)
+        for ur in ((0.0, 0.36), (0.64, 1.0)):
+            m.add(lathe([(hy - 1.0 * hs, 0.42 * hs), (hy - 0.5 * hs, 0.6 * hs), (hy, 0.64 * hs), (hy + 0.3 * hs, 0.58 * hs)],
+                        (hx, 0, hz - 0.12 * hs), sz=0.85, urange=ur), paint)
+        m.add(ellipsoid((hx, hy + 0.38 * hs, hz + 0.28 * hs), (rx * 0.8, 0.2 * hs, 0.24 * hs), rot=(-10, 0, 0)), paint)
+    elif style == "ponytail":
+        m.add(tube([(hx, hy + 0.3 * hs, hz - 0.5 * hs), (hx, hy - 0.1 * hs, hz - 0.85 * hs), (hx, hy - 0.75 * hs, hz - 0.75 * hs)],
+                   [0.18 * hs, 0.15 * hs, 0.05 * hs]), paint)
+        m.add(torus((hx, hy + 0.3 * hs, hz - 0.5 * hs), 0.15 * hs, 0.05 * hs, rot=(70, 0, 0)), color((0.75, 0.15, 0.2)))
     elif style == "bun":
-        m.add(ellipsoid((hx, hy + 0.06, hz - 0.04), (rx * 1.05, ry * 1.03, rz * 1.05), vrange=(0.5, 1.0), nu=22, nv=8), paint)
-        m.add(sphere((hx, hy + 0.62, hz - 0.3), 0.3), paint)
+        m.add(sphere((hx, hy + 0.6 * hs, hz - 0.32 * hs), 0.28 * hs), paint)
     elif style == "spiky":
-        m.add(ellipsoid((hx, hy + 0.04, hz - 0.04), (rx * 1.06, ry * 1.04, rz * 1.06), vrange=(0.5, 1.0), nu=22, nv=8), paint)
-        for k in range(7):
-            a = (k - 3) * 0.32
-            m.add(lathe([(0, 0.18), (0.45, 0.0)], (hx + math.sin(a) * 0.4, hy + 0.5, hz + 0.15 - abs(a) * 0.1),
-                        rot=(-25 + abs(a) * 10, 0, -a * 50), smooth=False, nu=8, nv=4), paint)
+        m.add(ellipsoid((hx, hy + 0.04 * hs, hz - 0.04 * hs), (rx * 1.06, ry * 1.04, rz * 1.06), vrange=(0.5, 1.0), nu=22, nv=8), paint)
+        for k in range(8):
+            a = (k - 3.5) * 0.3
+            m.add(lathe([(0, 0.17 * hs), (0.42 * hs, 0.0)], (hx + math.sin(a) * 0.38 * hs, hy + 0.5 * hs, hz + 0.1 * hs - abs(a) * 0.12),
+                        rot=(-30 + abs(a) * 12, 0, -a * 55), smooth=False, nu=8, nv=4), paint)
+    elif style == "mohawk":
+        m.add(blob((hx, hy + 0.62 * hs, hz - 0.05), (0.09 * hs, 0.28 * hs, 0.55 * hs), (0.5, 0.6)), paint)
 
 
-def beard(m, b, paint, length=0.7, moustache=True):
-    hx, hy, hz = b.head
-    m.add(lathe([(hy - 0.35 - length, 0.0), (hy - 0.3 - length * 0.7, 0.35), (hy - 0.45, 0.56), (hy - 0.1, 0.6)],
-                (hx, 0, hz + 0.12), sz=0.75, urange=(0.18, 0.82)), paint)
+def beard(m, b, paint, length=0.7, moustache=True, width=1.0):
+    jx, jy, jz = b.jaw_c
+    rx, ry, rz = b.jaw_r
+    m.add(lathe([(jy - ry - length, 0.0), (jy - ry - length * 0.6, rx * 0.6 * width), (jy - ry * 0.4, rx * 1.02 * width),
+                 (jy + ry * 0.35, rx * 1.05 * width)], (jx, 0, jz + 0.03), sz=1.0, urange=(0.2, 0.8)), paint)
     if moustache:
         for side in (1, -1):
-            m.add(ellipsoid((hx + side * 0.17, hy - 0.22, hz + 0.56), (0.22, 0.08, 0.1), rot=(0, 0, side * 12)), paint)
+            m.add(ellipsoid((jx + side * rx * 0.38, jy + ry * 0.3, jz + rz * 0.95), (rx * 0.42, ry * 0.18, rz * 0.2),
+                            rot=(0, 0, side * 15)), paint)
+
+
+def belt(m, b, paint=None, buckle=None, y=None, width=0.11):
+    bd = b.bd
+    y = y if y is not None else b.waist_y - 0.05
+    r = bd.waist * (1 + 0.18 * bd.belly) * 1.02
+    m.add(torus((b.x, y, b.lean(y) + bd.belly * 0.3), r, width, sz=(bd.depth + bd.belly * 0.1) * 1.05, nu=26), paint or leather((0.3, 0.18, 0.1)))
+    z = b.lean(y) + bd.belly * 0.3 + r * (bd.depth + bd.belly * 0.1) * 1.05 + width * 0.6
+    m.add(blob((b.x, y, z), (0.16, 0.13, 0.05), (0.3, 0.3)), buckle or metal((0.85, 0.7, 0.35)) + edges(0.3, 0.03))
+
+
+def pauldrons(m, b, paint, size=1.0, rim=None, spikes=0):
+    for i, side in enumerate((1, -1)):
+        sx, sy, sz = b.shoulders[i]
+        r = b.bd.arm * 1.9 * size
+        m.add(ellipsoid((sx + side * 0.05, sy + 0.1, sz), (r, r * 0.85, r * 1.05), vrange=(0.35, 1.0)), paint)
+        m.add(torus((sx + side * 0.05, sy + 0.1 - r * 0.38, sz), r * 0.95, 0.06, rot=(0, 0, side * 15), sz=1.1), rim or metal((0.75, 0.62, 0.3)))
+        for k in range(spikes):
+            a = (k - (spikes - 1) / 2) * 0.6
+            m.add(lathe([(0, 0.1), (0.35, 0.0)], (sx + side * (0.15 + r * 0.4), sy + r * 0.6, sz + a * 0.3), rot=(0, 0, -side * 30),
+                        smooth=False, nu=8, nv=3), metal((0.8, 0.8, 0.82)))
+
+
+def bracers(m, b, paint, length=0.45, studs=None):
+    for i in range(2):
+        w, d = b.wrists[i], b.forearm_dir[i]
+        a = _add(w, tuple(-c * length for c in d))
+        m.add(tube([a, w], [b.bd.fore * 1.25, b.bd.fore * 1.0], nu=12, caps=False), paint)
+        m.add(torus(w, b.bd.fore * 1.0, 0.035, rot=_aim(d)), studs or metal((0.7, 0.6, 0.35)))
+
+
+def collar(m, b, paint, r=None, t=0.1):
+    r = r or b.bd.neck * 1.5
+    m.add(torus((b.x, b.neck_y - 0.05, b.lean(b.neck_y)), r, t, sz=0.9), paint)
+
+
+def _aim(d):
+    """The angles (for rot) that turn y towards the direction d"""
+    dx, dy, dz = _norm(d)
+    return (math.degrees(math.acos(max(-1, min(1, dy)))), math.degrees(math.atan2(dx, dz)), 0)
+
+
+def top_hat(m, b, paint, band=None, height=0.9, tilt=0.0, brim=0.82):
+    hx, hy, hz = b.head
+    y = b.top - 0.22 * b.hs
+    hs = b.hs
+    m.add(torus((hx, y + 0.02, hz - 0.02), brim * hs * 0.85, 0.05 * hs, rot=(tilt, 0, 0)), paint)
+    m.add(cylinder((hx, y - 0.02, hz - 0.02), brim * hs * 0.85, 0.06, rot=(tilt, 0, 0)), paint)
+    m.add(lathe([(0, 0.0), (0.0, 0.47 * hs), (height * 0.5 * hs, 0.49 * hs), (height * hs, 0.53 * hs), (height * hs, 0.0)], (hx, y, hz - 0.02),
+                rot=(tilt, 0, 0), smooth=False, nu=20), paint + bands(band, [(0.08, 0.25)]) if band else paint)
+
+
+def cap(m, b, paint, peak_paint=None, back=False, height=0.4, badge=None):
+    hx, hy, hz = b.head
+    hs = b.hs
+    m.add(ellipsoid((hx, hy + 0.1 * hs, hz - 0.02), (0.63 * hs, (height + 0.48) * hs, 0.61 * hs), vrange=(0.56, 1.0), nu=20, nv=6), paint)
+    m.add(torus((hx, hy + 0.32 * hs, hz - 0.02), 0.6 * hs, 0.05 * hs, sz=1.0), peak_paint or paint)
+    d = -1 if back else 1
+    m.add(blob((hx, hy + 0.3 * hs, hz + d * 0.62 * hs), (0.42 * hs, 0.045, 0.3 * hs), (0.3, 0.8), rot=(d * 8, 0, 0)), peak_paint or paint)
+    if badge:
+        m.add(blob((hx, hy + 0.55 * hs, hz + 0.6 * hs), (0.12 * hs, 0.1 * hs, 0.03), (0.4, 0.4)), badge)
+
+
+def pointy_hat(m, b, paint, brim=1.0, height=1.8, bend=0.35, band=None):
+    hx, hy, hz = b.head
+    hs = b.hs
+    y = b.top - 0.3 * hs
+    m.add(lathe([(0, 0.0), (0.03, 1.05 * brim * hs), (0.09, 0.98 * brim * hs), (0.06, 0.6 * hs), (0.1, 0.0)], (hx, y, hz), smooth=True, nu=22), paint)
+    m.add(tube([(hx, y, hz), (hx, y + height * 0.5 * hs, hz - 0.05), (hx, y + height * 0.85 * hs, hz - bend), (hx + 0.1, y + height * hs, hz - bend * 1.9)],
+               [0.55 * hs, 0.33 * hs, 0.14 * hs, 0.03], nu=14, caps=False), paint)
+    if band:
+        m.add(torus((hx, y + 0.12 * hs, hz), 0.55 * hs, 0.06 * hs), band)
+
+
+def glasses(m, b, frame=(0.2, 0.2, 0.22), r=0.15, sun=False):
+    hx, hy, hz = b.head
+    hs = b.hs
+    y = hy + 0.01 * hs
+    lens = color((0.1, 0.1, 0.14)) + edges(0.2, 0.02) if sun else glass((0.55, 0.7, 0.8))
+    for side in (1, -1):
+        c = (hx + side * 0.19 * hs, y, hz + 0.56 * hs)
+        m.add(cylinder(c, r * hs, 0.03, rot=(90, 0, 0)), lens)
+        m.add(torus(c, r * hs, 0.022, rot=(90, 0, 0)), color(frame))
+        m.add(tube([(hx + side * 0.34 * hs, y, hz + 0.52 * hs), (hx + side * 0.56 * hs, y + 0.02, hz + 0.05)], 0.022), color(frame))
+    m.add(tube([(hx - 0.05 * hs, y + 0.02, hz + 0.58 * hs), (hx + 0.05 * hs, y + 0.02, hz + 0.58 * hs)], 0.02), color(frame))
 
 
 def finish(m, name):
@@ -156,192 +508,238 @@ def finish(m, name):
     print(f"models/{name}.obj  {tris} triangles")
 
 
+def hero_model(name):
+    return Model(name, size=1024, light=0.32, ao=1.1, detail=0.11)
+
+
+def tunic(c, trim=None, folds=5, hem=(0.0, 0.06), seams=True):
+    p = cloth(c, folds=folds)
+    if trim:
+        p = p + bands(trim, [hem])
+    if seams:
+        p = p + stitches(tuple(np.array(c) * 0.6), [hem[1] + 0.02, 0.97])
+    return p
+
+
 #
 # The heroes
 #
 
 
 def make_allan():
-    """A runner: a red tracksuit with white stripes, a sweatband, and big white running shoes"""
-    m = Model("allan")
-    red = (0.84, 0.16, 0.14)
-    suit = cloth(red) + bands(WHITE, [(0.0, 0.06)])
-    sleeves = cloth(red) + stripes(WHITE, 2, 0.3, axis="u")
-    b = person(m, cloth(red) + bands(WHITE, [(0.88, 0.95)]) + patch(WHITE, 0.5, 0.7, 0.15, 0.15),
-               cloth(red) + stripes(WHITE, 2, 0.25, axis="u"),
-               shoes=color(WHITE) + bands((0.85, 0.15, 0.12), [(0.35, 0.55)]) + bands((0.3, 0.3, 0.32), [(0.0, 0.25)]),
-               arms=sleeves, hair_paint=hair((0.45, 0.28, 0.14)), hair_style="spiky",
-               face_kw=dict(mouth="grin", brow_tilt=0.3, eye=(0.3, 0.5, 0.25)))
+    """A runner: lean, a red tracksuit with white stripes and a zip, a sweatband, wristbands, big running shoes, and
+    the set face of someone who means to make it across"""
+    m = hero_model("allan")
+    red = (0.78, 0.14, 0.12)
+    jacket = cloth(red) + bands(WHITE, [(0.86, 0.92)]) + rect((0.85, 0.85, 0.82), 0.495, 0.505, 0.1, 0.95) + stitches((0.5, 0.08, 0.07), [0.1, 0.84])
+    b = person(m, ATHLETE, jacket, cloth(red) + stripes(WHITE, 2, 0.22, axis="u"),
+               shoes=color(WHITE) + bands((0.8, 0.14, 0.12), [(0.3, 0.5)]) + stitches((0.6, 0.6, 0.6), [0.62]), sole=(0.25, 0.25, 0.27),
+               arms=cloth(red) + stripes(WHITE, 2, 0.22, axis="u"), arm_pose=("ready", "down"), hair_paint=hair((0.42, 0.26, 0.13)), hair_style="spiky",
+               eyes_kw=dict(iris=(0.3, 0.45, 0.22), lid=0.35, tilt=-0.1), mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.35, 0.2, 0.1), tilt=0.45),
+               cuffs=color(WHITE), nose="long")
     hx, hy, hz = b.head
-    m.add(lathe([(hy + 0.12, 0.62), (hy + 0.32, 0.6)], (hx, 0, hz), smooth=False, nu=28), color(WHITE) + bands(red, [(0.4, 0.6)]))
+    m.add(torus((hx, hy + 0.22 * b.hs, hz - 0.02), 0.58 * b.hs, 0.07, sz=1.0), knit(WHITE) + bands((0.8, 0.14, 0.12), [(0.4, 0.6)]))
+    collar(m, b, cloth(red) + bands(WHITE, [(0.3, 0.7)]), t=0.08)
+    for i in range(2):
+        m.add(torus(b.wrists[i], b.bd.fore * 0.95, 0.07, rot=_aim(b.forearm_dir[i])), knit(WHITE))
     finish(m, "allan")
 
 
-
-def top_hat(m, b, paint, band=None, height=0.9, tilt=0.0):
-    hx, hy, hz = b.head
-    y = b.top - 0.22
-    m.add(cylinder((hx, y, hz - 0.02), 0.82, 0.08, rot=(tilt, 0, 0)), paint)
-    m.add(lathe([(0, 0.0), (0.0, 0.48), (height * 0.5, 0.5), (height, 0.54), (height, 0.0)], (hx, y, hz - 0.02), rot=(tilt, 0, 0),
-                smooth=False, nu=20), paint + bands(band, [(0.12, 0.3)]) if band else paint)
-
-
-def cap(m, b, paint, peak_paint=None, back=False, height=0.36):
-    """A cap with a peak, forwards or backwards"""
-    hx, hy, hz = b.head
-    m.add(ellipsoid((hx, hy + 0.12, hz - 0.02), (0.64, height + 0.5, 0.62), vrange=(0.55, 1.0), nu=20, nv=6), paint)
-    d = -1 if back else 1
-    m.add(blob((hx, hy + 0.28, hz + d * 0.62), (0.42, 0.05, 0.3), (0.3, 0.8)), peak_paint or paint)
-
-
-def pointy_hat(m, b, paint, brim=1.0, height=1.8, bend=0.35):
-    hx, hy, hz = b.head
-    y = b.top - 0.3
-    m.add(lathe([(0, 0.0), (0.02, 1.0 * brim), (0.06, 0.95 * brim), (0.1, 0.0)], (hx, y, hz), smooth=False, nu=22), paint)
-    m.add(tube([(hx, y, hz), (hx, y + height * 0.5, hz - 0.05), (hx, y + height * 0.85, hz - bend), (hx, y + height, hz - bend * 1.8)],
-               [0.55, 0.32, 0.14, 0.03], nu=14, caps=False), paint)
-
-
-def glasses(m, b, frame=(0.2, 0.2, 0.22), y=None, r=0.17, sun=False):
-    hx, hy, hz = b.head
-    y = y if y is not None else hy + 0.06
-    lens = color((0.1, 0.1, 0.14)) if sun else glass((0.6, 0.75, 0.85))
-    for side in (1, -1):
-        m.add(cylinder((hx + side * 0.21, y, hz + 0.55), r, 0.04, rot=(90, 0, 0)), lens)
-        m.add(tube([(hx + side * 0.04, y, hz + 0.6), (hx + side * 0.06, y + 0.02, hz + 0.6)], 0.03), color(frame))
-        m.add(tube([(hx + side * 0.38, y, hz + 0.5), (hx + side * 0.58, y + 0.02, hz + 0.05)], 0.03), color(frame))
-
-
 def make_ghosty():
-    """A ghost in a sheet: a bell that ripples out at the hem, little arms, big dark eyes and a round mouth"""
-    m = Model("ghosty", light=0.45)
-    sheet = ghostly()
-    prof = [(0.25, 0.0), (0.22, 1.05), (0.6, 0.98), (1.4, 0.88), (2.2, 0.82), (2.9, 0.72), (3.4, 0.45), (3.62, 0.0)]
-    m.add(lathe(prof, sz=0.92, nu=28, nv=20), sheet + face(eye=(0.05, 0.05, 0.1), v=0.83, spacing=0.22, size=0.15,
-                                                          mouth="o", brow=None, blush=False))
-    # The ripples of the hem
-    for k in range(8):
-        a = k * math.pi / 4
-        m.add(ellipsoid((math.sin(a) * 0.95, 0.28, math.cos(a) * 0.88), (0.28, 0.22, 0.28)), sheet)
+    """A ghost in a torn sheet: a bell that rips into tatters at the hem, reaching arms, hollow glowing eyes and a
+    wailing mouth"""
+    m = Model("ghosty", size=1024, light=0.45, ao=0.8, detail=0.1)
+
+    def sheet_paint(ctx):
+        base = ghostly()(ctx)
+        hollow = smoothstep(0.6, 0.0, ctx.p[..., 1]) * 0.25
+        return base * (1 - hollow)[..., None] + hollow[..., None] * np.array([0.25, 0.3, 0.6]) * 0.5
+
+    sheet = painted(sheet_paint)
+    face_paint = sheet + eyes(v=0.76, spacing=0.22, size=0.13, glow=(0.55, 0.9, 1.0), lid=0.0, socket=0.6) + \
+        mouth("wail", v=0.67, width=0.2, shadow=False)
+    prof = [(0.6, 0.0), (0.58, 0.95), (0.9, 0.93), (1.5, 0.86), (2.2, 0.8), (2.9, 0.7), (3.35, 0.45), (3.55, 0.0)]
+    m.add(lathe(prof, sz=0.9, nu=28, nv=22), face_paint, weight=2.0)
+    for k in range(10):
+        a = k * math.pi / 5
+        length = 0.55 + 0.25 * ((k * 7) % 3)
+        m.add(tube([(math.sin(a) * 0.9, 0.75, math.cos(a) * 0.82), (math.sin(a) * 1.0, 0.75 - length * 0.6, math.cos(a) * 0.92),
+                    (math.sin(a + 0.15) * 1.05, 0.75 - length, math.cos(a + 0.15) * 0.95)], [0.24, 0.16, 0.03], nu=8, flat=0.5), sheet)
     for side in (1, -1):
-        m.add(tube([(side * 0.75, 2.2, 0.1), (side * 1.15, 2.0, 0.35), (side * 1.25, 1.75, 0.55)], [0.26, 0.2, 0.14]), sheet)
+        m.add(tube([(side * 0.72, 2.4, 0.1), (side * 1.2, 2.25, 0.45), (side * 1.45, 2.05, 0.85), (side * 1.55, 1.9, 1.05)],
+                   [0.26, 0.2, 0.13, 0.04]), sheet)
+        for f in range(3):
+            m.add(tube([(side * 1.5, 1.95, 1.0), (side * (1.6 + f * 0.05), 1.85 - f * 0.08, 1.25)], [0.05, 0.015], nu=6), sheet)
     m.fit_height(HEIGHTS["ghosty"])
     m.write()
     print("models/ghosty.obj")
 
 
 def make_butcher():
-    """A huge butcher: a striped shirt with the sleeves rolled up, a bloody white apron, a bald head with a big
-    moustache, and a cleaver"""
-    m = Model("butcher")
-    shirt = cloth((0.75, 0.82, 0.92)) + stripes((0.25, 0.4, 0.7), 10, 0.35, axis="u")
-    apron = cloth((0.95, 0.94, 0.9), folds=3) + stains((0.6, 0.06, 0.05), 0.22, 2.2) + bands((0.85, 0.84, 0.8), [(0.93, 1.0)])
-    b = person(m, shirt, cloth((0.2, 0.2, 0.24)), arms=skin(SKIN) + bands((0.75, 0.82, 0.92), [(0.0, 0.35)]),
-               width=1.28, belly=1.0, face_kw=dict(mouth="grin", brow_tilt=0.6, eye=(0.35, 0.25, 0.15), size=0.1), nose=1.3)
-    # The apron over the belly
-    m.add(lathe([(0.85, 0.82), (1.4, 0.98, 0.25), (1.9, 1.08, 0.5), (2.35, 0.98, 0.3), (2.6, 0.82)], sz=0.82,
-                urange=(0.28, 0.72), nu=14), apron)
-    m.add(tube([(-0.55, 2.62, 0.45), (0, 3.0, 0.3), (0.55, 2.62, 0.45)], 0.05), color((0.85, 0.84, 0.8)))
-    beard(m, b, hair((0.25, 0.15, 0.1)), length=0.0)
-    # The cleaver in his right hand
+    """A huge, hunched butcher: a striped shirt with the sleeves rolled up over enormous arms, a heavy apron with
+    blood and a pocket, a bald scarred head, a broken nose, a scowl, a cleaver and a string of sausages"""
+    m = hero_model("butcher")
+    bd = replace(BRUTE, belly=0.9, hunch=0.4)
+    shirt = cloth((0.78, 0.84, 0.92)) + stripes((0.25, 0.38, 0.65), 12, 0.35, axis="u") + stains((0.55, 0.06, 0.05), 0.08, 3)
+    arm = skin(SKIN_RUDDY) + bands((0.78, 0.84, 0.92), [(0.85, 1.0)])
+    b = person(m, bd, shirt, cloth((0.24, 0.22, 0.26), folds=4), arms=arm, skin_c=SKIN_RUDDY, arm_pose=("ready", "down"),
+               head_paint=skin(SKIN_RUDDY) + eyes(iris=(0.3, 0.2, 0.12), lid=0.45, size=0.065, socket=0.5) + patch((0.7, 0.4, 0.35), 0.62, 0.72, 0.05, 0.18),
+               jaw_paint=skin(SKIN_RUDDY) + mouth("grim", width=0.17) + stubble((0.22, 0.15, 0.12), 0.7),
+               brows_kw=dict(c=(0.22, 0.14, 0.1), tilt=0.9, thick=1.0), nose="crooked", ears=True)
+    apron = cloth((0.94, 0.92, 0.86), folds=3) + stains((0.6, 0.05, 0.05), 0.24, 2.0) + stitches((0.6, 0.58, 0.55), [0.05, 0.95]) + \
+        rect((0.86, 0.84, 0.78), 0.4, 0.6, 0.45, 0.62)
+    y0, y1 = b.hip_y - 0.6, b.chest_y + 0.2
+    m.add(lathe([(y0, bd.hip * 1.3), (b.waist_y, bd.waist * 1.25, 0.35 + b.lean(b.waist_y)), (b.hip_y + bd.torso * 0.5, bd.waist * 1.32, 0.42 + b.lean(b.hip_y + bd.torso * 0.5)),
+                 (y1, bd.chest * 1.04, 0.15 + b.lean(y1))], sz=bd.depth + 0.12, urange=(0.3, 0.7), nu=14), apron, crease=0.1)
+    for side in (1, -1):
+        m.add(tube([(side * bd.chest * 0.38, y1 - 0.05, b.lean(y1) + 0.62), (side * bd.chest * 0.32, b.neck_y, b.lean(b.neck_y) + 0.2),
+                    (0, b.neck_y + 0.1, b.lean(b.neck_y) - 0.3)], 0.05, flat=0.4), color((0.85, 0.83, 0.78)))
+    belt(m, b, leather((0.25, 0.15, 0.1)), y=b.waist_y - 0.1)
+    # The cleaver
     hx, hy, hz = b.right
-    m.add(tube([(hx, hy - 0.05, hz), (hx, hy - 0.05, hz + 0.55)], 0.08), wood((0.4, 0.24, 0.12)))
-    m.add(blob((hx, hy + 0.15, hz + 1.0), (0.05, 0.42, 0.5), (0.2, 0.2)), metal((0.78, 0.8, 0.84)) + edges(0.3, 0.05))
+    m.add(tube([(hx, hy - 0.08, hz - 0.1), (hx, hy - 0.08, hz + 0.6)], 0.09), wood((0.38, 0.22, 0.12)) + bands((0.6, 0.6, 0.62), [(0.85, 1.0)]))
+    m.add(blob((hx, hy + 0.2, hz + 1.25), (0.06, 0.5, 0.65), (0.15, 0.15)), metal((0.78, 0.8, 0.84), 0.5) + edges(0.35, 0.06) + stains((0.5, 0.05, 0.05), 0.2, 4))
+    # A meat hook hanging from his belt
+    hx2 = -bd.waist * 0.8
+    m.add(tube([(hx2, b.waist_y - 0.1, 0.55), (hx2, b.waist_y - 0.5, 0.62)], 0.03), metal((0.6, 0.6, 0.62)))
+    m.add(tube([(hx2, b.waist_y - 0.5, 0.62), (hx2, b.waist_y - 0.85, 0.66), (hx2 + 0.2, b.waist_y - 0.95, 0.7), (hx2 + 0.28, b.waist_y - 0.75, 0.7)],
+               [0.05, 0.05, 0.04, 0.015]), metal((0.7, 0.7, 0.74)) + stains((0.5, 0.05, 0.05), 0.2, 6))
     finish(m, "butcher")
 
 
 def make_frosty():
-    """A snowman: three snowballs, coal eyes and buttons, a carrot nose, a top hat, a striped scarf and stick arms"""
-    m = Model("frosty", light=0.4)
+    """A snowman with a temper: lumpy snowballs, a coal scowl, a crooked carrot nose, a battered top hat, a long knitted
+    scarf, mittens on his stick arms"""
+    m = Model("frosty", size=1024, light=0.38, ao=1.0, detail=0.1)
     s = snow()
-    m.add(sphere((0, 0.95, 0), 1.0, nu=24, nv=14), s)
-    m.add(sphere((0, 2.3, 0), 0.78, nu=22, nv=12), s + patch((0.08, 0.08, 0.1), 0.5, 0.62, 0.09, 0.09) + patch((0.08, 0.08, 0.1), 0.5, 0.42, 0.09, 0.09))
-    head = m.add(sphere((0, 3.4, 0), 0.6, nu=22, nv=12),
-                 s + face(eye=(0.05, 0.05, 0.05), v=0.58, spacing=0.17, size=0.08, mouth="smile", brow=None, lips=(0.1, 0.1, 0.1)))
-    m.add(lathe([(0, 0.13), (0.7, 0.0)], (0, 3.36, 0.52), rot=(90, 0, 0), smooth=False, nu=10, nv=4), color((0.98, 0.5, 0.1)))
-    scarf = knit((0.85, 0.15, 0.15)) + stripes((0.15, 0.55, 0.25), 6, 0.4, axis="u")
-    m.add(lathe([(2.82, 0.5), (2.92, 0.64), (3.08, 0.6), (3.15, 0.45)], nu=20), scarf)
-    m.add(tube([(0.3, 2.95, 0.5), (0.4, 2.5, 0.65), (0.45, 2.1, 0.6)], [0.14, 0.13, 0.12], flat=0.5), scarf)
-    class B: pass
-    b = B()
-    b.head, b.top = (0, 3.4, 0), 4.0
-    top_hat(m, b, color((0.12, 0.11, 0.13)), band=(0.75, 0.12, 0.12), height=0.75)
+    m.add(blob((0, 1.0, 0), (1.05, 0.95, 1.0), (0.85, 0.9), nu=26, nv=14), s)
+    m.add(blob((0, 2.35, 0), (0.8, 0.75, 0.76), (0.85, 0.9), nu=24, nv=12), s)
+    m.add(sphere((0, 3.42, 0.02), 0.6, nu=24, nv=14), s, weight=2.5)
+    coal = color((0.1, 0.1, 0.11))
+    for k in range(5):
+        t = (k - 2) / 2
+        m.add(sphere((t * 0.25, 3.12 - 0.07 * (1 - t * t) * -1, 0.52 - 0.04 * abs(t)), 0.045), coal)
+    for k, y in enumerate((2.6, 2.32, 2.04, 1.3, 0.95)):
+        r = 0.76 if y > 1.8 else 1.0
+        m.add(sphere((0, y, math.sqrt(max(r * r - (y - (2.35 if y > 1.8 else 1.0)) ** 2, 0)) * 0.95), 0.07), coal)
+    # Coal eyes, set at a scowl
     for side in (1, -1):
-        stick = wood((0.4, 0.26, 0.14))
-        m.add(tube([(side * 0.6, 2.4, 0), (side * 1.2, 2.75, 0.1), (side * 1.7, 3.15, 0.2)], [0.07, 0.06, 0.04]), stick)
-        m.add(tube([(side * 1.45, 2.95, 0.15), (side * 1.6, 2.85, 0.4)], 0.035), stick)
-        m.add(tube([(side * 1.7, 3.15, 0.2), (side * 1.95, 3.35, 0.15)], 0.03), stick)
+        m.add(ellipsoid((side * 0.19, 3.53, 0.53), (0.1, 0.06, 0.06), rot=(0, side * 18, side * 22)), coal)
+    m.add(tube([(0, 3.38, 0.5), (0.05, 3.33, 0.85), (0.12, 3.3, 1.1)], [0.11, 0.07, 0.02]), color((0.95, 0.48, 0.1)) + stripes((0.75, 0.35, 0.05), 6, 0.15, axis="v"))
+    scarf = knit((0.75, 0.12, 0.12)) + stripes((0.12, 0.45, 0.22), 6, 0.4, axis="u")
+    m.add(torus((0, 2.98, 0.0), 0.52, 0.14, sz=0.95), scarf)
+    m.add(tube([(0.35, 2.95, 0.42), (0.5, 2.5, 0.62), (0.55, 2.0, 0.6), (0.6, 1.7, 0.55)], [0.15, 0.14, 0.13, 0.12], flat=0.45), scarf + stripes((0.95, 0.9, 0.85), 1, 0.08, axis="v"))
+    b = Body()
+    b.head, b.top, b.hs = (0, 3.42, 0.02), 4.0, 1.0
+    top_hat(m, b, color((0.12, 0.11, 0.13)) + stains((0.3, 0.28, 0.26), 0.2, 3), band=(0.6, 0.1, 0.1), height=0.75, tilt=-8)
+    stick = wood((0.38, 0.25, 0.14), 4)
+    for side in (1, -1):
+        m.add(tube([(side * 0.6, 2.45, 0), (side * 1.15, 2.6, 0.15), (side * 1.6, 2.5, 0.45)], [0.07, 0.06, 0.05]), stick)
+        m.add(tube([(side * 1.3, 2.58, 0.25), (side * 1.45, 2.85, 0.35)], [0.035, 0.02]), stick)
+        m.add(ellipsoid((side * 1.7, 2.48, 0.52), (0.18, 0.2, 0.2)), knit((0.12, 0.4, 0.2)))
+        m.add(ellipsoid((side * 1.62, 2.58, 0.66), (0.07, 0.1, 0.07)), knit((0.12, 0.4, 0.2)))
     finish(m, "frosty")
 
 
 def make_bjorn():
-    """A viking shieldbearer: broad, a big braided beard, a horned helmet, fur on his shoulders and a round shield"""
-    m = Model("bjorn")
-    tunic = cloth((0.3, 0.42, 0.26)) + bands((0.65, 0.5, 0.2), [(0.0, 0.06), (0.86, 0.9)])
-    b = person(m, tunic, cloth((0.4, 0.3, 0.2)) + stripes((0.3, 0.22, 0.14), 6, 0.4, axis="v", angle=30),
-               shoes=fur((0.45, 0.33, 0.2)), arms=skin(SKIN) + bands((0.4, 0.3, 0.2), [(0.0, 0.25)]), width=1.22,
-               face_kw=dict(mouth=None, brow_tilt=0.5, eye=(0.2, 0.45, 0.7), size=0.1), arm_pose="down")
-    beard_c = hair((0.85, 0.42, 0.12))
-    beard(m, b, beard_c, length=0.85)
+    """A viking shieldbearer: huge, in mail under a fur mantle, a horned helmet with a nose guard, a long braided red
+    beard with iron rings, bracers, and a round shield with an iron rim and boss"""
+    m = hero_model("bjorn")
+    bd = replace(BRUTE, hunch=0.2, belly=0.3, head=0.86)
+    mail = scales((0.55, 0.56, 0.6), 0.1)
+    tunic_p = cloth((0.3, 0.38, 0.24)) + scales((0.55, 0.56, 0.6), 0.1) + bands((0.32, 0.4, 0.25), [(0.0, 0.12)]) + bands((0.7, 0.55, 0.22), [(0.12, 0.15)])
+    b = person(m, bd, tunic_p, cloth((0.38, 0.28, 0.18)) + stripes((0.28, 0.2, 0.12), 7, 0.4, axis="v", angle=35),
+               shoes=fur((0.42, 0.3, 0.18)), arms=skin(SKIN_RUDDY) + bands((0.3, 0.38, 0.24), [(0.75, 1.0)]), skin_c=SKIN_RUDDY,
+               eyes_kw=dict(iris=(0.25, 0.45, 0.65), lid=0.4, size=0.07, socket=0.5), mouth_kw=dict(kind="grim"),
+               brows_kw=dict(c=(0.75, 0.35, 0.1), tilt=0.6, thick=1.0), nose="broad", arm_pose=("ready", "ready"), cuffs=fur((0.5, 0.38, 0.24)))
+    beard_c = hair((0.82, 0.38, 0.1))
+    beard(m, b, beard_c, length=0.9, width=1.1)
+    jx, jy, jz = b.jaw_c
+    for side in (1, -1):
+        m.add(tube([(jx + side * 0.17, jy - 0.9, jz + 0.35), (jx + side * 0.2, jy - 1.35, jz + 0.38)], [0.1, 0.06]), beard_c)
+        m.add(torus((jx + side * 0.17, jy - 0.95, jz + 0.35), 0.1, 0.04), metal((0.6, 0.6, 0.62)))
+    # A fur mantle round the shoulders and a cloak behind
+    m.add(lathe([(b.sh_y - 0.3, bd.shoulder * 1.05), (b.sh_y, bd.shoulder * 1.15), (b.sh_y + 0.22, bd.shoulder * 0.8), (b.neck_y + 0.1, bd.neck * 1.5)],
+                (0, 0, b.lean(b.sh_y)), sz=0.85, nu=24), fur((0.55, 0.42, 0.28)))
+    m.add(lathe([(0.6, bd.hip * 1.6), (b.hip_y, bd.waist * 1.45), (b.sh_y - 0.2, bd.shoulder * 1.05)], (0, 0, b.lean(b.waist_y) - 0.05), sz=0.9,
+                urange=(0.0, 0.25)), cloth((0.6, 0.15, 0.1), folds=6) + bands((0.75, 0.6, 0.25), [(0.0, 0.05)]))
+    m.add(lathe([(0.6, bd.hip * 1.6), (b.hip_y, bd.waist * 1.45), (b.sh_y - 0.2, bd.shoulder * 1.05)], (0, 0, b.lean(b.waist_y) - 0.05), sz=0.9,
+                urange=(0.75, 1.0)), cloth((0.6, 0.15, 0.1), folds=6) + bands((0.75, 0.6, 0.25), [(0.0, 0.05)]))
+    belt(m, b, leather((0.3, 0.18, 0.1)) + stitches((0.6, 0.45, 0.25), [0.3, 0.7]), buckle=metal((0.8, 0.65, 0.3)))
+    bracers(m, b, leather((0.35, 0.22, 0.12)) + stitches((0.6, 0.45, 0.25), [0.2, 0.8]))
+    # The helmet with its horns and nose guard
     hx, hy, hz = b.head
+    hs = b.hs
+    helm = metal((0.58, 0.58, 0.62), 0.45) + bands((0.72, 0.56, 0.25), [(0.0, 0.14)]) + spots((0.8, 0.8, 0.82), 0.025, 0.25, 4)
+    m.add(ellipsoid((hx, hy + 0.08 * hs, hz - 0.02), (0.64 * hs, 0.68 * hs, 0.62 * hs), vrange=(0.5, 1.0), nu=22, nv=8), helm)
+    m.add(blob((hx, hy - 0.02, hz + 0.6 * hs), (0.06 * hs, 0.3 * hs, 0.06 * hs), (0.4, 0.4)), metal((0.6, 0.6, 0.64)))
+    m.add(blob((hx, hy + 0.5 * hs, hz), (0.06 * hs, 0.18 * hs, 0.6 * hs), (0.4, 0.5)), metal((0.65, 0.55, 0.3)))
     for side in (1, -1):
-        m.add(tube([(hx + side * 0.18, hy - 1.2, hz + 0.45), (hx + side * 0.2, hy - 1.6, hz + 0.45)], 0.09), beard_c)
-    # Fur round the shoulders, and a belt
-    m.add(lathe([(2.45, 0.86), (2.62, 1.05), (2.8, 0.95), (2.95, 0.5)], sz=0.75, nu=22), fur((0.55, 0.42, 0.28)))
-    m.add(lathe([(1.42, 0.72), (1.6, 0.74)], sz=0.72, smooth=False, nu=22), leather((0.3, 0.18, 0.1)))
-    # The helmet with its horns
-    helm = metal((0.6, 0.6, 0.64)) + bands((0.7, 0.55, 0.25), [(0.0, 0.12)])
-    m.add(ellipsoid((hx, hy + 0.1, hz - 0.02), (0.66, 0.68, 0.64), vrange=(0.52, 1.0), nu=22, nv=8), helm)
-    m.add(blob((hx, hy + 0.05, hz + 0.6), (0.06, 0.28, 0.06), (0.4, 0.4)), metal((0.6, 0.6, 0.64)))
-    for side in (1, -1):
-        m.add(tube([(hx + side * 0.55, hy + 0.35, hz), (hx + side * 0.95, hy + 0.55, hz + 0.05), (hx + side * 1.05, hy + 1.0, hz + 0.1)],
-                   [0.16, 0.1, 0.02]), color((0.92, 0.88, 0.75)) + bands((0.6, 0.55, 0.45), [(0.0, 0.12)]))
-    # The round shield on his left arm, facing forward
+        m.add(tube([(hx + side * 0.55 * hs, hy + 0.32 * hs, hz), (hx + side * 0.98 * hs, hy + 0.52 * hs, hz + 0.08), (hx + side * 1.12 * hs, hy + 1.0 * hs, hz + 0.15)],
+                   [0.17 * hs, 0.11 * hs, 0.02]), color((0.9, 0.85, 0.7)) + stripes((0.7, 0.65, 0.52), 6, 0.2, axis="v") + bands((0.55, 0.5, 0.42), [(0.0, 0.14)]))
+    # The shield on his left arm, facing forward
     lx, ly, lz = b.left
-    c = (lx + 0.05, ly + 0.5, lz + 0.3)
-    m.add(cylinder(c, 1.0, 0.14, rot=(90, 0, 0)),
-          wood((0.62, 0.36, 0.18)) + stripes((0.75, 0.14, 0.1), 3, 0.5, axis="u") + edges(0.15, 0.1, dark=True))
-    m.add(tube([(c[0] + math.sin(a) * 1.0, c[1] + math.cos(a) * 1.0, c[2] + 0.07) for a in [k * math.pi / 12 for k in range(25)]],
-               0.07, nu=8, caps=False), metal((0.55, 0.55, 0.58)))
-    m.add(ellipsoid((c[0], c[1], c[2] + 0.16), (0.24, 0.24, 0.14)), metal((0.78, 0.66, 0.35)))
+    c = (lx - 0.25, ly + 0.4, lz + 0.4)
+    m.add(cylinder(c, 0.92, 0.14, rot=(90, 0, 0)),
+          wood((0.6, 0.35, 0.17)) + stripes((0.72, 0.13, 0.1), 3, 0.5, axis="u") + edges(0.2, 0.12, dark=True) + stains((0.3, 0.2, 0.12), 0.15, 3))
+    m.add(torus((c[0], c[1], c[2] + 0.07), 0.92, 0.08, rot=(90, 0, 0), nu=28), metal((0.5, 0.5, 0.54)) + spots((0.75, 0.75, 0.78), 0.025, 0.5, 3))
+    m.add(ellipsoid((c[0], c[1], c[2] + 0.16), (0.27, 0.27, 0.16)), metal((0.78, 0.66, 0.35), 0.5))
+    for k in range(6):
+        a = k * math.pi / 3
+        m.add(sphere((c[0] + math.cos(a) * 0.5, c[1] + math.sin(a) * 0.5, c[2] + 0.15), 0.055), metal((0.72, 0.72, 0.75)))
     finish(m, "bjorn")
 
 
 def make_hilda():
-    """A crossing guard: a long hi-vis coat with silver bands, a white peaked cap, and the stop sign on its pole"""
-    m = Model("hilda")
-    hivis = cloth((0.98, 0.86, 0.12), folds=4) + bands((0.85, 0.87, 0.9), [(0.3, 0.36), (0.62, 0.68)])
-    b = person(m, hivis, cloth((0.2, 0.22, 0.3)), arms=hivis, skirt=cloth((0.98, 0.86, 0.12)) + bands((0.85, 0.87, 0.9), [(0.15, 0.25)]),
-               hair_paint=hair((0.75, 0.75, 0.78)), hair_style="bun", arm_pose="up",
-               face_kw=dict(mouth="open", brow_tilt=0.4, eye=(0.35, 0.3, 0.25)), skin_c=SKIN_PALE)
-    cap(m, b, color((0.95, 0.95, 0.95)) + bands((0.15, 0.15, 0.2), [(0.0, 0.3)]), color((0.12, 0.12, 0.16)))
+    """A crossing guard: a long hi-vis coat with silver bands and pockets, a white peaked cap with a badge, grey hair in
+    a bun, a stern frown, and the stop sign held up on its pole"""
+    m = hero_model("hilda")
+    bd = replace(HERO, hip=0.6, belly=0.2)
+    hivis = cloth((0.98, 0.84, 0.1), folds=4) + bands((0.82, 0.84, 0.88), [(0.32, 0.38), (0.62, 0.68)]) + stitches((0.6, 0.5, 0.05), [0.3, 0.4, 0.6, 0.7]) + \
+        rect((0.9, 0.76, 0.08), 0.36, 0.46, 0.15, 0.25) + rect((0.9, 0.76, 0.08), 0.54, 0.64, 0.15, 0.25)
+    b = person(m, bd, hivis, cloth((0.2, 0.22, 0.3)), arms=cloth((0.98, 0.84, 0.1)) + bands((0.82, 0.84, 0.88), [(0.4, 0.48)]),
+               skirt=cloth((0.98, 0.84, 0.1), folds=6) + bands((0.82, 0.84, 0.88), [(0.12, 0.22)]) + stitches((0.6, 0.5, 0.05), [0.1, 0.24]),
+               hair_paint=hair((0.72, 0.72, 0.75)), hair_style="bun", arm_pose=("up", "akimbo"), skin_c=SKIN_PALE,
+               eyes_kw=dict(iris=(0.35, 0.3, 0.25), lid=0.35, size=0.07), mouth_kw=dict(kind="frown"), brows_kw=dict(c=(0.6, 0.6, 0.62), tilt=0.7),
+               nose="long")
+    cap(m, b, color((0.95, 0.95, 0.95)) + bands((0.15, 0.15, 0.2), [(0.0, 0.3)]), color((0.12, 0.12, 0.16)), badge=metal((0.85, 0.7, 0.3)))
     hx, hy, hz = b.right
-    m.add(cylinder((hx, hy - 1.6, hz), 0.07, 2.9), metal((0.85, 0.85, 0.88)))
-    c = (hx, hy + 1.55, hz + 0.05)
+    m.add(cylinder((hx, hy - 1.7, hz), 0.07, 3.1), metal((0.85, 0.85, 0.88)) + stripes((0.75, 0.1, 0.1), 6, 0.3, axis="v"))
+    c = (hx, hy + 1.45, hz + 0.05)
 
     def sign(ctx):
         x, y = ctx.p[..., 0] - c[0], ctx.p[..., 1] - c[1]
         r = (x * x + y * y) ** 0.5
         out = color((0.86, 0.1, 0.08))(ctx)
         white = (smoothstep(0.62, 0.6, r) * smoothstep(0.52, 0.54, r) + (abs(y) < 0.12) * (abs(x) < 0.42) * (r < 0.56))
-        front = (ctx.n[..., 2] > 0.5)
-        white = white * front
+        white = white * (ctx.n[..., 2] > 0.5)
         return out * (1 - white[..., None]) + 0.97 * white[..., None]
-    m.add(cylinder(c, 0.72, 0.08, rot=(90, 0, 0)), painted(sign))
+    m.add(cylinder(c, 0.72, 0.08, rot=(90, 0, 0)), painted(sign), weight=1.5)
+    m.add(torus((c[0], c[1], c[2] + 0.04), 0.72, 0.04, rot=(90, 0, 0)), metal((0.8, 0.8, 0.82)))
     finish(m, "hilda")
 
 
 def make_mira():
-    """A timekeeper: a long starry robe and a pointed hat, and a staff with an hourglass on top"""
-    m = Model("mira")
-    robe = cloth((0.42, 0.28, 0.7), folds=6) + spots((0.98, 0.9, 0.5), 0.05, 0.25, 11) + bands((0.85, 0.7, 0.3), [(0.0, 0.05)])
-    b = person(m, robe, robe, arms=robe, skirt=robe, hair_paint=hair((0.95, 0.95, 0.98)), hair_style="long",
-               face_kw=dict(mouth="smile", eye=(0.55, 0.3, 0.8)), skin_c=SKIN_PALE, arm_pose="forward")
-    pointy_hat(m, b, cloth((0.42, 0.28, 0.7), folds=3) + spots((0.98, 0.9, 0.5), 0.05, 0.3, 12), brim=1.15, height=1.7)
+    """A timekeeper: tall and thin in a long starry robe with gold trim and wide sleeves, a pointed hat, long white hair,
+    a calm, knowing look, and a staff with an hourglass on top"""
+    m = hero_model("mira")
+    purple = (0.38, 0.24, 0.62)
+    robe = cloth(purple, folds=7) + spots((0.98, 0.88, 0.45), 0.04, 0.2, 11) + bands((0.85, 0.68, 0.28), [(0.0, 0.05)]) + stitches((0.85, 0.68, 0.28), [0.07])
+    b = person(m, SLIM, robe + rect((0.85, 0.68, 0.28), 0.47, 0.53, 0.0, 1.0), robe, arms=robe, skirt=robe, hair_paint=hair((0.93, 0.93, 0.96)),
+               hair_style="long", skin_c=SKIN_PALE, arm_pose=("forward", "down"),
+               eyes_kw=dict(iris=(0.55, 0.3, 0.8), lid=0.5, size=0.07, tilt=0.2), mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.85, 0.85, 0.9), tilt=0.1, thick=0.4),
+               nose="long")
+    for i, side in enumerate((1, -1)):
+        w, d = b.wrists[i], b.forearm_dir[i]
+        e = b.elbows[i]
+        m.add(lathe([(0, SLIM.fore * 1.2), (0.55, SLIM.fore * 2.8), (0.62, 0.0)], _add(w, tuple(-c * 0.55 for c in d)), rot=_aim(d), nu=16, urange=(0, 1)),
+              robe + bands((0.85, 0.68, 0.28), [(0.82, 0.92)]))
+    pointy_hat(m, b, cloth(purple, folds=3) + spots((0.98, 0.88, 0.45), 0.05, 0.25, 12), brim=1.2, height=1.7, band=metal((0.85, 0.68, 0.28)))
+    collar(m, b, metal((0.85, 0.68, 0.28)), t=0.06)
     hx, hy, hz = b.right
-    m.add(cylinder((hx, 0.05, hz), 0.08, 3.6), wood((0.45, 0.3, 0.16)))
-    top = 3.65
-    gold = metal((0.85, 0.68, 0.3))
+    m.add(tube([(hx, 0.05, hz), (hx + 0.03, 2.0, hz), (hx, 3.7, hz)], 0.07), wood((0.42, 0.28, 0.15)) + bands((0.85, 0.68, 0.28), [(0.55, 0.6)]))
+    top = 3.7
+    gold = metal((0.85, 0.68, 0.3), 0.5)
     m.add(cylinder((hx, top, hz), 0.34, 0.08), gold)
     m.add(cylinder((hx, top + 0.95, hz), 0.34, 0.08), gold)
     m.add(lathe([(0, 0.3), (0.4, 0.05), (0.45, 0.05), (0.85, 0.3)], (hx, top + 0.08, hz), smooth=True, nu=16), glass((0.55, 0.7, 0.85)))
@@ -349,244 +747,363 @@ def make_mira():
     for k in range(3):
         a = k * 2 * math.pi / 3
         m.add(cylinder((hx + math.sin(a) * 0.3, top, hz + math.cos(a) * 0.3), 0.04, 1.0), gold)
+    m.add(sphere((hx, top + 1.12, hz), 0.12), color((0.6, 0.85, 1.0)))
     finish(m, "mira")
 
 
 def make_karl():
-    """A mechanic in blue overalls with a red cap, a moustache, oil on his sleeves and a big wrench"""
-    m = Model("karl")
-    overalls = cloth((0.2, 0.36, 0.62)) + stains((0.08, 0.07, 0.07), 0.15, 2.5)
-    b = person(m, overalls + rect((0.16, 0.3, 0.5), 0.4, 0.6, 0.55, 0.75), overalls, arms=cloth((0.85, 0.85, 0.82)) + stains((0.1, 0.1, 0.1), 0.2, 3),
-               width=1.08, face_kw=dict(mouth="smile", eye=(0.4, 0.3, 0.2), brow_tilt=0.2))
-    cap(m, b, color((0.8, 0.16, 0.14)))
+    """A mechanic: stocky, in oil-stained blue overalls with straps, pockets and a rag, a red cap, a thick moustache, a
+    tired squint, and a big wrench"""
+    m = hero_model("karl")
+    overalls = cloth((0.2, 0.34, 0.58)) + stains((0.08, 0.07, 0.07), 0.16, 2.5) + stitches((0.75, 0.6, 0.3), [0.15, 0.5]) + \
+        rect((0.16, 0.28, 0.48), 0.42, 0.58, 0.55, 0.75)
+    b = person(m, STOCKY, overalls, overalls, arms=cloth((0.82, 0.8, 0.76)) + stains((0.1, 0.1, 0.1), 0.2, 3) + bands((0.82, 0.8, 0.76), [(0.0, 0.1)]),
+               hands=skin(SKIN) + stains((0.08, 0.07, 0.07), 0.3, 5), eyes_kw=dict(iris=(0.4, 0.3, 0.2), lid=0.55, size=0.065),
+               mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.3, 0.2, 0.12), tilt=0.2, thick=0.9), nose="big", arm_pose=("down", "akimbo"),
+               jaw_paint=skin(SKIN) + mouth("line") + stubble((0.3, 0.22, 0.15), 0.5))
+    cap(m, b, color((0.78, 0.15, 0.13)) + stains((0.1, 0.08, 0.08), 0.12, 4))
     beard(m, b, hair((0.3, 0.2, 0.12)), length=0.0)
     for side in (1, -1):
-        m.add(tube([(side * 0.42, 2.0, 0.42), (side * 0.42, 2.7, 0.35), (side * 0.38, 2.9, -0.1)], 0.08, flat=0.4), color((0.16, 0.3, 0.52)))
+        m.add(tube([(side * 0.42, b.waist_y + 0.3, 0.5), (side * 0.42, b.chest_y + 0.2, 0.5), (side * 0.38, b.sh_y + 0.1, -0.1)], 0.08, flat=0.4),
+              cloth((0.16, 0.28, 0.5)))
+        m.add(sphere((side * 0.42, b.chest_y + 0.15, 0.56), 0.06), metal((0.8, 0.8, 0.82)))
+    belt(m, b, leather((0.25, 0.16, 0.1)))
+    m.add(tube([(0.5, b.waist_y - 0.15, 0.55), (0.6, b.waist_y - 0.55, 0.58), (0.55, b.waist_y - 0.8, 0.5)], 0.08, flat=0.3), cloth((0.85, 0.3, 0.2)) + stains((0.1, 0.1, 0.1), 0.3, 6))
     hx, hy, hz = b.right
-    steel = metal((0.72, 0.74, 0.78))
-    m.add(tube([(hx, hy, hz), (hx, hy - 1.0, hz + 0.1)], 0.09), steel)
-    m.add(lathe([(0, 0.0), (0, 0.28), (0.14, 0.28), (0.14, 0.0)], (hx, hy - 1.15, hz + 0.1), rot=(90, 0, 0), smooth=False, nu=8), steel)
+    steel = metal((0.72, 0.74, 0.78), 0.5)
+    m.add(tube([(hx, hy + 0.1, hz), (hx, hy - 1.05, hz + 0.1)], 0.09), steel)
+    m.add(lathe([(0, 0.0), (0, 0.3), (0.15, 0.3), (0.15, 0.0)], (hx, hy - 1.2, hz + 0.1), rot=(90, 0, 0), smooth=False, nu=8), steel)
+    m.add(lathe([(0, 0.0), (0, 0.22), (0.12, 0.22), (0.12, 0.0)], (hx, hy + 0.15, hz), rot=(90, 0, 0), smooth=False, nu=8), steel)
     finish(m, "karl")
 
 
 def make_birgit():
-    """A builder: an orange hi-vis vest with silver stripes, a yellow hard hat, a tool belt, a braid and a plank"""
-    m = Model("birgit")
-    vest = cloth((0.98, 0.48, 0.08)) + bands((0.88, 0.9, 0.92), [(0.35, 0.42), (0.62, 0.69)])
-    b = person(m, vest, cloth((0.3, 0.3, 0.34)), arms=cloth((0.35, 0.36, 0.4)), hair_paint=hair((0.88, 0.6, 0.25)),
-               hair_style="short", face_kw=dict(mouth="grin", eye=(0.3, 0.55, 0.35)))
+    """A builder: an orange hi-vis vest with silver stripes over a work shirt, a yellow hard hat, a heavy tool belt with
+    a hammer, a braid, work gloves, a focused look, and a plank on her shoulder"""
+    m = hero_model("birgit")
+    vest = cloth((0.98, 0.46, 0.08)) + bands((0.86, 0.88, 0.9), [(0.35, 0.42), (0.62, 0.69)]) + stitches((0.6, 0.3, 0.05), [0.33, 0.44, 0.6, 0.71])
+    gloves = leather((0.75, 0.6, 0.35))
+    b = person(m, ATHLETE, vest, cloth((0.3, 0.3, 0.34)) + stains((0.5, 0.45, 0.35), 0.15, 3), arms=cloth((0.36, 0.38, 0.44)) + bands((0.36, 0.38, 0.44), [(0.0, 0.1)]),
+               hands=gloves, hair_paint=hair((0.85, 0.56, 0.22)), hair_style="short", arm_pose=("up", "down"),
+               eyes_kw=dict(iris=(0.3, 0.5, 0.35), lid=0.35, size=0.07), mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.6, 0.38, 0.15), tilt=0.4), nose="round",
+               cuffs=leather((0.3, 0.2, 0.12)))
     hx, hy, hz = b.head
-    m.add(tube([(hx, hy, hz - 0.55), (hx, hy - 0.6, hz - 0.65), (hx, hy - 1.2, hz - 0.55)], [0.14, 0.12, 0.08]), hair((0.88, 0.6, 0.25)))
-    hat = color((0.98, 0.84, 0.1)) + bands((0.85, 0.7, 0.05), [(0.4, 0.45)])
-    m.add(ellipsoid((hx, hy + 0.15, hz), (0.68, 0.7, 0.66), vrange=(0.5, 1.0), nu=22, nv=8), hat)
-    m.add(blob((hx, hy + 0.17, hz + 0.1), (0.78, 0.04, 0.8), (0.3, 1.0)), hat)
-    m.add(lathe([(1.4, 0.74), (1.6, 0.76)], sz=0.72, smooth=False, nu=22), leather((0.45, 0.28, 0.14)))
-    for x in (0.45, -0.45):
-        m.add(blob((x, 1.3, 0.48), (0.18, 0.2, 0.1), (0.4, 0.4)), leather((0.4, 0.25, 0.12)))
-    m.add(tube([(0.42, 1.25, 0.55), (0.45, 1.6, 0.6)], 0.05), wood((0.5, 0.32, 0.18)))
-    m.add(blob((-0.9, 3.05, -0.1), (0.18, 0.1, 1.5), (0.1, 0.1), rot=(10, 0, 0)), wood((0.78, 0.58, 0.34)))
+    hs = b.hs
+    m.add(tube([(hx, hy, hz - 0.55 * hs), (hx, hy - 0.6 * hs, hz - 0.65 * hs), (hx, hy - 1.25 * hs, hz - 0.55 * hs)], [0.14 * hs, 0.12 * hs, 0.07 * hs]),
+          hair((0.85, 0.56, 0.22)) + stripes((0.65, 0.4, 0.15), 8, 0.3, axis="v", angle=40))
+    hat = color((0.98, 0.82, 0.1)) + bands((0.85, 0.68, 0.05), [(0.4, 0.45)]) + stains((0.5, 0.45, 0.35), 0.1, 4)
+    m.add(ellipsoid((hx, hy + 0.15 * hs, hz), (0.68 * hs, 0.7 * hs, 0.66 * hs), vrange=(0.5, 1.0), nu=22, nv=8), hat)
+    m.add(blob((hx, hy + 0.5 * hs, hz), (0.08 * hs, 0.22 * hs, 0.62 * hs), (0.4, 0.5)), hat)
+    m.add(torus((hx, hy + 0.15 * hs, hz + 0.08), 0.74 * hs, 0.06 * hs, sz=1.1), hat)
+    belt(m, b, leather((0.45, 0.28, 0.14)) + stitches((0.7, 0.55, 0.3), [0.3, 0.7]))
+    for x in (0.42, -0.42, 0.0):
+        m.add(blob((x, b.waist_y - 0.25, 0.5 if x else -0.55), (0.17, 0.2, 0.1), (0.4, 0.4)), leather((0.4, 0.25, 0.12)) + stitches((0.7, 0.55, 0.3), [0.85]))
+    m.add(tube([(-0.45, b.waist_y - 0.1, 0.62), (-0.48, b.waist_y - 0.7, 0.66)], 0.05), wood((0.5, 0.32, 0.18)))
+    m.add(blob((-0.48, b.waist_y - 0.08, 0.66), (0.22, 0.07, 0.07), (0.3, 0.3)), metal((0.5, 0.5, 0.55)))
+    rx, ry, rz = b.right
+    m.add(blob((rx - 0.1, ry + 0.05, rz - 0.4), (0.18, 0.1, 1.7), (0.1, 0.1), rot=(20, 0, 0)), wood((0.75, 0.55, 0.32), 16) + edges(0.15, 0.04, dark=True))
     finish(m, "birgit")
 
 
 def make_bent():
-    """A bus driver: a green uniform with a tie and brass buttons, a peaked cap, a round belly and a moustache"""
-    m = Model("bent")
-    green = (0.18, 0.45, 0.3)
-    uni = cloth(green) + rect((0.95, 0.95, 0.92), 0.46, 0.54, 0.6, 0.98) + rect((0.75, 0.15, 0.12), 0.48, 0.52, 0.45, 0.92)
-    uni = uni + patch((0.9, 0.75, 0.3), 0.44, 0.4, 0.04, 0.04) + patch((0.9, 0.75, 0.3), 0.44, 0.25, 0.04, 0.04)
-    b = person(m, uni, cloth((0.15, 0.3, 0.2)), arms=cloth(green) + bands((0.9, 0.75, 0.3), [(0.05, 0.1)]), width=1.15, belly=0.8,
-               face_kw=dict(mouth="smile", eye=(0.4, 0.3, 0.2)), hair_paint=hair((0.55, 0.55, 0.58)), hair_style="short")
-    beard(m, b, hair((0.55, 0.55, 0.58)), length=0.0)
-    cap(m, b, color(green) + bands((0.9, 0.75, 0.3), [(0.0, 0.25)]), color((0.1, 0.1, 0.12)), height=0.45)
+    """A bus driver: a round belly in a green uniform with brass buttons, epaulettes and a tie, a peaked cap with a
+    badge, grey sideburns and moustache, and a grumpy frown"""
+    m = hero_model("bent")
+    green = (0.16, 0.42, 0.28)
+    uni = cloth(green) + rect((0.93, 0.93, 0.9), 0.46, 0.54, 0.62, 0.98) + rect((0.72, 0.14, 0.12), 0.48, 0.52, 0.48, 0.94) + \
+        stitches((0.1, 0.25, 0.16), [0.12, 0.9]) + rect((0.12, 0.32, 0.2), 0.36, 0.44, 0.62, 0.72)
+    for v in (0.42, 0.3, 0.18):
+        uni = uni + patch((0.88, 0.72, 0.3), 0.455, v, 0.035, 0.035)
+    b = person(m, STOUT, uni, cloth((0.13, 0.28, 0.18)) + stitches((0.08, 0.2, 0.12), [0.5], axis="u"), arms=cloth(green) + bands((0.88, 0.72, 0.3), [(0.05, 0.1)]),
+               hair_paint=hair((0.6, 0.6, 0.62)), hair_style="short", arm_pose=("akimbo", "down"), skin_c=SKIN_RUDDY,
+               eyes_kw=dict(iris=(0.4, 0.3, 0.2), lid=0.45, size=0.065), mouth_kw=dict(kind="frown"),
+               brows_kw=dict(c=(0.6, 0.6, 0.62), tilt=0.5, thick=1.0), nose="big", jaw_paint=skin(SKIN_RUDDY) + mouth("frown") + stubble((0.5, 0.5, 0.52), 0.4))
+    beard(m, b, hair((0.62, 0.62, 0.64)), length=0.0)
+    cap(m, b, color(green) + bands((0.88, 0.72, 0.3), [(0.0, 0.18)]), color((0.1, 0.1, 0.12)), height=0.45, badge=metal((0.88, 0.72, 0.3)))
+    for i, side in enumerate((1, -1)):
+        sx, sy, sz = b.shoulders[i]
+        m.add(blob((sx - side * 0.15, sy + 0.25, sz), (0.32, 0.05, 0.22), (0.3, 0.3)), color(green) + stripes((0.88, 0.72, 0.3), 3, 0.3, axis="u"))
+    belt(m, b, leather((0.15, 0.12, 0.1)), buckle=metal((0.85, 0.85, 0.88)))
     finish(m, "bent")
 
 
 def make_sigrid():
-    """A witch: a long black dress, a tall pointed hat with a wide brim, a purple scarf, wild grey hair, a hooked nose"""
-    m = Model("sigrid")
-    dress = cloth((0.16, 0.14, 0.2), folds=7) + bands((0.4, 0.2, 0.5), [(0.0, 0.05)])
-    b = person(m, dress, dress, arms=dress, skirt=dress, hair_paint=hair((0.72, 0.72, 0.7)), hair_style="long",
-               face_kw=dict(mouth="grin", brow_tilt=0.7, eye=(0.45, 0.75, 0.2)), skin_c=(0.78, 0.86, 0.66), nose=0)
+    """A witch: thin and bent, in a long ragged black dress with patches, a tall crooked hat with a wide brim, a purple
+    shawl, wild grey hair, a hooked nose with a wart, and a sly, narrow-eyed look"""
+    m = hero_model("sigrid")
+    bd = replace(SLIM, hunch=0.3)
+    green_skin = (0.72, 0.8, 0.6)
+    dress = cloth((0.14, 0.12, 0.18), folds=8) + rect((0.3, 0.2, 0.35), 0.2, 0.3, 0.3, 0.45) + rect((0.25, 0.28, 0.2), 0.62, 0.7, 0.55, 0.68) + \
+        stitches((0.45, 0.35, 0.5), [0.04, 0.96])
+    b = person(m, bd, dress, dress, arms=dress, skirt=dress, hands=skin(green_skin), skin_c=green_skin, hair_paint=hair((0.7, 0.7, 0.68)),
+               hair_style="long", nose="hook", arm_pose=("forward", "down"),
+               eyes_kw=dict(iris=(0.55, 0.8, 0.15), lid=0.55, size=0.07, tilt=0.45), mouth_kw=dict(kind="smirk"),
+               brows_kw=dict(c=(0.45, 0.45, 0.42), tilt=0.8, thick=0.8))
     hx, hy, hz = b.head
-    m.add(tube([(hx, hy - 0.02, hz + 0.5), (hx, hy - 0.1, hz + 0.85), (hx, hy - 0.3, hz + 0.95)], [0.13, 0.08, 0.03]), skin((0.78, 0.86, 0.66)))
-    pointy_hat(m, b, cloth((0.14, 0.12, 0.18), folds=2) + bands((0.5, 0.25, 0.6), [(0.05, 0.13)]), brim=1.4, height=2.2, bend=0.45)
-    m.add(lathe([(2.78, 0.48), (2.9, 0.62), (3.05, 0.5)], nu=20), knit((0.5, 0.22, 0.6)))
-    m.add(tube([(0.25, 2.85, 0.48), (0.35, 2.4, 0.62), (0.3, 1.9, 0.55)], 0.12, flat=0.45), knit((0.5, 0.22, 0.6)))
+    m.add(sphere((hx + 0.05, hy - 0.05, hz + 0.68 * b.hs), 0.035), skin((0.55, 0.62, 0.42)))
+    # Ragged hem
+    for k in range(12):
+        a = k * math.pi / 6
+        m.add(lathe([(0, 0.12), (0.3, 0.0)], (math.sin(a) * bd.hip * 1.5, 0.68, math.cos(a) * bd.hip * 1.5 * 0.82), rot=(180, 0, 0), smooth=False, nu=6, nv=3),
+              cloth((0.14, 0.12, 0.18)))
+    pointy_hat(m, b, cloth((0.13, 0.11, 0.16), folds=2) + rect((0.3, 0.22, 0.32), 0.3, 0.4, 0.5, 0.6), brim=1.45, height=2.3, bend=0.5, band=cloth((0.48, 0.2, 0.55)))
+    m.add(lathe([(b.sh_y - 0.35, bd.shoulder * 1.2), (b.sh_y, bd.shoulder * 1.05), (b.neck_y, bd.neck * 1.8)], (0, 0, b.lean(b.sh_y)), sz=0.85, nu=22),
+          knit((0.48, 0.2, 0.55)) + bands((0.35, 0.12, 0.4), [(0.0, 0.08)]))
     finish(m, "sigrid")
 
 
 def make_tobias():
-    """A tourist: a pink flowered shirt, khaki shorts, socks in sandals, a sun hat, a bum bag and his camera"""
-    m = Model("tobias")
-    shirt = cloth((0.95, 0.55, 0.65)) + flowers((0.98, 0.95, 0.85), (0.98, 0.7, 0.2), 0.14, 0.4)
-    legs = skin(SKIN_PALE) + bands((0.82, 0.72, 0.5), [(0.55, 1.0)]) + bands(WHITE, [(0.0, 0.18)])
-    b = person(m, shirt, legs, shoes=leather((0.5, 0.33, 0.2)) + bands(WHITE, [(0.0, 0.6)]), arms=skin(SKIN_PALE) + bands((0.95, 0.55, 0.65), [(0.6, 1.0)]),
-               skin_c=SKIN_PALE, face_kw=dict(mouth="grin", eye=(0.3, 0.5, 0.8)), belly=0.4, arm_pose="forward")
+    """A tourist: a pink flowered shirt, khaki shorts with big pockets, socks in sandals, a sun hat, sunglasses, a bum
+    bag, a camera on its strap, sunburnt, and lost"""
+    m = hero_model("tobias")
+    bd = replace(HERO, belly=0.5, arm=0.2, fore=0.17)
+    shirt = cloth((0.95, 0.5, 0.62)) + flowers((0.98, 0.95, 0.85), (0.98, 0.7, 0.2), 0.13, 0.4) + rect((0.85, 0.42, 0.52), 0.495, 0.505, 0.0, 1.0)
+    legs = skin(SKIN_RUDDY) + bands((0.8, 0.7, 0.5), [(0.55, 1.0)]) + bands(WHITE, [(0.0, 0.2)]) + rect((0.72, 0.62, 0.42), 0.15, 0.4, 0.62, 0.8)
+    b = person(m, bd, shirt, legs, shoes=leather((0.5, 0.33, 0.2)) + bands(WHITE, [(0.0, 0.55)]), arms=skin(SKIN_RUDDY) + bands((0.95, 0.5, 0.62), [(0.62, 1.0)]),
+               skin_c=SKIN_RUDDY, arm_pose=("forward", "down"), eyes_kw=dict(iris=(0.3, 0.5, 0.8), lid=0.2, size=0.075),
+               mouth_kw=dict(kind="pout"), brows_kw=dict(c=(0.6, 0.45, 0.25), tilt=-0.6, thick=0.5), nose="round", boots=False)
     glasses(m, b, sun=True)
     hx, hy, hz = b.head
-    hat = cloth((0.92, 0.86, 0.62), folds=8) + bands((0.4, 0.6, 0.85), [(0.05, 0.25)])
-    m.add(lathe([(0, 0.0), (0.0, 1.05), (0.08, 0.95), (0.12, 0.62), (0.45, 0.6), (0.55, 0.0)], (hx, b.top - 0.32, hz), nu=22), hat)
-    m.add(lathe([(1.4, 0.74), (1.52, 0.76)], sz=0.75, smooth=False, nu=20), color((0.2, 0.5, 0.75)))
-    m.add(blob((0.3, 1.38, 0.55), (0.3, 0.18, 0.14), (0.5, 0.5)), color((0.2, 0.5, 0.75)))
-    # The camera in his hand, on its strap
-    hx, hy, hz = b.right
-    m.add(blob((hx - 0.25, hy + 0.15, hz + 0.25), (0.35, 0.22, 0.18), (0.3, 0.3)), color((0.15, 0.15, 0.17)) + bands((0.6, 0.6, 0.62), [(0.75, 0.85)]))
-    m.add(cylinder((hx - 0.25, hy + 0.12, hz + 0.4), 0.14, 0.25, rot=(90, 0, 0)), metal((0.3, 0.3, 0.33)))
-    m.add(tube([(-0.5, 2.85, 0.35), (0, 2.4, 0.62), (hx - 0.35, hy + 0.3, hz + 0.2)], 0.035), color((0.15, 0.15, 0.17)))
+    hs = b.hs
+    hat = cloth((0.9, 0.84, 0.6), folds=10) + bands((0.35, 0.55, 0.8), [(0.05, 0.25)])
+    m.add(lathe([(0, 0.0), (0.0, 1.0 * hs), (0.08, 0.92 * hs), (0.12, 0.6 * hs), (0.45 * hs, 0.58 * hs), (0.55 * hs, 0.0)], (hx, b.top - 0.32 * hs, hz), nu=22), hat)
+    belt(m, b, color((0.2, 0.5, 0.75)), y=b.hip_y + 0.12)
+    m.add(blob((0.3, b.hip_y + 0.05, bd.waist * bd.depth * 1.5 + 0.2), (0.32, 0.2, 0.15), (0.5, 0.5)), color((0.2, 0.5, 0.75)) + stitches((0.1, 0.3, 0.5), [0.6]))
+    rx, ry, rz = b.right
+    m.add(blob((rx - 0.25, ry + 0.15, rz + 0.25), (0.36, 0.23, 0.19), (0.3, 0.3)), color((0.14, 0.14, 0.16)) + bands((0.6, 0.6, 0.62), [(0.75, 0.85)]))
+    m.add(cylinder((rx - 0.25, ry + 0.12, rz + 0.42), 0.15, 0.28, rot=(90, 0, 0)), metal((0.3, 0.3, 0.33)))
+    m.add(cylinder((rx - 0.25, ry + 0.12, rz + 0.69), 0.11, 0.02, rot=(90, 0, 0)), glass((0.3, 0.4, 0.55)))
+    m.add(tube([(-0.5, b.sh_y + 0.1, 0.35), (0, b.chest_y - 0.1, 0.62), (rx - 0.35, ry + 0.3, rz + 0.2)], 0.035), color((0.14, 0.14, 0.16)))
     finish(m, "tobias")
 
 
 def make_mads():
-    """A skater on his board: a baggy orange hoodie, wide grey jeans and a cap on backwards"""
-    m = Model("mads")
-    hoodie = cloth((0.98, 0.42, 0.12), folds=6) + rect((0.88, 0.36, 0.1), 0.4, 0.6, 0.12, 0.32) + patch((0.98, 0.95, 0.85), 0.5, 0.68, 0.1, 0.1)
-    b = person(m, hoodie, cloth((0.5, 0.52, 0.56), folds=6), shoes=color((0.15, 0.15, 0.18)) + bands(WHITE, [(0.0, 0.3)]),
-               arms=cloth((0.98, 0.42, 0.12)), width=1.05, face_kw=dict(mouth="smile", eye=(0.35, 0.25, 0.15), look=(0.4, 0)),
-               hair_paint=hair((0.2, 0.14, 0.1)))
-    cap(m, b, color((0.15, 0.4, 0.75)), back=True)
-    # The hood, down on his back
-    m.add(ellipsoid((0, 2.85, -0.45), (0.55, 0.32, 0.3)), cloth((0.9, 0.38, 0.1)))
+    """A skater on his board: lanky, a baggy orange hoodie with a pocket and strings, wide grey jeans with a torn knee,
+    a cap on backwards, and a bored, half-lidded look"""
+    m = hero_model("mads")
+    bd = replace(SLIM, hunch=0.15, shoulder=0.72, chest=0.64, waist=0.55, hip=0.52, arm=0.19, fore=0.17, thigh=0.25, calf=0.22, foot=1.05)
+    hoodie = cloth((0.95, 0.42, 0.12), folds=7) + rect((0.85, 0.36, 0.1), 0.38, 0.62, 0.15, 0.35) + stitches((0.6, 0.25, 0.05), [0.12, 0.35]) + \
+        patch((0.15, 0.15, 0.16), 0.5, 0.68, 0.11, 0.11)
+    jeans = cloth((0.5, 0.52, 0.56), folds=7) + patch((0.86, 0.84, 0.8), 0.5, 0.45, 0.06, 0.05) + stitches((0.75, 0.6, 0.3), [0.5], axis="u")
+    b = person(m, bd, hoodie, jeans, shoes=color((0.14, 0.14, 0.16)) + bands(WHITE, [(0.0, 0.3)]) + stitches(WHITE, [0.7]), sole=(0.9, 0.9, 0.88),
+               arms=cloth((0.95, 0.42, 0.12)) + bands((0.85, 0.36, 0.1), [(0.0, 0.12)]), hair_paint=hair((0.2, 0.14, 0.1)), hair_style="short",
+               eyes_kw=dict(iris=(0.35, 0.25, 0.15), lid=0.6, size=0.07, look=(0.4, 0)), mouth_kw=dict(kind="line"),
+               brows_kw=dict(c=(0.2, 0.14, 0.1), tilt=0.1, thick=0.6), nose="round", arm_pose=("out", "out"))
+    cap(m, b, color((0.15, 0.38, 0.72)) + stitches((0.1, 0.25, 0.5), [0.3]), back=True)
+    m.add(ellipsoid((0, b.sh_y + 0.05, b.lean(b.sh_y) - 0.5), (0.55, 0.3, 0.3)), cloth((0.88, 0.36, 0.1)))
+    for side in (1, -1):
+        m.add(tube([(side * 0.15, b.neck_y - 0.1, 0.42), (side * 0.18, b.chest_y, 0.5)], 0.025), color(WHITE))
     for s in m.surfaces:
-        s.t = s.t + [0, 0.32, 0]
-    board = wood((0.85, 0.65, 0.35)) + bands((0.15, 0.6, 0.85), [(0.2, 0.8)], axis="v")
-    m.add(blob((0, 0.24, 0.1), (0.5, 0.06, 1.3), (0.2, 0.6)), board)
-    for z in (-0.75, 0.95):
-        for x in (0.32, -0.32):
-            m.add(cylinder((x - 0.1 * (1 if x > 0 else -1), 0.1, z), 0.11, 0.18, rot=(0, 0, 90)), color((0.98, 0.9, 0.5)))
+        s.t = s.t + [0, 0.34, 0]
+    board = wood((0.82, 0.62, 0.34), 18) + bands((0.15, 0.55, 0.85), [(0.2, 0.8)], axis="v") + edges(0.2, 0.05, dark=True)
+    m.add(blob((0, 0.25, 0.1), (0.55, 0.06, 1.45), (0.2, 0.6)), board)
+    for z in (-0.85, 1.05):
+        m.add(blob((0, 0.15, z), (0.42, 0.04, 0.08), (0.3, 0.3)), metal((0.7, 0.7, 0.72)))
+        for x in (0.35, -0.35):
+            m.add(cylinder((x, 0.11, z), 0.11, 0.16, rot=(0, 0, 90 if x > 0 else -90)), color((0.98, 0.88, 0.45)))
     finish(m, "mads")
 
 
 def make_ditte():
-    """A paramedic: a green and yellow uniform with reflective stripes, a white cross, a radio and a ponytail"""
-    m = Model("ditte")
-    uni = (cloth((0.15, 0.55, 0.35)) + bands((0.98, 0.88, 0.15), [(0.4, 0.62)]) + bands((0.88, 0.9, 0.92), [(0.48, 0.54)])
-           + rect((0.97, 0.97, 0.97), 0.42, 0.58, 0.72, 0.78) + rect((0.97, 0.97, 0.97), 0.47, 0.53, 0.66, 0.84))
-    b = person(m, uni, cloth((0.15, 0.4, 0.28)) + bands((0.88, 0.9, 0.92), [(0.35, 0.42)]), arms=cloth((0.15, 0.55, 0.35)) + bands((0.88, 0.9, 0.92), [(0.3, 0.38)]),
-               hair_paint=hair((0.3, 0.2, 0.12)), hair_style="short", face_kw=dict(mouth="smile", eye=(0.3, 0.5, 0.35)))
-    hx, hy, hz = b.head
-    m.add(tube([(hx, hy + 0.3, hz - 0.55), (hx, hy - 0.2, hz - 0.85), (hx, hy - 0.8, hz - 0.75)], [0.2, 0.16, 0.06]), hair((0.3, 0.2, 0.12)))
-    m.add(blob((-0.55, 2.6, 0.42), (0.14, 0.24, 0.08), (0.4, 0.4)), color((0.15, 0.15, 0.17)))
-    m.add(tube([(-0.6, 2.84, 0.42), (-0.6, 3.1, 0.42)], 0.025), color((0.15, 0.15, 0.17)))
+    """A paramedic: a green and yellow uniform with reflective stripes, a white cross, a radio on her shoulder, a
+    medical bag, a ponytail and a calm, focused look"""
+    m = hero_model("ditte")
+    uni = (cloth((0.14, 0.52, 0.34)) + bands((0.98, 0.86, 0.14), [(0.4, 0.62)]) + bands((0.86, 0.88, 0.9), [(0.48, 0.54)])
+           + rect((0.96, 0.96, 0.96), 0.42, 0.58, 0.72, 0.78) + rect((0.96, 0.96, 0.96), 0.47, 0.53, 0.66, 0.84) + stitches((0.08, 0.3, 0.2), [0.38, 0.64]))
+    b = person(m, ATHLETE, uni, cloth((0.14, 0.38, 0.26)) + bands((0.86, 0.88, 0.9), [(0.35, 0.42)]),
+               arms=cloth((0.14, 0.52, 0.34)) + bands((0.86, 0.88, 0.9), [(0.3, 0.38)]), hands=color((0.3, 0.45, 0.8)),
+               hair_paint=hair((0.3, 0.2, 0.12)), hair_style="ponytail", arm_pose=("down", "out"),
+               eyes_kw=dict(iris=(0.3, 0.5, 0.35), lid=0.35, size=0.07), mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.3, 0.2, 0.12), tilt=0.3))
+    sx, sy, sz = b.shoulders[1]
+    m.add(blob((sx + 0.35, sy - 0.05, sz + 0.35), (0.12, 0.22, 0.08), (0.4, 0.4)), color((0.14, 0.14, 0.16)) + rect((0.3, 0.3, 0.32), 0.3, 0.7, 0.55, 0.8))
+    m.add(tube([(sx + 0.38, sy + 0.17, sz + 0.35), (sx + 0.38, sy + 0.42, sz + 0.35)], 0.025), color((0.14, 0.14, 0.16)))
+    belt(m, b, color((0.15, 0.15, 0.17)), buckle=metal((0.7, 0.7, 0.72)))
+    lx, ly, lz = b.left
+    for f in box_faces((lx, ly - 0.35, lz + 0.05), (0.7, 0.55, 0.45)):
+        m.add(f, color((0.85, 0.15, 0.12)) + edges(0.2, 0.05, dark=True) + patch((0.96, 0.96, 0.96), 0.5, 0.5, 0.1, 0.1))
     finish(m, "ditte")
 
 
+def box_faces(center, size):
+    from sculpt import box
+    return box(center, size)
+
+
 def make_gudrun():
-    """A grandmother: a long flowered dress, a knitted cardigan, grey hair in a bun, glasses, and her cane"""
-    m = Model("gudrun")
-    dress = cloth((0.55, 0.38, 0.6), folds=7) + flowers((0.95, 0.85, 0.9), (0.9, 0.7, 0.3), 0.1, 0.4)
-    cardigan = knit((0.82, 0.6, 0.65))
-    b = person(m, cardigan + rect((0.55, 0.38, 0.6), 0.44, 0.56, 0.0, 1.0), dress, arms=cardigan, skirt=dress,
-               hair_paint=hair((0.85, 0.85, 0.88)), hair_style="bun", width=1.1, belly=0.3, skin_c=SKIN_PALE,
-               face_kw=dict(mouth="smile", eye=(0.4, 0.55, 0.75), size=0.09, brow=(0.7, 0.7, 0.72)), arm_pose="out")
-    glasses(m, b)
+    """A grandmother: small and bent over, a long flowered dress, a knitted cardigan and shawl, grey hair in a bun,
+    round glasses, a disapproving frown, her cane, and a ball of yarn with needles"""
+    m = hero_model("gudrun")
+    dress = cloth((0.5, 0.34, 0.55), folds=7) + flowers((0.95, 0.85, 0.9), (0.9, 0.7, 0.3), 0.09, 0.4)
+    cardigan = knit((0.78, 0.55, 0.6)) + stitches((0.5, 0.3, 0.35), [0.1, 0.9])
+    for v in (0.62, 0.48, 0.34):
+        cardigan = cardigan + patch((0.95, 0.9, 0.8), 0.46, v, 0.03, 0.03)
+    b = person(m, OLD, cardigan + rect((0.5, 0.34, 0.55), 0.47, 0.53, 0.0, 1.0), dress, arms=cardigan, skirt=dress, hair_paint=hair((0.84, 0.84, 0.87)),
+               hair_style="bun", skin_c=SKIN_PALE, arm_pose=("out", "forward"),
+               eyes_kw=dict(iris=(0.4, 0.55, 0.75), lid=0.45, size=0.06), mouth_kw=dict(kind="frown", width=0.13),
+               brows_kw=dict(c=(0.72, 0.72, 0.74), tilt=0.6, thick=0.6), nose="long", boots=False)
+    glasses(m, b, r=0.13)
+    m.add(lathe([(b.sh_y - 0.4, OLD.shoulder * 1.3), (b.sh_y, OLD.shoulder * 1.1), (b.neck_y, OLD.neck * 1.8)], (0, 0, b.lean(b.sh_y)), sz=0.85, nu=22),
+          knit((0.55, 0.3, 0.45)) + bands((0.85, 0.75, 0.55), [(0.0, 0.08)]))
     hx, hy, hz = b.right
-    m.add(tube([(hx, hy, hz), (hx + 0.05, hy * 0.5, hz + 0.05), (hx + 0.08, 0.05, hz + 0.1)], 0.06), wood((0.35, 0.2, 0.1)))
-    m.add(tube([(hx, hy, hz), (hx, hy + 0.25, hz - 0.1), (hx - 0.1, hy + 0.2, hz - 0.35)], 0.07), wood((0.35, 0.2, 0.1)))
+    m.add(tube([(hx, hy, hz), (hx + 0.05, hy * 0.5, hz + 0.05), (hx + 0.08, 0.05, hz + 0.1)], 0.06), wood((0.33, 0.19, 0.1)))
+    m.add(tube([(hx, hy, hz), (hx, hy + 0.25, hz - 0.1), (hx - 0.12, hy + 0.2, hz - 0.35)], 0.07), wood((0.33, 0.19, 0.1)))
     lx, ly, lz = b.left
-    m.add(sphere((lx, ly + 0.1, lz + 0.25), 0.3), knit((0.85, 0.3, 0.45)))
+    m.add(sphere((lx, ly + 0.1, lz + 0.22), 0.3), knit((0.82, 0.25, 0.4)))
+    for k in (1, -1):
+        m.add(tube([(lx - 0.25, ly + 0.25 + k * 0.05, lz + 0.1), (lx + 0.35, ly + 0.05 - k * 0.05, lz + 0.45)], 0.025), metal((0.8, 0.8, 0.82)))
     finish(m, "gudrun")
 
 
 def make_magnus():
-    """A man of steel: a grey jumpsuit with rivets, and a big red horseshoe magnet held up in both hands"""
-    m = Model("magnus")
-    suit = metal((0.55, 0.57, 0.62), 0.25) + spots((0.8, 0.82, 0.86), 0.03, 0.18, 13) + bands((0.35, 0.36, 0.4), [(0.0, 0.06)]) + bands((0.85, 0.15, 0.12), [(0.45, 0.5)], axis="u")
-    b = person(m, suit, suit, arms=suit, width=1.2, face_kw=dict(mouth="grin", brow_tilt=0.4, eye=(0.3, 0.3, 0.35)),
-               hair_paint=hair((0.15, 0.13, 0.13)), hair_style="short", arm_pose="both_up")
-    (rx, ry, rz), (lx, ly, lz) = b.right, b.left
-    red = color((0.85, 0.12, 0.1)) + edges(0.2, 0.05)
-    top = ry + 1.1
-    m.add(tube([(rx, ry + 0.15, rz), (rx, top, rz), (0, top + 0.35, rz), (lx, top, lz), (lx, ly + 0.15, lz)], 0.24, nu=12, caps=False), red)
+    """A strongman: a barrel chest in a striped wrestling singlet, huge bare arms with iron bracers, a handlebar
+    moustache, slicked hair, a confident stare, and a giant horseshoe magnet held up in both hands"""
+    m = hero_model("magnus")
+    bd = replace(BRUTE, hunch=0.1, leg=1.2, belly=0.2, head=0.88)
+    singlet = cloth((0.15, 0.15, 0.2)) + stripes((0.75, 0.12, 0.12), 6, 0.25) + stitches((0.5, 0.5, 0.55), [0.06, 0.94])
+    b = person(m, bd, singlet, cloth((0.15, 0.15, 0.2)), arms=skin(SKIN_OLIVE), skin_c=SKIN_OLIVE, pecs=False,
+               hair_paint=hair((0.1, 0.09, 0.09)), hair_style="slick", arm_pose="both_up",
+               eyes_kw=dict(iris=(0.3, 0.3, 0.35), lid=0.35, size=0.065, socket=0.45), mouth_kw=dict(kind="line"),
+               brows_kw=dict(c=(0.1, 0.09, 0.09), tilt=0.5, thick=1.0), nose="broad", cuffs=metal((0.6, 0.62, 0.66)))
+    jx, jy, jz = b.jaw_c
+    rx, ry, rz = b.jaw_r
+    for side in (1, -1):
+        m.add(tube([(jx, jy + ry * 0.3, jz + rz), (jx + side * rx * 0.6, jy + ry * 0.25, jz + rz * 0.9), (jx + side * rx * 1.05, jy + ry * 0.6, jz + rz * 0.7)],
+                   [0.07, 0.06, 0.02]), hair((0.1, 0.09, 0.09)))
+    bracers(m, b, metal((0.55, 0.57, 0.62), 0.4) + spots((0.8, 0.8, 0.82), 0.03, 0.3, 3), length=0.55)
+    belt(m, b, leather((0.25, 0.15, 0.1)), buckle=metal((0.85, 0.7, 0.3)) + edges(0.3, 0.03))
+    (rx_, ry_, rz_), (lx, ly, lz) = b.right, b.left
+    red = color((0.82, 0.1, 0.08)) + edges(0.2, 0.05) + stains((0.4, 0.05, 0.05), 0.1, 4)
+    top = ry_ + 1.1
+    m.add(tube([(rx_, ry_ + 0.15, rz_), (rx_, top, rz_), (0, top + 0.4, rz_), (lx, top, lz), (lx, ly + 0.15, lz)], 0.27, nu=12, caps=False), red)
     for x, y, z in (b.right, b.left):
-        m.add(cylinder((x, y - 0.3, z), 0.25, 0.45), metal((0.85, 0.86, 0.9)))
+        m.add(cylinder((x, y - 0.35, z), 0.28, 0.5), metal((0.85, 0.86, 0.9), 0.6))
     finish(m, "magnus")
 
 
 def make_stormy():
-    """A weather girl: a blue blazer and skirt, a red umbrella over her, and a little storm cloud by her shoulder"""
-    m = Model("stormy")
-    blazer = cloth((0.22, 0.4, 0.8)) + rect((0.95, 0.95, 0.97), 0.45, 0.55, 0.7, 1.0)
-    b = person(m, blazer, skin(SKIN), arms=cloth((0.22, 0.4, 0.8)), skirt=cloth((0.18, 0.32, 0.68)), shoes=color((0.75, 0.1, 0.12)),
-               hair_paint=hair((0.95, 0.78, 0.35)), hair_style="long", face_kw=dict(mouth="grin", eye=(0.3, 0.5, 0.85)), arm_pose="up")
+    """A weather girl: a fitted blue blazer and skirt, a red umbrella over her, long blonde hair, a determined look,
+    and a little storm cloud by her shoulder with a bolt in it"""
+    m = hero_model("stormy")
+    blazer = cloth((0.2, 0.36, 0.76)) + rect((0.94, 0.94, 0.96), 0.45, 0.55, 0.7, 1.0) + stitches((0.1, 0.2, 0.45), [0.3, 0.95]) + \
+        patch((0.85, 0.7, 0.3), 0.455, 0.5, 0.03, 0.03)
+    b = person(m, ATHLETE, blazer, skin(SKIN), arms=cloth((0.2, 0.36, 0.76)) + bands((0.94, 0.94, 0.96), [(0.0, 0.07)]),
+               skirt=cloth((0.16, 0.3, 0.64)) + stitches((0.1, 0.2, 0.45), [0.12]), shoes=color((0.72, 0.1, 0.12)), boots=False,
+               hair_paint=hair((0.95, 0.76, 0.32)), hair_style="long", arm_pose=("up", "out"),
+               eyes_kw=dict(iris=(0.3, 0.5, 0.85), lid=0.35, size=0.07), mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.7, 0.5, 0.2), tilt=0.45), nose="round")
     hx, hy, hz = b.right
     m.add(cylinder((hx, hy - 0.4, hz), 0.05, 2.0), metal((0.3, 0.3, 0.32)))
-    m.add(lathe([(0, 1.6), (0.25, 1.45), (0.6, 1.0), (0.8, 0.4), (0.85, 0.0)], (hx, hy + 1.0, hz), nu=16),
-          color((0.88, 0.12, 0.12)) + stripes((0.98, 0.96, 0.95), 4, 0.5, axis="u"))
-    cloud = color((0.45, 0.48, 0.58))
-    for dx, dy, r in ((0, 0, 0.32), (0.3, 0.08, 0.26), (-0.28, 0.05, 0.25), (0.05, 0.2, 0.25)):
-        m.add(sphere((-1.35 + dx, 3.2 + dy, 0.0), r), cloud)
-    m.add(lathe([(0, 0.0), (0.0, 0.08), (-0.45, 0.0)], (-1.35, 3.05, 0.0), rot=(0, 0, 20), smooth=False, nu=6), color((1.0, 0.9, 0.3)))
+    m.add(tube([(hx, hy - 0.4, hz), (hx, hy - 0.6, hz), (hx + 0.15, hy - 0.65, hz)], 0.05), wood((0.4, 0.25, 0.12)))
+    m.add(lathe([(0, 1.65), (0.25, 1.5), (0.6, 1.05), (0.8, 0.4), (0.85, 0.0)], (hx, hy + 1.0, hz), nu=16),
+          color((0.85, 0.11, 0.11)) + stripes((0.97, 0.95, 0.94), 4, 0.5, axis="u"))
+    for k in range(8):
+        a = k * math.pi / 4
+        m.add(tube([(hx, hy + 1.85, hz), (hx + math.cos(a) * 1.6, hy + 1.0, hz + math.sin(a) * 1.6)], 0.02, caps=False), metal((0.3, 0.3, 0.32)))
+    cloud = color((0.42, 0.45, 0.55))
+    for dx, dy, r in ((0, 0, 0.32), (0.3, 0.08, 0.26), (-0.28, 0.05, 0.25), (0.05, 0.22, 0.25)):
+        m.add(sphere((-1.4 + dx, 3.5 + dy, 0.0), r), cloud)
+    m.add(lathe([(0, 0.0), (0.0, 0.08), (-0.5, 0.0)], (-1.4, 3.35, 0.0), rot=(0, 0, 20), smooth=False, nu=6), color((1.0, 0.9, 0.3)))
     finish(m, "stormy")
 
 
 def make_hugo():
-    """A hypnotist: a black tailcoat, a purple waistcoat, a top hat, a goatee, and a swinging pocket watch"""
-    m = Model("hugo")
-    coat = cloth((0.12, 0.11, 0.14)) + rect((0.45, 0.2, 0.55), 0.4, 0.6, 0.3, 0.95) + rect((0.97, 0.97, 0.97), 0.47, 0.53, 0.75, 1.0)
-    b = person(m, coat, cloth((0.14, 0.13, 0.16)), arms=cloth((0.12, 0.11, 0.14)), skin_c=SKIN_PALE,
-               face_kw=dict(mouth="smile", brow_tilt=0.8, eye=(0.6, 0.2, 0.75)), arm_pose="forward")
-    hx, hy, hz = b.head
-    m.add(tube([(hx, hy - 0.42, hz + 0.5), (hx, hy - 0.72, hz + 0.45)], [0.12, 0.03]), hair((0.15, 0.12, 0.12)))
+    """A hypnotist: tall and thin in a black tailcoat with a purple waistcoat and a cravat, a top hat, slicked hair, a
+    pointed goatee and moustache, an intense stare, and a pocket watch swinging on its chain"""
+    m = hero_model("hugo")
+    coat = cloth((0.11, 0.1, 0.13)) + rect((0.42, 0.18, 0.52), 0.4, 0.6, 0.3, 0.95) + rect((0.96, 0.96, 0.96), 0.47, 0.53, 0.75, 1.0) + \
+        stitches((0.3, 0.3, 0.35), [0.05, 0.95])
+    for v in (0.7, 0.58, 0.46):
+        coat = coat + patch((0.85, 0.7, 0.3), 0.5, v, 0.025, 0.025)
+    b = person(m, SLIM, coat, cloth((0.13, 0.12, 0.15)) + stripes((0.25, 0.25, 0.3), 8, 0.1, axis="u"), arms=cloth((0.11, 0.1, 0.13)),
+               hands=color((0.95, 0.95, 0.93)), skin_c=SKIN_PALE, hair_paint=hair((0.1, 0.09, 0.1)), hair_style="slick", arm_pose=("forward", "akimbo"),
+               eyes_kw=dict(iris=(0.6, 0.15, 0.75), lid=0.25, size=0.075, socket=0.55, tilt=0.3), mouth_kw=dict(kind="smirk"),
+               brows_kw=dict(c=(0.1, 0.09, 0.1), tilt=0.9, thick=0.7), nose="long")
+    jx, jy, jz = b.jaw_c
+    rx, ry, rz = b.jaw_r
+    m.add(tube([(jx, jy - ry * 0.6, jz + rz * 0.8), (jx, jy - ry * 1.4, jz + rz * 0.85)], [0.11, 0.02]), hair((0.1, 0.09, 0.1)))
     for side in (1, -1):
-        m.add(ellipsoid((hx + side * 0.2, hy - 0.22, hz + 0.56), (0.2, 0.06, 0.08), rot=(0, 0, -side * 18)), hair((0.15, 0.12, 0.12)))
-    top_hat(m, b, color((0.12, 0.11, 0.14)), band=(0.5, 0.2, 0.6), height=1.0)
-    # The tails of the coat
-    m.add(lathe([(0.9, 0.0), (1.0, 0.62), (1.7, 0.72)], sz=0.75, urange=(0.0, 0.25)), cloth((0.12, 0.11, 0.14)))
-    m.add(lathe([(0.9, 0.0), (1.0, 0.62), (1.7, 0.72)], sz=0.75, urange=(0.75, 1.0)), cloth((0.12, 0.11, 0.14)))
-    rx, ry, rz = b.right
-    m.add(tube([(rx, ry - 0.1, rz + 0.1), (rx + 0.05, ry - 0.7, rz + 0.25)], 0.02), metal((0.85, 0.7, 0.3)))
-    m.add(cylinder((rx + 0.05, ry - 0.9, rz + 0.18), 0.22, 0.07, rot=(90, 0, 0)), metal((0.85, 0.7, 0.3)) + patch((0.95, 0.93, 0.85), 0.5, 0.5, 0.15, 0.15))
+        m.add(tube([(jx, jy + ry * 0.3, jz + rz), (jx + side * rx * 0.6, jy + ry * 0.25, jz + rz * 0.85), (jx + side * rx * 0.95, jy + ry * 0.55, jz + rz * 0.65)],
+                   [0.05, 0.04, 0.01]), hair((0.1, 0.09, 0.1)))
+    top_hat(m, b, color((0.11, 0.1, 0.13)), band=(0.45, 0.18, 0.55), height=1.05)
+    for ur in ((0.0, 0.22), (0.78, 1.0)):
+        m.add(lathe([(0.9, 0.0), (1.0, SLIM.hip * 1.2), (b.hip_y + 0.2, SLIM.hip * 1.2)], sz=0.8, urange=ur), cloth((0.11, 0.1, 0.13)))
+    m.add(ellipsoid((0, b.neck_y - 0.1, b.lean(b.neck_y) + 0.32), (0.18, 0.14, 0.08)), cloth((0.96, 0.96, 0.96)))
+    rx_, ry_, rz_ = b.right
+    m.add(tube([(rx_, ry_ - 0.1, rz_ + 0.1), (rx_ + 0.05, ry_ - 0.7, rz_ + 0.25)], 0.02), metal((0.85, 0.7, 0.3)))
+    m.add(cylinder((rx_ + 0.05, ry_ - 0.9, rz_ + 0.18), 0.22, 0.07, rot=(90, 0, 0)), metal((0.85, 0.7, 0.3), 0.5) + patch((0.95, 0.93, 0.85), 0.5, 0.5, 0.15, 0.15))
     finish(m, "hugo")
 
 
 def make_twins():
-    """Tim and Tom: two boys side by side in matching yellow striped shirts, holding hands"""
-    m = Model("twins")
-    shirt = cloth((0.98, 0.78, 0.15)) + stripes((0.2, 0.45, 0.8), 6, 0.3)
-    for x, hair_c, look in ((0.82, (0.6, 0.38, 0.18), (-0.5, 0)), (-0.82, (0.6, 0.38, 0.18), (0.5, 0))):
-        person(m, shirt, cloth((0.25, 0.35, 0.6)), x=x, width=0.92, hair_paint=hair(hair_c), hair_style="short",
-               face_kw=dict(mouth="grin", eye=(0.35, 0.55, 0.3), look=look), arm_pose="out")
+    """Tim and Tom: two scrawny boys side by side in matching striped shirts and shorts, scuffed knees, narrowed
+    eyes, up to something"""
+    m = hero_model("twins")
+    shirt = cloth((0.98, 0.76, 0.15)) + stripes((0.2, 0.42, 0.78), 6, 0.3) + stitches((0.6, 0.45, 0.1), [0.06])
+    legs = skin(SKIN) + bands((0.25, 0.35, 0.6), [(0.6, 1.0)]) + patch((0.8, 0.5, 0.45), 0.5, 0.45, 0.06, 0.05) + bands(WHITE, [(0.0, 0.15)])
+    for x, look, tilt in ((0.78, (-0.5, 0), 0.4), (-0.78, (0.5, 0), 0.6)):
+        person(m, KID, shirt, legs, x=x, hair_paint=hair((0.58, 0.36, 0.17)), hair_style="short", arm_pose="out",
+               eyes_kw=dict(iris=(0.35, 0.55, 0.3), lid=0.5, size=0.075, look=look), mouth_kw=dict(kind="smirk"),
+               brows_kw=dict(c=(0.45, 0.28, 0.12), tilt=tilt, thick=0.6), nose="round", shoes=color((0.25, 0.25, 0.28)) + bands(WHITE, [(0.0, 0.3)]))
     finish(m, "twins")
 
 
 def make_kenji():
-    """A ninja: all in black, a mask with only his eyes showing, a red sash, a red headband with tails, a sword on
-    his back"""
-    m = Model("kenji")
-    black = cloth((0.13, 0.13, 0.16), folds=4)
-    b = person(m, black + bands((0.75, 0.12, 0.12), [(0.0, 0.12)]), black, shoes=cloth((0.1, 0.1, 0.12)), arms=black, hands=cloth((0.1, 0.1, 0.12)),
-               head=cloth((0.13, 0.13, 0.16)) + rect(SKIN, 0.36, 0.64, 0.42, 0.64) + face(eye=(0.25, 0.2, 0.15), mouth=None, blush=False, brow_tilt=0.7, v=0.53),
-               nose=0, ears=False)
+    """A ninja: lean, all in dark wrapped cloth with bindings on his arms and legs, a mask with only his narrow eyes
+    showing, a red sash and headband with long tails, and a sword on his back"""
+    m = hero_model("kenji")
+    black = cloth((0.12, 0.12, 0.15), folds=4)
+    wraps = cloth((0.12, 0.12, 0.15)) + stripes((0.2, 0.2, 0.24), 10, 0.15, axis="v", angle=25)
+    head = cloth((0.12, 0.12, 0.15)) + rect(SKIN, 0.38, 0.62, 0.44, 0.6) + eyes(iris=(0.25, 0.18, 0.12), lid=0.5, size=0.07, tilt=0.4, socket=0.3, v=0.52)
+    b = person(m, ATHLETE, black + bands((0.72, 0.1, 0.1), [(0.0, 0.12)]), wraps, shoes=cloth((0.1, 0.1, 0.12)), arms=wraps, hands=cloth((0.1, 0.1, 0.12)),
+               head_paint=head, jaw_paint=cloth((0.12, 0.12, 0.15)) + stitches((0.2, 0.2, 0.24), [0.6]), nose=None, ears=False,
+               brows_kw=dict(c=(0.12, 0.12, 0.15), tilt=0.9, thick=0.0), arm_pose=("ready", "down"), cuffs=cloth((0.2, 0.2, 0.24)))
     hx, hy, hz = b.head
-    red = cloth((0.8, 0.12, 0.12))
-    m.add(lathe([(hy + 0.22, 0.63), (hy + 0.42, 0.61)], (hx, 0, hz), smooth=False, nu=22), red)
-    m.add(tube([(hx, hy + 0.3, hz - 0.6), (hx + 0.25, hy + 0.15, hz - 1.0), (hx + 0.4, hy - 0.25, hz - 1.2)], 0.07, flat=0.4), red)
-    m.add(tube([(hx, hy + 0.3, hz - 0.6), (hx - 0.15, hy + 0.05, hz - 1.0), (hx - 0.2, hy - 0.4, hz - 1.1)], 0.07, flat=0.4), red)
-    m.add(tube([(0.8, 0.9, -0.62), (-0.7, 3.3, -0.62)], 0.08), color((0.15, 0.12, 0.1)) + bands((0.75, 0.12, 0.12), [(0.82, 1.0)]))
+    hs = b.hs
+    red = cloth((0.75, 0.1, 0.1))
+    m.add(torus((hx, hy + 0.25 * hs, hz), 0.6 * hs, 0.08, sz=1.0), red)
+    m.add(tube([(hx, hy + 0.3 * hs, hz - 0.6 * hs), (hx + 0.3, hy + 0.15, hz - 1.0), (hx + 0.55, hy - 0.3, hz - 1.3)], 0.07, flat=0.35), red)
+    m.add(tube([(hx, hy + 0.3 * hs, hz - 0.6 * hs), (hx - 0.15, hy + 0.05, hz - 1.0), (hx - 0.25, hy - 0.45, hz - 1.15)], 0.07, flat=0.35), red)
+    belt(m, b, red, buckle=red)
+    m.add(tube([(0.3, b.waist_y - 0.1, 0.45), (0.45, b.waist_y - 0.6, 0.5)], 0.07, flat=0.35), red)
+    bracers(m, b, cloth((0.2, 0.2, 0.24)) + stripes((0.3, 0.3, 0.34), 5, 0.2, axis="v", angle=30), length=0.6)
+    m.add(tube([(0.85, 0.9, -0.62), (-0.75, 3.35, -0.62)], 0.08), color((0.15, 0.12, 0.1)) + bands((0.72, 0.1, 0.1), [(0.82, 1.0)]))
     m.add(cylinder((-0.55, 3.05, -0.62), 0.18, 0.04, rot=(0, 0, 35)), metal((0.75, 0.65, 0.35)))
-    m.add(tube([(-0.6, 3.1, -0.62), (-0.95, 3.65, -0.62)], 0.06), color((0.75, 0.12, 0.12)))
+    m.add(tube([(-0.6, 3.1, -0.62), (-0.98, 3.7, -0.62)], 0.06), color((0.72, 0.1, 0.1)) + stripes((0.1, 0.1, 0.1), 6, 0.3, axis="v", angle=45))
     finish(m, "kenji")
 
 
 def make_ivar():
-    """A berserker: a wolf pelt over his head and shoulders, a bare chest with blue war paint, a red beard and an axe"""
-    m = Model("ivar")
-    chest = skin(SKIN_TAN) + stripes((0.2, 0.35, 0.75), 3, 0.15, axis="u", angle=40) + bands((0.35, 0.22, 0.12), [(0.0, 0.1)])
-    b = person(m, chest, fur((0.45, 0.35, 0.25)), shoes=fur((0.35, 0.26, 0.18)), arms=skin(SKIN_TAN) + bands((0.35, 0.22, 0.12), [(0.62, 0.72)]),
-               width=1.25, skin_c=SKIN_TAN, face_kw=dict(mouth="grin", brow_tilt=0.9, eye=(0.75, 0.3, 0.1)), arm_pose="up")
-    beard(m, b, hair((0.75, 0.25, 0.08)), length=0.7)
+    """A berserker: enormous and bare-chested with blue war paint and scars, a wolf pelt over his head and shoulders,
+    a fur kilt, iron bracers, a wild red beard, gritted teeth, and a great axe raised"""
+    m = hero_model("ivar")
+    bd = replace(BRUTE, hunch=0.35, belly=0.0, head=0.84)
+    chest = skin(SKIN_TAN) + stripes((0.15, 0.3, 0.72), 3, 0.12, axis="u", angle=40) + patch((0.65, 0.42, 0.35), 0.62, 0.55, 0.03, 0.2) + \
+        bands((0.32, 0.2, 0.1), [(0.0, 0.08)])
+    b = person(m, bd, chest, fur((0.42, 0.32, 0.22)), shoes=fur((0.34, 0.25, 0.17)), arms=skin(SKIN_TAN) + stripes((0.15, 0.3, 0.72), 2, 0.1, axis="u"),
+               skin_c=SKIN_TAN, pecs=True, arm_pose=("up", "ready"),
+               eyes_kw=dict(iris=(0.75, 0.3, 0.1), lid=0.35, size=0.065, socket=0.6), brows_kw=dict(c=(0.7, 0.22, 0.06), tilt=1.0, thick=1.0),
+               jaw_paint=skin(SKIN_TAN) + mouth("snarl", width=0.17), nose="broad", cuffs=fur((0.5, 0.42, 0.3)),
+               head_paint=skin(SKIN_TAN) + eyes(iris=(0.75, 0.3, 0.1), lid=0.35, size=0.065, socket=0.6) + stripes((0.15, 0.3, 0.72), 1, 0.08, axis="v"))
+    beard(m, b, hair((0.72, 0.22, 0.07)), length=0.75, width=1.15, moustache=True)
     hx, hy, hz = b.head
-    pelt = fur((0.55, 0.52, 0.5))
-    m.add(ellipsoid((hx, hy + 0.12, hz - 0.08), (0.7, 0.72, 0.7), vrange=(0.45, 1.0), nu=20, nv=8), pelt)
-    m.add(ellipsoid((hx, hy + 0.5, hz + 0.45), (0.32, 0.22, 0.38)), pelt + patch((0.1, 0.1, 0.1), 0.5, 0.75, 0.06, 0.05))
+    hs = b.hs
+    pelt = fur((0.52, 0.5, 0.48))
+    m.add(ellipsoid((hx, hy + 0.1 * hs, hz - 0.08), (0.7 * hs, 0.72 * hs, 0.7 * hs), vrange=(0.45, 1.0), nu=20, nv=8), pelt)
+    m.add(ellipsoid((hx, hy + 0.48 * hs, hz + 0.42 * hs), (0.32 * hs, 0.22 * hs, 0.4 * hs)), pelt + patch((0.1, 0.1, 0.1), 0.5, 0.75, 0.06, 0.05))
     for side in (1, -1):
-        m.add(lathe([(0, 0.13), (0.3, 0.0)], (hx + side * 0.35, hy + 0.7, hz - 0.1), smooth=False, nu=6), pelt)
-    m.add(lathe([(2.3, 0.85), (2.6, 1.08), (2.85, 0.9), (3.0, 0.5)], sz=0.78, urange=(0.0, 0.62)), pelt)
-    m.add(lathe([(2.3, 0.85), (2.6, 1.08), (2.85, 0.9), (3.0, 0.5)], sz=0.78, urange=(0.88, 1.0)), pelt)
+        m.add(lathe([(0, 0.13 * hs), (0.3 * hs, 0.0)], (hx + side * 0.35 * hs, hy + 0.68 * hs, hz - 0.1), smooth=False, nu=6), pelt)
+        m.add(lathe([(0, 0.05), (0.18, 0.0)], (hx + side * 0.12 * hs, hy + 0.4 * hs, hz + 0.78 * hs), rot=(180, 0, 0), smooth=False, nu=6), color((0.95, 0.92, 0.85)))
+    m.add(lathe([(b.sh_y - 0.25, bd.shoulder * 1.0), (b.sh_y + 0.05, bd.shoulder * 1.12), (b.neck_y, bd.neck * 1.6)], (0, 0, b.lean(b.sh_y)), sz=0.82,
+                urange=(0.62, 1.0)), pelt)
+    m.add(lathe([(b.sh_y - 0.25, bd.shoulder * 1.0), (b.sh_y + 0.05, bd.shoulder * 1.12), (b.neck_y, bd.neck * 1.6)], (0, 0, b.lean(b.sh_y)), sz=0.82,
+                urange=(0.0, 0.38)), pelt)
+    m.add(lathe([(b.hip_y - 0.7, bd.hip * 1.35), (b.hip_y, bd.hip * 1.12), (b.waist_y, bd.waist * 1.02)], sz=0.85, nu=24), fur((0.4, 0.3, 0.2)))
+    belt(m, b, leather((0.3, 0.18, 0.1)) + stitches((0.6, 0.45, 0.25), [0.5]), buckle=metal((0.6, 0.6, 0.62)) + edges(0.3, 0.03))
+    bracers(m, b, metal((0.5, 0.5, 0.54), 0.4) + spots((0.75, 0.75, 0.78), 0.03, 0.35, 3))
     rx, ry, rz = b.right
-    m.add(tube([(rx, ry - 0.8, rz), (rx, ry + 1.0, rz + 0.05)], 0.08), wood((0.4, 0.25, 0.12)) + bands((0.3, 0.18, 0.1), [(0.3, 0.45)]))
-    m.add(lathe([(0, 0.05), (0.35, 0.12), (0.6, 0.55), (0.62, 0.0)], (rx + 0.1, ry + 0.85, rz + 0.05), rot=(0, 0, -90), sz=0.15, nu=14),
-          metal((0.7, 0.72, 0.76)) + edges(0.35, 0.05))
+    m.add(tube([(rx, ry - 1.1, rz), (rx, ry + 1.2, rz + 0.05)], 0.09), wood((0.38, 0.24, 0.12)) + bands((0.28, 0.16, 0.08), [(0.35, 0.5)]))
+    for side in (1, -1):
+        m.add(lathe([(0, 0.06), (0.4, 0.14), (0.75, 0.62), (0.78, 0.0)], (rx + side * 0.08, ry + 0.95, rz + 0.05), rot=(0, 0, -90 * side), sz=0.14, nu=14),
+              metal((0.68, 0.7, 0.74), 0.5) + edges(0.4, 0.06) + stains((0.45, 0.06, 0.05), 0.15, 5))
     finish(m, "ivar")
 
 

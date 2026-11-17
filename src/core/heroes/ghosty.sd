@@ -6,7 +6,7 @@ import math;
 use raylib;
 
 defineGhosty :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Ghosty", title: "the Restless", color: {190, 210, 255, 255}, width: 2.2, height: 3.2, moveSpeed: 7.5, hitRadius: 0.7, maxHealth: 15};
+    hero := HeroDefinition{name: "Ghosty", title: "the Restless", color: {190, 210, 255, 255}, width: 2.4, height: 3.4, moveSpeed: 7.5, hitRadius: 0.7, maxHealth: 15};
     hero.abilities.add(Ability{
         name: "Possess", icon: "possess", sound: "ability.fade", cooldown: 12, targeting: .point, cast: castPossess, bot: .untouchable,
         description: "Slips into the car nearest the cursor, up to 10 away, and haunts it for 4 seconds: a click to its left or right steers it a lane over. The car still hits whoever is in its way. He comes out on the side he is going",

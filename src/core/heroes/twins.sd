@@ -7,7 +7,7 @@ import math;
 use raylib;
 
 defineTwins :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Tim & Tom", title: "the Twins", color: {245, 200, 50, 255}, width: 2.8, height: 3.3, moveSpeed: 8, hitRadius: 0.8, maxHealth: 30};
+    hero := HeroDefinition{name: "Tim & Tom", title: "the Twins", color: {245, 200, 50, 255}, width: 2.8, height: 3.0, moveSpeed: 8, hitRadius: 0.8, maxHealth: 30};
     hero.abilities.add(Ability{
         name: "Split up", icon: "split", sound: "ability.split", cooldown: 10, cast: castSplit, bot: .speedUp,
         description: "The other twin walks on towards the far side by himself, for 5 seconds",

@@ -6,7 +6,7 @@ import math;
 use raylib;
 
 defineMira :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Mira", title: "the Timekeeper", color: {130, 90, 210, 255}, width: 2.4, height: 5.2, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 20};
+    hero := HeroDefinition{name: "Mira", title: "the Timekeeper", color: {130, 90, 210, 255}, width: 2.2, height: 4.8, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 20};
     hero.abilities.add(Ability{
         name: "Reverse", icon: "reverse", sound: "ability.time_warp", cooldown: 12, targeting: .point, cast: castReverse, bot: .stopCarsAhead,
         description: "Turns time back for the cars of the five lanes at the cursor, up to 20 away: they back up the road for 2 seconds",

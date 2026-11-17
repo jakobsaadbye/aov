@@ -7,7 +7,7 @@ import math;
 use raylib;
 
 defineFrosty :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Frosty", title: "the Snowman", color: {110, 220, 235, 255}, width: 2.2, height: 4.3, moveSpeed: 8, hitRadius: 0.7, maxHealth: 35};
+    hero := HeroDefinition{name: "Frosty", title: "the Snowman", color: {110, 220, 235, 255}, width: 2.6, height: 4.6, moveSpeed: 8, hitRadius: 0.7, maxHealth: 35};
     hero.abilities.add(Ability{
         name: "Cold snap", icon: "freeze", sound: "ability.freeze", cooldown: 10, cast: castFreeze, bot: .stopCars,
         description: "Freezes the cars around him for 2.5 seconds",

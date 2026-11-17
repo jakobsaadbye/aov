@@ -6,7 +6,7 @@ import math;
 use raylib;
 
 defineSigrid :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Sigrid", title: "the Witch", color: {70, 50, 90, 255}, width: 2.4, height: 5.0, moveSpeed: 7.8, hitRadius: 0.7, maxHealth: 22, drawExtras: drawSigrid};
+    hero := HeroDefinition{name: "Sigrid", title: "the Witch", color: {70, 50, 90, 255}, width: 2.3, height: 5.0, moveSpeed: 7.8, hitRadius: 0.7, maxHealth: 22, drawExtras: drawSigrid};
     hero.abilities.add(Ability{
         name: "Broom", icon: "broom", sound: "ability.broom", cooldown: 13, targeting: .point, cast: castBroom, bot: .escape,
         description: "Flies on her broom to the cursor, up to 24 away, over the cars, but she can't turn on the way",
