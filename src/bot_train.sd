@@ -29,6 +29,8 @@ import random;
 import thread;
 import time;
 
+Dt :: 1.0 / 60.0;          // The time step of a game, unless --dt says otherwise
+
 Config :: struct {
     generations: int = 40;
     population:  int = 24;
@@ -43,6 +45,7 @@ Config :: struct {
     levels:      int = 6;           // The traffic starts at a level up to this, at random each round
     method:      string = "cmaes";  // cmaes, or ga for the genetic algorithm
     sigma:       f64 = 0.15;        // How big the cloud of CMA-ES is at first, in the range of a gene
+    dt:          f32 = Dt;          // The time step of the games: --dt 30 is a little quicker, and plays a little worse
     out:         string;
 }
 
@@ -66,6 +69,7 @@ GameJob :: struct {
     seed:       u64;
     seconds:    int;
     level:      int;
+    dt:         f32;
     fitness:    [PerGame]f32;
     crossings:  [PerGame]int;
     deaths:     [PerGame]int;
@@ -83,7 +87,6 @@ Worker :: struct {
     queue: *Queue;
 }
 
-Dt :: 1.0 / 60.0;
 
 // Plays a game of a job, on a thread of its own
 playGame :: (job: *GameJob) {
@@ -94,8 +97,8 @@ playGame :: (job: *GameJob) {
     defer game.free();
     if job.level > 0 { game.startAtLevel(job.level); }
 
-    steps := (job.seconds as f32 / Dt) as int;
-    for 0..steps { game.simulate(Dt); }
+    steps := (job.seconds as f32 / job.dt) as int;
+    for 0..steps { game.simulate(job.dt); }
 
     for i in 0..PerGame {
         job.fitness[i] = bots.fitnessOf(game, i as int);
@@ -149,6 +152,7 @@ readConfig :: () -> Config {
             case "--levels"       { config.levels = (next.toInt() ?? 6) as int; i += 1; }
             case "--method"       { config.method = next; i += 1; }
             case "--sigma"        { config.sigma = next.toFloat() ?? 0.15; i += 1; }
+            case "--dt"           { config.dt = 1 / ((next.toFloat() ?? 30) as f32); i += 1; }     // Steps a second
             case "--out"          { config.out = next; i += 1; }
             else                  { fmt.print("Unknown option '%'", args[i]); }
         }
@@ -279,7 +283,7 @@ evaluate :: (population: *[..]Candidate, generation: int, config: Config, hallOf
         seed := config.seed * 1000003 + (generation * 1000 + round) as u64;
         level := ((seed * 2654435761) >> 7) % (config.levels as u64 + 1);
         for g in 0..population.count / Candidates {
-            job := GameJob{seed: seed, seconds: config.seconds, level: level as int};
+            job := GameJob{seed: seed, seconds: config.seconds, level: level as int, dt: config.dt};
             for k in 0..Candidates {
                 index := order[g * Candidates + k];
                 job.genomes[k] = (*population)[index].genome;
@@ -317,7 +321,7 @@ playoff :: (finalists: []bots.Genome, games: int, config: Config, rng: *random.R
     for round in 0..games {
         rng.shuffle(order);
         for g in 0..finalists.count / PerGame {
-            job := GameJob{seed: config.seed * 7919 + round as u64 + 99999, seconds: config.seconds, level: round % (config.levels + 1)};
+            job := GameJob{seed: config.seed * 7919 + round as u64 + 99999, seconds: config.seconds, level: round % (config.levels + 1), dt: config.dt};
             for k in 0..PerGame {
                 index := order[g * PerGame + k];
                 job.genomes[k] = finalists[index];
@@ -328,7 +332,7 @@ playoff :: (finalists: []bots.Genome, games: int, config: Config, rng: *random.R
         // The ones left over play too, with others that don't count again
         left := finalists.count % PerGame;
         if left > 0 {
-            job := GameJob{seed: config.seed * 7919 + round as u64 + 99999, seconds: config.seconds, level: round % (config.levels + 1)};
+            job := GameJob{seed: config.seed * 7919 + round as u64 + 99999, seconds: config.seconds, level: round % (config.levels + 1), dt: config.dt};
             for k in 0..PerGame {
                 if k < left {
                     index := order[finalists.count - left + k];

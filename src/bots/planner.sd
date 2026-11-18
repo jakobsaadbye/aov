@@ -17,6 +17,8 @@ import mem;
 import collections;
 use raylib;
 
+SearchLanes :: 8;        // How many lanes to either side of the bot a search looks at, 0 for all
+
 Waypoint :: struct {
     point:  Vector2;
     depart: f32;            // When to leave the point before for this one, in the time of the game
@@ -41,6 +43,7 @@ PlanRequest :: struct {
     sprintLeft:  f32;
     now:         f32;               // The time of the game when the forecast was made
     maxExpanded: int = 6000;
+    lanes:       int = SearchLanes;     // How many lanes to either side of where it starts the search looks at
     survive:     f32 = 3;                   // How long from now a plan that doesn't get across must keep it alive: by
                                             // getting to where it ends then, or a way on from there that does
     stay:        f32 = 0.5;                 // and how long it can stand there, until it plans again
@@ -153,6 +156,9 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
             if nextColumn < 0 || nextColumn >= GridColumns || nextRow < 0 || nextRow >= GridRows { continue; }
             next := nextRow * GridColumns + nextColumn;
             if forecast.blocked[next] { continue; }
+            // Only so far to either side: a plan seldom gets further before it is searched again, and a smaller search is
+            // quicker
+            if math.fabsf(cellCenter(next).x - request.start.x) > request.lanes as f32 * LaneWidth && request.lanes > 0 { continue; }
             // Not diagonally past the corner of a wall
             if offset[0] != 0 && offset[1] != 0 {
                 if forecast.blocked[row * GridColumns + nextColumn] || forecast.blocked[nextRow * GridColumns + column] { continue; }
@@ -304,20 +310,29 @@ distanceField :: (forecast: *Forecast, goalSide: Side) -> *DistanceField {
     return field;
 }
 
-// To a point, e.g an item: only the last one is kept for each thread, as items come and go
-@private @threadLocal pointField: *DistanceField;
-@private @threadLocal pointKey: int = -1;
+// To a point, e.g an item: the last few are kept for each thread, as items come and go, and the bots of a game, each
+// of a size of its own, look for ways to the same one turn by turn
+PointFields :: 8;
+@private @threadLocal pointFields: [PointFields]*DistanceField;
+@private @threadLocal pointKeys: [PointFields]int;
+@private @threadLocal pointNext: int;
 
 pointDistanceField :: (forecast: *Forecast, goalCell: int) -> *DistanceField {
     options := forecast.options;
-    key := (goalCell * 2 + options.throughWalls as int) * 1000 + (options.radius * 100) as int;
-    if pointField != null && pointKey == key { return pointField; }
-    if pointField == null { pointField = new(DistanceField, mem.heap()); }
-    pointKey = key;
-    for cell in 0..GridCells { pointField.distances[cell] = Forever; }
-    if !forecast.blocked[goalCell] { pointField.distances[goalCell] = 0; }
-    fillDistances(forecast, pointField);
-    return pointField;
+    key := (goalCell * 2 + options.throughWalls as int) * 1000 + (options.radius * 100) as int + 1;
+    for i in 0..PointFields {
+        if pointFields[i] != null && pointKeys[i] == key { return pointFields[i]; }
+    }
+    // The oldest one makes room
+    slot := pointNext;
+    pointNext = (pointNext + 1) % PointFields;
+    if pointFields[slot] == null { pointFields[slot] = new(DistanceField, mem.heap()); }
+    field := pointFields[slot];
+    pointKeys[slot] = key;
+    for cell in 0..GridCells { field.distances[cell] = Forever; }
+    if !forecast.blocked[goalCell] { field.distances[goalCell] = 0; }
+    fillDistances(forecast, field);
+    return field;
 }
 
 // Dijkstra out from the cells that are 0, over the cells that aren't blocked

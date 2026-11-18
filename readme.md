@@ -371,7 +371,11 @@ What keeps it quick:
   window: the tests, the arena and training search on the thread of the game, so a seed always plays the same game.
   `toggleAsyncBots` in the console switches it.
 * The forecast of the bots is made in a fraction of a millisecond: the cells the walls block are worked out once for
-  each size of hero, and the safe times of a cell only when the search asks for them.
+  each size of hero, and the safe times of a cell only when the search asks for them. Where the cars will be is the
+  same for every bot, so it is worked out once a frame and copied (`trafficSnapshot`), and the distances to an item are
+  kept for the last few items and sizes of hero, instead of being made again for each bot that looks.
+* A search only looks 8 lanes to either side of the bot (`SearchLanes`), and a plan that doesn't get across is only
+  searched again for a better one when what it keeps the bot alive for gets short, or every 2 seconds.
 * Only what the camera sees is drawn: cars, their shadows, and the buildings and blocks of the city outside of the view
   are skipped. The lines on the road are one mesh, made when the game starts.
 
@@ -410,8 +414,8 @@ thinks in three parts, which can each be changed on its own:
    on from there, which the search finds back from the leaves of its tree. So it doesn't walk into a corner, e.g in front
    of a car at the end of the field, or into a lane where a car that is known will catch it. When there is no such state,
    it takes the way that lives the longest. A plan is checked against each new forecast, a few times a second; one that
-   doesn't get across is searched again every half second, as more is known, and a plan that still holds isn't swapped
-   for a worse one. While it walks to the next point of its plan, the next search starts there, when it gets there. The
+   doesn't get across is searched again as more is known, when what it keeps the bot alive for gets short, and a plan
+   that still holds isn't swapped for a worse one. While it walks to the next point of its plan, the next search starts there, when it gets there. The
    bots take turns, one search a frame.
 3. **Tactics** (`bot.sd`): which ability to cast and where, from a score per ability: e.g a blink out of the way of a car,
    a stop sign while it waits for a gap, or a hook at an enemy that is ahead. Under the plan is a reflex that steps away

@@ -76,7 +76,15 @@ Bot :: struct {
     stats:       BotProfile;
     job:         *SearchJob;        // Searches on a thread of its own, with game.asyncBots (search_job.sd)
     generation:  int;               // Counts the resets, so a search of before one is thrown away
-    committed:   ?Waypoint;         // The point it was walking to when it searched, which the new plan starts with
+    committed:   ?Waypoint;
+    planLives:   f32;               // Until when, in the time of the game, its plan keeps it alive as far as it knows         // The point it was walking to when it searched, which the new plan starts with
+}
+
+// Why a bot searched for a new plan
+SearchReason :: enum {
+    told,               // Something said it must: a new hero, a cast, a dodge, late for its plan, an item
+    broken,             // The plan doesn't hold in the new forecast
+    better,             // To look for a better one than a plan that doesn't get across
 }
 
 // What the thinking of a bot has cost, for bot_arena.sd and the debug overlay
@@ -91,6 +99,7 @@ BotProfile :: struct {
     walking:         f64;
     noPlan:          f64;           // Seconds it had no plan to follow
     dodges:          int;
+    searchedFor:     [SearchReason.count]int;   // Why it searched, how many times
     progress:        f32;           // How far across each of its heroes got at most (0 to 1 each), added up
     lifeProgress:    f32;           // and the one it has now
 }
@@ -265,7 +274,14 @@ trace :: method (bot: *Bot, game: *Game, me: int) {
 // The reflex under the plan: a car that is about to be on the hero, which the plan doesn't take it away from, e.g as
 // the forecast changed, or an enemy moved it. It goes to the point near it it can get to without a car on the way, that
 // then stays free the longest. On the road without a plan, it doesn't wait for a car to come
-noDodge := false;     // bot_arena.sd --nododge: no reflex, to see what the plans do on their own
+noDodge := false;
+searchLanes := SearchLanes;
+lookEvery: f32 = 0;             // bot_arena.sd --look S: a plan that doesn't get across is searched again this often too
+
+// When a plan that doesn't get across is searched again for a better one
+MinLookAgain    :: 0.5;         // Not sooner than this, in seconds
+MaxLookAgain    :: 2.0;         // and at the latest
+LookAgainBefore :: 1.5;         // or when what it keeps the bot alive for is this much more than survive, or less     // bot_arena.sd --lanes N: how far to either side a search looks     // bot_arena.sd --nododge: no reflex, to see what the plans do on their own
 
 dodge :: method (bot: *Bot, game: *Game, me: int) -> bool {
     if !bot.hasForecast || noDodge { return false; }
@@ -360,9 +376,16 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         bot.mustSearch = true;
     }
 
-    // A plan that doesn't get across yet ends where what is known ends: as more is known, it can go further
-    lookForBetter := !bot.reachesGoal && game.time - bot.searchedAt > 0.5;
-    if !bot.mustSearch && !lookForBetter && bot.planHolds() { return; }
+    // A plan that doesn't get across yet ends where what is known ends: as more is known, it can go further. It looks
+    // again when what the plan keeps it alive for gets short, and now and then
+    sinceSearch := game.time - bot.searchedAt;
+    runningOut := bot.planLives - game.time < bot.gene(.survive) + LookAgainBefore;
+    lookForBetter := !bot.reachesGoal && sinceSearch > MinLookAgain && (runningOut || sinceSearch > MaxLookAgain || lookEvery > 0 && sinceSearch > lookEvery);
+    holds := !bot.mustSearch && bot.planHolds();
+    if holds && !lookForBetter { return; }
+    reason := SearchReason.better;
+    if bot.mustSearch { reason = .told; }
+    else if !holds    { reason = .broken; }
 
     // On a thread of its own, the frame doesn't wait for it. Otherwise: another bot searched this frame, so its turn is
     // next frame. Unless it is by the road, where a plan that doesn't hold any more can't wait
@@ -372,6 +395,7 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     }
     bot.mustSearch = false;
     bot.searchedAt = game.time;
+    bot.stats.searchedFor[reason] += 1;
 
     speed := hero.speed();
     // Momentum (Mads) is lost when he turns, so the plan counts on the speed without it
@@ -401,6 +425,7 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         stay:        bot.gene(.stay),
         trust:       bot.gene(.trust),
         laneWeight:  bot.gene(.laneWeight),
+        lanes:       searchLanes,
         safety:      bot.gene(.safety),
     };
     if game.asyncBots {
@@ -439,6 +464,8 @@ usePlan :: method (bot: *Bot, result: *PlanResult, seconds: f64) {
         holds := bot.next < bot.plan.count && bot.planHolds();
         fmt.print("SEARCH % goal % cornered % lives % waypoints % | the old plan had % left, holds % | %", fmt.fixed(bot.forecastAt, 2), result.reachesGoal, result.cornered, fmt.fixed(result.lives, 2), result.waypoints.count, bot.plan.count - bot.next, holds, HeroKind.names[bot.lastKind]);
     }
+    bot.planLives = bot.forecastAt + result.lives;
+    if result.reachesGoal { bot.planLives = Forever; }
     bot.plan.clear();
     if bot.committed.hasValue() { bot.plan.add(bot.committed.value()); }
     for waypoint in result.waypoints { bot.plan.add(waypoint); }
