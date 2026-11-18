@@ -214,9 +214,12 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     info := hero.info();
     isYou := index == game.watched;
 
+    // In the pose of its clip, when its model has them: then the walk does its own bobbing
+    animated := assets.poseHero(game, hero);
+
     // Bobbing while walking, jumping when across
     bob: f32 = 0;
-    if hero.isMoving || hero.hook.hasValue() { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
+    if (hero.isMoving || hero.hook.hasValue()) && !animated { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
     if player.phase.kind == .crossed         { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
     if hero.walksThroughWalls()             { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
     if hero.leap.hasValue()                 { bob = math.sinf(hero.leap.value().flight * Pi) * hero.leap.value().height; }
@@ -245,7 +248,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     } else if hero.has(.hex) {
         drawToad(hero.position + Vector3{0, bob, 0}, hero.facing, game.time);
     } else {
-        assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint);
+        assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint, hero.hook.hasValue());
     }
     drawHeroExtras(game, index, bob);
 
@@ -267,62 +270,43 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
         hook := hero.hook.value();
         forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
         right   := Vector3{forward.z, 0, -forward.x};
-        hand := hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45;
+        hand := assets.heroHand(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing) ?? (hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45);
         head := game.hookHead(hook, hand);
-        if hook.car < 0 { head += Vector3{0, 1.2, 0}; }
-        drawMeatHook(hand, head, hook.car >= 0);
+        // Flying out and back, it is drawn from the hand that throws it rather than from where he stood when he threw it
+        if hook.car < 0 { head = hand.lerp(hook.point + Vector3{0, 1.2, 0}, hook.flight); }
+        drawMeatHook(assets, hand, head, hook.car >= 0);
     }
 }
 
-HookSteel :: Color{165, 165, 175, 255};
-HookDark  :: Color{70, 70, 78, 255};
-
-// The meat hook on its chain: links from the butcher's hand, then a shank, a curve and a barb that points back along the
-// chain, with blood on the tip once it has caught someone
-drawMeatHook :: (hand: Vector3, head: Vector3, caught: bool) {
+// The meat hook on its chain: heavy links from the butcher's hand to the hook, which points on along the chain, with
+// blood on its point once it has caught someone
+drawMeatHook :: (assets: *Assets, hand: Vector3, head: Vector3, caught: bool) {
     along := head - hand;
     length := along.length();
     if length < 0.01 { return; }
     forward := along / length;
-    up := Vector3{0, 1, 0};
+    side := Vector3Normalize(Vector3CrossProduct({0, 1, 0}, forward));
+    if side.length() < 0.5 { side = {1, 0, 0}; }
+    up := Vector3CrossProduct(forward, side);
 
-    // The chain: short links with a knuckle between each, until the ring of the hook
-    LinkLength :: 0.5;
-    links := math.max(1, (length / LinkLength) as int);
+    // The links, each a quarter turned from the one before so they hang in each other, stretched a little so a whole
+    // number of them reaches the ring of the hook
+    LinkPitch :: 0.6;               // How far apart links are on the chain, where they hold each other
+    ChainScale :: 1.25;             // How much bigger than in the model they are drawn
+    pitch := LinkPitch * ChainScale;
+    reach := math.max(length - 0.45, 0.1);
+    links := math.max(1, math.roundf(reach / pitch) as int);
+    stretch := reach / (links as f32 * pitch);
     for k in 0..links {
-        a := hand + forward * (k as f32 * length / links as f32);
-        b := hand + forward * ((k as f32 + 0.8) * length / links as f32);
-        DrawCylinderEx(a, b, 0.07, 0.07, 6, HookDark);
-        DrawSphere(a, 0.11, HookSteel);
+        at := hand + forward * ((k as f32 + 0.5) * pitch * stretch);
+        if k % 2 == 0 { drawModelFacing(assets.chainLink, at, side * ChainScale, up * ChainScale, forward * ChainScale * stretch); }
+        else          { drawModelFacing(assets.chainLink, at, up * ChainScale, side * -ChainScale, forward * ChainScale * stretch); }
     }
 
-    // The ring the chain is tied to, the shank on from it, and the curve that bends round to the side and back into a
-    // point: a J lying flat, so it reads as a hook from the camera above. Big enough to be seen from there
-    S :: 2.0;
-    side := Vector3{forward.z, 0, -forward.x};
-    DrawSphere(head, 0.2 * S, HookSteel);
-    DrawCylinderEx(head, head + forward * 0.25 * S, 0.06 * S, 0.06 * S, 8, HookDark);
-    shankStart := head + forward * 0.25 * S;
-    bottom := shankStart + forward * 0.9 * S;
-    DrawCylinderEx(shankStart, bottom, 0.12 * S, 0.13 * S, 8, HookSteel);
-    radius: f32 = 0.45 * S;
-    center := bottom + side * radius;
-    Segments :: 10;
-    previous := bottom;
-    for i in 1...Segments {
-        // From the end of the shank, round the far end of the curve, and back towards the chain
-        angle := Pi * i as f32 / Segments;
-        point := center - side * (math.cosf(angle) * radius) + forward * (math.sinf(angle) * radius);
-        thickness := (0.13 - 0.06 * i as f32 / Segments) * S;
-        DrawCylinderEx(previous, point, thickness + 0.01, thickness, 8, HookSteel);
-        previous = point;
-    }
-    // The point, back along the shank, and its barb that sticks out from it
-    tip := previous - forward * 0.45 * S;
-    DrawCylinderEx(previous, tip, 0.07 * S, 0.01, 8, HookSteel);
-    barb := previous - forward * 0.2 * S;
-    DrawCylinderEx(barb, barb + (side * 0.22 + forward * 0.12) * S, 0.05 * S, 0.01, 6, HookSteel);
-    if caught { DrawSphere(tip - up * 0.1, 0.18, {150, 15, 20, 255}); }
+    // The hook: its ring at the head, the shank on along the chain, and the curve bending round to the side, lying flat
+    // so it reads as a hook from the camera above
+    drawModelFacing(assets.meatHook, head, side, up, forward);
+    if caught { DrawSphere(head + forward * 1.3 + side * 1.85 - up * 0.1, 0.22, {150, 15, 20, 255}); }
 }
 
 

@@ -119,6 +119,9 @@ class Surface:
         self.share = None           # A surface whose part of the texture this one uses too
         self.crease = 0.0           # How much darker it is towards its ends (v = 0 and 1), where it meets others
         self.region = None
+        self.F = np.eye(3)          # A mirror put on it last, so its deformers work as on the surface it mirrors
+        self.deforms = []           # Functions of points to points, in the model (see bulge, lumps, push)
+        self.bones = None           # The bones that move it (rig.py)
 
     def copy(self):
         s = Surface.__new__(Surface)
@@ -129,7 +132,15 @@ class Surface:
         uu = self.urange[0] + (self.urange[1] - self.urange[0]) * u
         vv = self.vrange[0] + (self.vrange[1] - self.vrange[0]) * v
         p = self.fn(uu, vv)
-        return p @ self.M.T + self.t
+        p = p @ self.M.T + self.t
+        for d in self.deforms:
+            p = d(p)
+        return p @ self.F.T
+
+    def deform(self, *fns):
+        """Bends the surface by deformers: functions of points to points, e.g bulge, lumps or push"""
+        self.deforms = self.deforms + list(fns)
+        return self
 
     def frame(self, u, v):
         """The points and their outward normals"""
@@ -314,6 +325,158 @@ def extrude(profile, z0, z1, smooth=False, nv=None, **kw):
     return Surface(fn, 2, nv, **kw)
 
 
+def _interp_sections(sections, n):
+    """The sections of a loft as arrays, one for each of its stations"""
+    keys = ("w", "d", "e", "twist", "ox", "oy")
+    defaults = dict(w=0.2, d=None, e=2.0, twist=0.0, ox=0.0, oy=0.0)
+    out = {k: [] for k in keys}
+    for sec in sections:
+        if not isinstance(sec, dict):
+            sec = dict(zip(("w", "d", "e", "twist"), sec if isinstance(sec, (tuple, list)) else (sec,)))
+        for k in keys:
+            v = sec.get(k, defaults[k])
+            if k == "d" and v is None:
+                v = sec.get("w", defaults["w"])
+            out[k].append(v)
+    return {k: np.asarray(v, dtype=float) for k, v in out.items()}
+
+
+def loft(path, sections, facing=(0, 0, 1), nu=16, nv=None, caps="round", smooth=True, **kw):
+    """A shape swept along a curve through the points of path, with a cross section at each point that can change as
+    it goes: w and d are its half width and half depth, e how square it is (2 round, 4 and up squarer, 1 a diamond,
+    below 1 star-like), twist turns it (degrees), ox and oy move it off the path (across and forward). A section is a
+    dict, or (w, d, e, twist). The depth faces facing, as far as the curve lets it. caps: round, flat or None. It
+    makes muscles that taper, wedges, plates, horns, blades and fingers, which round tubes can't"""
+    pts = np.asarray(path, dtype=float)
+    sec = _interp_sections(sections, len(pts))
+    data = np.column_stack([pts, sec["w"], sec["d"], sec["e"], sec["twist"], sec["ox"], sec["oy"]])
+    dense = _densify(data, smooth)
+    c = dense[:, :3]
+    W, D, E, T, OX, OY = (dense[:, 3 + k] for k in range(6))
+    if caps == "round":
+        t0 = c[0] - c[1]
+        t0 /= np.linalg.norm(t0)
+        t1 = c[-1] - c[-2]
+        t1 /= np.linalg.norm(t1)
+        k = np.linspace(0, 1, 7)[1:]
+        r0, r1 = min(W[0], D[0]), min(W[-1], D[-1])
+        cs = [c[0] + t0 * r0 * kk for kk in k[::-1]]
+        ce = [c[-1] + t1 * r1 * kk for kk in k]
+        f0 = [math.sqrt(max(0.0, 1 - kk * kk)) for kk in k[::-1]]
+        f1 = [math.sqrt(max(0.0, 1 - kk * kk)) for kk in k]
+        c = np.vstack([cs, c, ce])
+        W = np.concatenate([W[0] * np.array(f0), W, W[-1] * np.array(f1)])
+        D = np.concatenate([D[0] * np.array(f0), D, D[-1] * np.array(f1)])
+        E = np.concatenate([[E[0]] * 6, E, [E[-1]] * 6])
+        T = np.concatenate([[T[0]] * 6, T, [T[-1]] * 6])
+        OX = np.concatenate([[OX[0]] * 6, OX, [OX[-1]] * 6])
+        OY = np.concatenate([[OY[0]] * 6, OY, [OY[-1]] * 6])
+    elif caps == "flat":
+        c = np.vstack([c[0], c, c[-1]])
+        W = np.concatenate([[0.0], W, [0.0]])
+        D = np.concatenate([[0.0], D, [0.0]])
+        E = np.concatenate([[E[0]], E, [E[-1]]])
+        T = np.concatenate([[T[0]], T, [T[-1]]])
+        OX = np.concatenate([[OX[0]], OX, [OX[-1]]])
+        OY = np.concatenate([[OY[0]], OY, [OY[-1]]])
+    s = _by_length(c + np.column_stack([W, D, np.zeros_like(W)]) * 0.15)
+    tang = np.gradient(c, axis=0)
+    tang /= np.maximum(np.linalg.norm(tang, axis=-1, keepdims=True), 1e-12)
+    fwd = np.asarray(facing, dtype=float)
+    depth_axis = fwd[None, :] - tang * (tang @ fwd)[:, None]
+    bad = np.linalg.norm(depth_axis, axis=-1) < 1e-3
+    depth_axis[bad] = np.array([0, 1.0, 0])
+    depth_axis /= np.linalg.norm(depth_axis, axis=-1, keepdims=True)
+    width_axis = np.cross(depth_axis, tang)
+    if nv is None:
+        nv = max(10, len(pts) * 5)
+
+    def at(v, arr):
+        return np.stack([np.interp(v, s, arr[:, k]) for k in range(arr.shape[1])], axis=-1)
+
+    def fn(u, v):
+        cc = at(v, c)
+        wa, da = at(v, width_axis), at(v, depth_axis)
+        w, d = np.interp(v, s, W)[..., None], np.interp(v, s, D)[..., None]
+        e = np.interp(v, s, E)
+        tw = np.radians(np.interp(v, s, T))
+        a = 2 * np.pi * (u - 0.5) + np.pi / 2 + tw
+        ca, sa = np.cos(a), np.sin(a)
+        ex = 2.0 / e
+        x = np.sign(ca) * np.abs(ca) ** ex
+        y = np.sign(sa) * np.abs(sa) ** ex
+        off = np.interp(v, s, OX)[..., None] * wa + np.interp(v, s, OY)[..., None] * da
+        return cc + off + w * x[..., None] * wa + d * y[..., None] * da
+    return Surface(fn, nu, nv, wrap_u=True, **kw)
+
+
+def horn(base, direction, length, radius, curl=(0, 0.4, 0), e=2.0, segments=5, tip=0.02, **kw):
+    """A curved, tapering horn, tusk, spike or claw from base along direction, bending by curl as it goes"""
+    b = np.asarray(base, dtype=float)
+    d = np.asarray(direction, dtype=float)
+    d /= np.linalg.norm(d)
+    cu = np.asarray(curl, dtype=float)
+    pts, secs = [], []
+    for k in range(segments + 1):
+        t = k / segments
+        pts.append(b + d * length * t + cu * length * t * t)
+        r = radius * (1 - t) + tip * t
+        secs.append((r, r, e))
+    return loft(pts, secs, caps="round", nu=10, **kw)
+
+
+#
+# Deformers: functions of points to points that bend surfaces, e.g surface.deform(bulge(...), lumps(...))
+#
+
+
+def _falloff(dist, radius):
+    t = np.clip(dist / radius, 0, 1)
+    return (1 - t * t) ** 2
+
+
+def bulge(center, radius, amount):
+    """Pushes the points near center away from it (or towards it, with a negative amount)"""
+    c = np.asarray(center, dtype=float)
+
+    def fn(p):
+        d = p - c
+        r = np.linalg.norm(d, axis=-1, keepdims=True)
+        return p + d / np.maximum(r, 1e-9) * amount * _falloff(r, radius)
+    return fn
+
+
+def push(center, radius, vector):
+    """Moves the points near center by vector, less the further they are"""
+    c, v = np.asarray(center, dtype=float), np.asarray(vector, dtype=float)
+
+    def fn(p):
+        r = np.linalg.norm(p - c, axis=-1, keepdims=True)
+        return p + v * _falloff(r, radius)
+    return fn
+
+
+def lumps(amount=0.03, scale=3.0, seed=0):
+    """Moves the points a little this way and that, by noise: surfaces that look sculpted, not turned"""
+    def fn(p):
+        off = np.stack([fbm(p, scale, 3, seed + k * 31) - 0.5 for k in range(3)], -1) * 2 * amount
+        return p + off
+    return fn
+
+
+def squash(center, axis, k, radius=10.0):
+    """Squashes (k < 1) or stretches the points along an axis, about center"""
+    c, a = np.asarray(center, dtype=float), np.asarray(axis, dtype=float)
+    a = a / np.linalg.norm(a)
+
+    def fn(p):
+        d = p - c
+        along = (d @ a)[..., None]
+        f = _falloff(np.linalg.norm(d, axis=-1, keepdims=True), radius)
+        return p + a * along * (k - 1) * f
+    return fn
+
+
 def plane(origin, a, b, nu=2, nv=2, **kw):
     """A parallelogram from origin along a (u) and b (v). It faces a x b"""
     o, a, b = (np.asarray(x, dtype=float) for x in (origin, a, b))
@@ -346,6 +509,15 @@ def box(center, size, rot=(0, 0, 0), bottom=False, divide=1):
     if bottom:
         faces.append(plane(P(-sx, -sy, -sz), D(2 * sx, 0, 0), D(0, 0, 2 * sz), divide, divide))
     return faces
+
+
+def mirror_bone_name(name):
+    """The name of the bone on the other side: arm_r for arm_l"""
+    if name.endswith("_r"):
+        return name[:-2] + "_l"
+    if name.endswith("_l"):
+        return name[:-2] + "_r"
+    return name
 
 
 #
@@ -784,12 +956,17 @@ class Model:
         self.seed = sum(ord(c) for c in name)
         self.post = (1.0, np.zeros(3))     # A scale and an offset put on the mesh when it is written (fit_height)
 
-    def add(self, surface, paint, tint=False, crease=0.0, share=None, weight=1.0):
+    def add(self, surface, paint, tint=False, crease=0.0, share=None, weight=1.0, bones=None, part=None):
         """A surface, or a list of them (a box), with a painter. share: a surface whose texture it uses too, e.g the
         second wheel. weight: how many more texels it gets than its size would give it, e.g 3 for a face"""
         if isinstance(surface, (list, tuple)):
-            return [self.add(s, paint, tint, crease, weight=weight) for s in surface]
+            return [self.add(s, paint, tint, crease, weight=weight, bones=bones, part=part) for s in surface]
         surface.weight = weight
+        surface.part = part             # A part of its own in a GLB (rig.py), that the game can leave out, e.g the hook
+        if bones is not None:
+            surface.bones = [bones] if isinstance(bones, str) else list(bones)
+        elif getattr(self, "default_bones", None):
+            surface.bones = list(self.default_bones)
         # Small parts need fewer segments: no edge much shorter than detail
         lu, lv = surface.lengths()
         surface.nu = int(np.clip(round(lu / self.detail), 6, surface.nu))
@@ -808,9 +985,10 @@ class Model:
         s = surface.copy()
         F = np.eye(3)
         F[axis, axis] = -1
-        s.M = F @ surface.M
-        s.t = F @ surface.t
+        s.F = F @ surface.F
         s.orient = -surface.orient
+        if surface.bones:
+            s.bones = [mirror_bone_name(b) for b in surface.bones]
         s.share = surface.share or surface
         self.surfaces.append(s)
         return s

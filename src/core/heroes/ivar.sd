@@ -6,7 +6,7 @@ namespace core;
 use raylib;
 
 defineIvar :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Ivar", title: "the Berserker", color: {190, 70, 30, 255}, width: 3.9, height: 6.0, moveSpeed: 7.5, hitRadius: 1.15, maxHealth: 50};
+    hero := HeroDefinition{name: "Ivar", title: "the Berserker", color: {190, 70, 30, 255}, width: 3.9, height: 6.0, moveSpeed: 7.5, hitRadius: 0.95, maxHealth: 50};
     hero.abilities.add(Ability{
         name: "Battle cry", icon: "battle_cry", sound: "ability.battle_cry", cooldown: 12, cast: castBattleCry, bot: .disableEnemy,
         description: "Roars: the enemies within 9 of him run away from him for 1.4 seconds, wherever that takes them",

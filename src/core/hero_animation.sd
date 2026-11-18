@@ -1,0 +1,165 @@
+namespace core;
+
+// The clips of a hero whose model has a skeleton: models/<name>.glb, made by tools/make_heroes.py with tools/rig.py.
+// It stands (idle), walks (walk), and has a clip for an ability, named by the ability's icon (e.g hook, heave), that is
+// played when the ability is cast. Which clip plays, and where in it, is worked out from the hero each frame (its
+// cooldowns, whether it walks, how far), so nothing of it is kept in the game, and replays look the same
+
+import math;
+use raylib;
+
+HeroAnimations :: struct {
+    clips: *ModelAnimation;
+    count: int;
+    idle:  int = -1;
+    walk:  int = -1;
+    hookMesh: int = -1;     // The mesh of a part that is left out while the hero has thrown it: the Butcher's hook
+    handBone: int = -1;     // The bone of the hand the hook is thrown from
+    headBone: int = -1;     // The bone of the head, that the portrait looks at
+    lastClip:  int = -1;    // The pose the model was last put in, for where its hand is
+    lastFrame: int;
+}
+
+// The material of the first part of a GLB of tools/rig.py: raylib's own material is 0, then paint, body and the parts
+FirstPartMaterial :: 3;
+
+AnimationFrameSeconds :: 0.017;     // raylib samples the clips of a GLB every 17 ms
+WalkCycleDistance     :: 7.0;       // How far a hero walks in one cycle of its walk clip
+
+// The name of a clip, as it is in the GLB
+clipName :: (anim: *ModelAnimation) -> string {
+    return nameOf(&anim.name[0]);
+}
+
+// A name of at most 32 characters that ends in a zero, as raylib keeps them
+nameOf :: (chars: *u8) -> string {
+    n := 0;
+    while n < 32 && chars[n] != 0 { n += 1; }
+    s: string;
+    s.data = chars;
+    s.len = n;
+    return s;
+}
+
+boneIndex :: (model: Model, name: string) -> int {
+    for i in 0..model.boneCount {
+        if nameOf(&model.bones[i].name[0]) == name { return i as int; }
+    }
+    return -1;
+}
+
+clipIndex :: method (anims: *HeroAnimations, name: string) -> int {
+    for i in 0..anims.count {
+        if clipName(&anims.clips[i]) == name { return i as int; }
+    }
+    return -1;
+}
+
+clipSeconds :: method (anims: *HeroAnimations, clip: int) -> f32 {
+    return anims.clips[clip].frameCount as f32 * AnimationFrameSeconds;
+}
+
+// The model of a GLB with its clips, for a hero
+loadAnimatedHero :: method (assets: *Assets, kind: HeroKind, file: string) {
+    assets.heroes[kind] = assets.lighting.loadModel(file);
+    anims := &assets.heroAnimations[kind];
+    anims.clips = LoadModelAnimations(dataPath(file), &anims.count);
+    anims.idle = anims.clipIndex("idle");
+    anims.walk = anims.clipIndex("walk");
+    model := assets.heroes[kind];
+    for i in 0..model.meshCount {
+        if model.meshMaterial[i] == FirstPartMaterial { anims.hookMesh = i as int; }
+    }
+    anims.handBone = boneIndex(model, "hand_r");
+    anims.headBone = boneIndex(model, "head");
+}
+
+unloadHeroAnimations :: method (assets: *Assets) {
+    for *anims in assets.heroAnimations {
+        if anims.count > 0 { UnloadModelAnimations(anims.clips, anims.count); }
+    }
+}
+
+// Puts the model of a hero in the pose it is in now: the clip of an ability it has just cast, else walking, else
+// standing. False when its model has no clips, and is drawn as it is. For the portrait, the clip's face only
+// (<clip>_face, the body standing still), when there is one, so no arm swings in front of the face
+poseHero :: method (assets: *Assets, game: *Game, hero: *Hero, portrait := false) -> bool {
+    anims := &assets.heroAnimations[hero.kind];
+    if anims.count == 0 { return false; }
+    clip := -1;
+    time: f32 = 0;
+    loops := true;
+    for ability, slot in hero.abilities() {
+        if ability.isPassive() || hero.cooldowns[slot] <= 0 { continue; }
+        k := anims.clipIndex(ability.icon);
+        if k < 0 { continue; }
+        if portrait {
+            face := anims.clipIndex(tprint("%_face", ability.icon));
+            if face >= 0 { k = face; }
+        }
+        elapsed := ability.cooldown * hero.stats.cooldown - hero.cooldowns[slot];
+        if elapsed >= 0 && elapsed < anims.clipSeconds(k) {
+            clip = k;
+            time = elapsed;
+            loops = false;
+            break;
+        }
+    }
+    if clip < 0 && hero.isMoving && anims.walk >= 0 {
+        clip = anims.walk;
+        if portrait {
+            face := anims.clipIndex("walk_face");
+            if face >= 0 { clip = face; }
+        }
+        time = hero.walkCycle / 1.6 / WalkCycleDistance * anims.clipSeconds(clip);
+    }
+    if clip < 0 {
+        clip = anims.idle;
+        time = game.time;
+    }
+    if clip < 0 { return false; }
+    assets.playClip(hero.kind, clip, time, loops);
+    return true;
+}
+
+// The pose of a clip at a time, on the model of a hero. A clip that doesn't loop holds its last frame
+playClip :: method (assets: *Assets, kind: HeroKind, clip: int, time: f32, loops: bool) {
+    anims := &assets.heroAnimations[kind];
+    count := anims.clips[clip].frameCount;
+    if count <= 0 { return; }
+    frame := math.max((time / AnimationFrameSeconds) as int, 0);
+    if loops { frame = frame % count; }
+    else     { frame = math.min(frame, count - 1); }
+    UpdateModelAnimation(assets.heroes[kind], anims.clips[clip], frame);
+    anims.lastClip = clip;
+    anims.lastFrame = frame;
+}
+
+// Where the hand of the hero is in its pose now, in the world, or nothing when its model has no such bone
+heroHand :: method (assets: *Assets, kind: HeroKind, position: Vector3, facing: f32) -> ?Vector3 {
+    anims := &assets.heroAnimations[kind];
+    if anims.handBone < 0 || anims.lastClip < 0 { return null; }
+    local := anims.clips[anims.lastClip].framePoses[anims.lastFrame][anims.handBone].translation;
+    return position + Vector3Transform(local, MatrixRotateY(facing));
+}
+
+// The model of a hero without the part it has thrown, e.g the Butcher's hook while it flies. Drawn as DrawModelEx would
+drawHeroWithout :: method (assets: *Assets, kind: HeroKind, position: Vector3, facing: f32, tint: Color, part: int) {
+    model := assets.heroes[kind];
+    transform := MatrixMultiply(model.transform, MatrixMultiply(MatrixRotateY(facing), MatrixTranslate(position.x, position.y, position.z)));
+    for i in 0..model.meshCount {
+        if i as int == part { continue; }
+        material := model.materials[model.meshMaterial[i]];
+        albedo := &material.maps[MaterialMapIndex.materialMapAlbedo as int];
+        before := albedo.color;                 // The maps are the model's own: put the color back after
+        albedo.color = ColorTint(before, tint);
+        DrawMesh(model.meshes[i], material, transform);
+        albedo.color = before;
+    }
+}
+
+// Standing, for the portrait of the HUD
+poseIdle :: method (assets: *Assets, kind: HeroKind, time: f32) {
+    anims := &assets.heroAnimations[kind];
+    if anims.count > 0 && anims.idle >= 0 { assets.playClip(kind, anims.idle, time, true); }
+}
