@@ -107,7 +107,7 @@ loadSounds :: method (session: *Session) {
     session.hasSounds = true;
     game := currentGame();
     game.sounds.load(core.dataFolder());
-    game.sounds.playMusic("theme", 0.5);
+    game.sounds.playSoundtrack(core.Soundtrack, 0.55);
     game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
 }
 
@@ -240,7 +240,7 @@ main :: () {
         }
         game.updateCamera(dt);
 
-        if IsKeyPressed(.m) && !keyboardTaken { game.sounds.toggleMute("theme"); }
+        if IsKeyPressed(.m) && !keyboardTaken { game.sounds.toggleSoundtrack(); }
         game.sounds.setListener(game.camera.focus);
         game.sounds.update(dt);
 

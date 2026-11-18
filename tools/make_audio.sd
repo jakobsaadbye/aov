@@ -1,10 +1,11 @@
-// Makes the sounds of the spells, the items and the heroes, and the voices of the heroes, with ElevenLabs: the sound
-// effects API for the sounds, text to speech for the voices. Each is written as an .ogg to data/sounds/, where the game
-// plays it by its name (core/sound.sd), and the .wav of make_sounds.py that it replaces is removed.
+// Makes the sounds of the spells, the items and the heroes, the voices of the heroes and the music, with ElevenLabs: the
+// sound effects API for the sounds, text to speech for the voices, and its music API for the soundtrack. Each is written
+// as an .ogg to data/sounds/ (the music to data/music/), where the game plays it by its name (core/sound.sd), and the
+// .wav of make_sounds.py that it replaces is removed.
 //
 //     make_audio                          what isn't there yet, or has changed
 //     make_audio --force                  all of it again
-//     make_audio sfx                      only the sounds (or: voices)
+//     make_audio sfx                      only the sounds (or: voices, music)
 //     make_audio ability.hex voice.hugo_cast_1        only these
 //     make_audio --list                   what it would make, with the prompts and the lines
 //     make_audio --adopt                  takes the files that are there as made from the prompts of now, without making
@@ -18,7 +19,8 @@
 // spells of a kind sound like each other (smoke and shadows hiss and breathe, ice crackles, time ticks and runs
 // backwards), and every hero has a voice, with its lines for when it comes onto the field, casts, gets across, is run
 // over, and gets an enemy run over. The sounds are trimmed and made as loud as each other, and the voices are pitched and
-// put in a room for their hero, e.g a deeper ogre or a ghost in an echo.
+// put in a room for their hero, e.g a deeper ogre or a ghost in an echo. The four pieces of the soundtrack share a
+// style, so they go together like the movements of one piece: the game plays them one at a time, with silence between.
 
 import net.http;
 import crypto;
@@ -31,7 +33,9 @@ import math;
 Api       :: "https://api.elevenlabs.io/v1";
 Model     :: "eleven_multilingual_v2";
 Sounds    :: "data/sounds";                 // From the folder of the repository, where it is run
+MusicFolder :: "data/music";
 CacheFile :: "data/sounds/.elevenlabs.json"; // What each file was made from, so one whose prompt changed is made again
+MusicModel :: "music_v1";
 
 //
 // Sound effects
@@ -429,6 +433,30 @@ Lines :: [
 ];
 
 //
+// Music
+//
+
+// What every piece has, so they sound like one soundtrack: the same instruments, keys that are close, and a slow tempo
+MusicStyle :: "Calm, gentle instrumental music for a peaceful video game, made to play quietly in the background. Soft felt piano, unhurried and sparse, with long pauses between phrases and notes left to ring. A warm, distant synth pad underneath, a little tape warmth, and a large soft reverb. Around 70 BPM. No drums, no percussion, no vocals, no build-ups or drops. It starts softly and ends by fading away";
+
+Piece :: struct {
+    name:    string;    // music.<name>, written to data/music/<name>.ogg. Not ending in _<number>
+    feel:    string;
+    seconds: int;
+}
+
+Soundtrack :: [
+    Piece{"first_light", "Hopeful and bright, like early morning before the city wakes. In D major: a simple rising melody in the right hand over slow, open chords in the left", 80},
+    Piece{"puddles", "Tender and a little melancholic, like rain on empty streets. In B minor: falling phrases, low notes left ringing, and a soft cello note now and then", 95},
+    Piece{"lanterns", "Dreamy and floating, like streetlights coming on at dusk. In G major: a slow repeating figure in the high notes, with a celesta doubling the melody", 105},
+    Piece{"far_side", "Wistful and warm, like getting home after a long journey. In D major: a slow theme that comes back twice, with soft strings swelling gently under the piano in the middle", 115},
+];
+
+musicPrompt :: (piece: Piece) -> string {
+    return fmt.sprint("%. %", piece.feel, MusicStyle);
+}
+
+//
 // Making them
 //
 
@@ -436,7 +464,15 @@ Lines :: [
 Job :: struct {
     name:   string;         // e.g ability.hex, voice.hugo_cast_1
     effect: int = -1;       // In Effects, or
-    line:   int = -1;       // in Lines
+    line:   int = -1;       // in Lines, or
+    piece:  int = -1;       // in Soundtrack
+}
+
+MusicRequest :: struct {
+    prompt:            string;
+    musicLengthMs:     int;
+    modelId:           string;
+    forceInstrumental: bool;
 }
 
 SoundRequest :: struct {
@@ -489,6 +525,10 @@ lineName :: (index: int) -> string {
 
 // What a file is made from: when it changes, the file is made again
 recipe :: (job: Job) -> string {
+    if job.piece >= 0 {
+        piece := Soundtrack[job.piece];
+        return fmt.sprint("% | % | %", musicPrompt(piece), piece.seconds, MusicModel);
+    }
     if job.effect >= 0 {
         effect := Effects[job.effect];
         return fmt.sprint("% | % | %", prompt(effect), effect.seconds, Model);
@@ -522,6 +562,11 @@ post :: (path: string, body: string) -> string, string {
 }
 
 makeAudio :: (job: Job) -> string, string {
+    if job.piece >= 0 {
+        piece := Soundtrack[job.piece];
+        body := json.encode(MusicRequest{musicPrompt(piece), piece.seconds * 1000, MusicModel, true}, json.SnakeCase);
+        return post("/music?output_format=mp3_44100_128", body);
+    }
     if job.effect >= 0 {
         effect := Effects[job.effect];
         body := json.encode(SoundRequest{prompt(effect), effect.seconds, 0.6}, json.SnakeCase);
@@ -534,15 +579,25 @@ makeAudio :: (job: Job) -> string, string {
     return post(fmt.sprint("/text-to-speech/%?output_format=mp3_44100_128", voice.id), body);
 }
 
+// Where the game finds a file: data/sounds/<group>/<name>.ogg, and data/music/<name>.ogg for music
+folderOf :: (name: string) -> string {
+    group := name.slice(0, name.indexOf("."));
+    if group == "music" { return MusicFolder; }
+    return fmt.sprint("%/%", Sounds, group);
+}
+
+pathOf :: (name: string) -> string {
+    return fmt.sprint("%/%.ogg", folderOf(name), name.slice(name.indexOf(".") + 1));
+}
+
 // The mp3 from ElevenLabs as the .ogg of the game, with ffmpeg: trimmed, as loud as the others, and pitched and put in a
-// room for the voice of its hero. The .wav of make_sounds.py by the same name goes
+// room for the voice of its hero. Music fades in and out, and is a bit quieter. The .wav of make_sounds.py by the same
+// name goes
 finish :: (audio: string, job: Job) -> bool {
-    dot := job.name.indexOf(".");
-    group := job.name.slice(0, dot);
-    base := job.name.slice(dot + 1);
-    folder := fmt.sprint("%/%", Sounds, group);
+    folder := folderOf(job.name);
+    base := job.name.slice(job.name.indexOf(".") + 1);
     _ := os.makeDir(folder);
-    out := fmt.sprint("%/%.ogg", folder, base);
+    out := pathOf(job.name);
     source := fmt.sprint("%.mp3", out);
     if os.writeFile(source, audio) != null { return false; }
     defer os.removeFile(source);
@@ -562,7 +617,11 @@ finish :: (audio: string, job: Job) -> bool {
         if voice.room == "echo" { filters.addString(",aecho=0.8:0.6:60|120:0.25|0.15"); }
         if voice.room == "cave" { filters.addString(",aecho=0.8:0.7:180|400|700:0.35|0.25|0.15"); }
     }
-    filters.addString(",loudnorm=I=-16:TP=-1.5:LRA=11");
+    if job.piece >= 0 {
+        filters.addString(",afade=t=in:d=1.5,areverse,afade=t=in:d=4,areverse,loudnorm=I=-18:TP=-2:LRA=11");
+    } else {
+        filters.addString(",loudnorm=I=-16:TP=-1.5:LRA=11");
+    }
     command := fmt.sprint("ffmpeg -y -loglevel error -i \"%\" -af \"%\" -ar 44100 -ac % -c:a libvorbis -q:a 5 \"%\"",
         source, filters.toString(), channels, out);
     if os.run(command) != 0 { return false; }
@@ -571,11 +630,11 @@ finish :: (audio: string, job: Job) -> bool {
     return true;
 }
 
-// The jobs the arguments ask for: all, sfx, voices, or names
+// The jobs the arguments ask for: all, sfx, voices, music, or names
 jobsFor :: (args: []string) -> [..]Job {
     jobs: [..]Job;
     names := 0;
-    for arg in args { if !arg.startsWith("--") && arg != "sfx" && arg != "voices" { names += 1; } }
+    for arg in args { if !arg.startsWith("--") && arg != "sfx" && arg != "voices" && arg != "music" { names += 1; } }
     wants :: (args: []string, name: string, group: string, names: int) -> bool {
         all := true;
         for arg in args {
@@ -592,7 +651,18 @@ jobsFor :: (args: []string) -> [..]Job {
         name := lineName(i as int);
         if wants(args, name, "voices", names) { jobs.add(Job{name: name, line: i as int}); }
     }
+    for piece, i in Soundtrack {
+        name := fmt.sprint("music.%", piece.name);
+        if wants(args, name, "music", names) { jobs.add(Job{name: name, piece: i as int}); }
+    }
     return jobs;
+}
+
+// What a file is, for --list and the output
+describe :: (job: Job) -> string {
+    if job.effect >= 0 { return prompt(Effects[job.effect]); }
+    if job.piece >= 0  { return fmt.sprint("% s, %", Soundtrack[job.piece].seconds, musicPrompt(Soundtrack[job.piece])); }
+    return Lines[job.line].text;
 }
 
 main :: () {
@@ -610,10 +680,7 @@ main :: () {
     defer jobs.free();
 
     if list {
-        for job in jobs {
-            if job.effect >= 0 { fmt.print("% | %", job.name, prompt(Effects[job.effect])); }
-            else               { fmt.print("% | %", job.name, Lines[job.line].text); }
-        }
+        for job in jobs { fmt.print("% | %", job.name, describe(job)); }
         fmt.print("% files", jobs.count);
         return;
     }
@@ -629,8 +696,7 @@ main :: () {
 
     made := 0;
     for job in jobs {
-        dot := job.name.indexOf(".");
-        out := fmt.sprint("%/%/%.ogg", Sounds, job.name.slice(0, dot), job.name.slice(dot + 1));
+        out := pathOf(job.name);
         digest := crypto.sha256(recipe(job)).hex();
         if adopt {
             if os.fileExists(out) { cache[job.name] = digest; }
@@ -651,8 +717,7 @@ main :: () {
         cache[job.name] = digest;
         os.writeFile(CacheFile, json.encode(cache, json.Pretty));
         made += 1;
-        if job.effect >= 0 { fmt.print("% | %", job.name, prompt(Effects[job.effect])); }
-        else               { fmt.print("% | %", job.name, Lines[job.line].text); }
+        fmt.print("% | %", job.name, describe(job));
     }
     if adopt { os.writeFile(CacheFile, json.encode(cache, json.Pretty)); }
     fmt.print("Made % of %", made, jobs.count);

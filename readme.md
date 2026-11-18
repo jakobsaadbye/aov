@@ -31,7 +31,7 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | `data/models/` | The vehicles (car, van, truck, bus), the heroes, the city and a segment of the wall, as OBJ, each with its hand-painted texture (`car.png` for `car.obj`) |
 | `data/icons/` | A 128x128 icon for each ability, item, perk and status, by the name in the code |
 | `data/sounds/` | The sound effects, by group: `hero/`, `car/`, `ability/`, `ui/` |
-| `data/music/` | The music (`theme.ogg`) and the hum of the traffic (`traffic.ogg`), looped |
+| `data/music/` | The soundtrack (four pieces, played one at a time) and the hum of the traffic (`traffic.ogg`), looped |
 | `data/fonts/` | Cinzel (titles) and Fira Sans (text), both under the SIL Open Font License |
 | `data/shaders/` | `lighting.vs` and `lighting.fs`: the warm sun, cool light from the sky and warm light from the ground, a rim light and the haze in the distance |
 | `data/window_icon.png` | |
@@ -105,9 +105,10 @@ fades down to a murmur. M turns the music off and on.
 
 ### Made with ElevenLabs
 
-The sounds of the spells, the items and the heroes, and the voices, are made with [ElevenLabs](https://elevenlabs.io) by
-`tools/make_audio.sd`, a tool in Saad (with `net.http`, `json` and `crypto` of its standard library, and ffmpeg): the
-sound effects API for the sounds, and text to speech for the voices. All of it is written in that file:
+The sounds of the spells, the items and the heroes, the voices and the music are made with
+[ElevenLabs](https://elevenlabs.io) by `tools/make_audio.sd`, a tool in Saad (with `net.http`, `json` and `crypto` of its
+standard library, and ffmpeg): the sound effects API for the sounds, text to speech for the voices, and the music API for
+the soundtrack. All of it is written in that file:
 
 * **Families.** Each spell belongs to a family (stealth, arcane, mind, time, ice, storm, traffic, motion, force, magnet,
   craft, care, tourist), whose words come into each of its prompts, so spells of a kind sound like each other: smoke and
@@ -117,7 +118,7 @@ sound effects API for the sounds, and text to speech for the voices. All of it i
   it comes onto the field, casts, gets across, is run over, and gets an enemy run over. A hero says a line at most every
   4 seconds, only a third of the times it casts, and the hero the camera follows is heard at full volume.
 
-Each file is trimmed, made as loud as the others (-16 LUFS), and written as an .ogg; a file that is there and was made
+Each file is trimmed, made as loud as the others (-16 LUFS, the music -18 with a fade in and out), and written as an .ogg; a file that is there and was made
 from the same prompt isn't made again (`data/sounds/.elevenlabs.json`). It needs an API key in `ELEVENLABS_API_KEY`, and
 goes through the proxy of `https_proxy` when there is one. Run it from the folder of the repository:
 
@@ -125,14 +126,18 @@ goes through the proxy of `https_proxy` when there is one. Run it from the folde
 saad run tools/make_audio.sd                          what isn't there yet, or has changed
 saad run tools/make_audio.sd -- --list                the prompts and the lines
 saad run tools/make_audio.sd -- ability.hex voice.hugo_cast_1
+saad run tools/make_audio.sd -- music --force         the soundtrack again
 ```
 
 On Linux, build it with `saad build tools/make_audio.sd --elf` and link `tools/build/out.o` with `tools/linux/link.sh` of
 the Saad repository, which links OpenSSL for https.
 
-The music (`theme`) is a loop of a minute for a small orchestra in D minor: strings, cellos, horns, a choir, a harp and
-war drums. `tools/make_sounds.py` synthesizes all of it in layers (a low body, a sharp front and a tail of reverb), from
-noise, filters, struck metal, formant voices and plucked strings, so it sounds like a fantasy game rather than an 8-bit one.
+The music is a soundtrack of four calm pieces for piano, made with the music API of ElevenLabs by the same tool:
+`first_light` (hopeful, D major), `puddles` (rain on empty streets, B minor), `lanterns` (dusk, G major) and `far_side`
+(getting home, D major), from 72 to 112 seconds each. They share one style in their prompts (soft felt piano with long
+pauses, a distant pad, a slow tempo, no drums), so they go together. The game plays them one at a time in a random order,
+never the same one twice in a row, with 25 to 70 seconds of silence between them (`core.Soundtrack` in
+`core/sound.sd`), so the music comes and goes instead of one tune looping all game. M turns it off and on.
 Any of the files can be replaced by a recording.
 
 ## Fonts
