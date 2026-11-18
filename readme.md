@@ -424,10 +424,17 @@ with a range in `GeneRanges`, read with `genome.get(.name)`.
 
 ### Training the bots
 
-`src/bot_train.sd` evolves the genomes with a genetic algorithm. A population plays games against each other, three to
-a game with one of the hall of fame (the best of earlier generations) as the fourth, and the fittest have the children of
-the next generation (tournaments, crossover of the genes, and mutations that get smaller as it goes). The best are kept
-as they are and played again, so a lucky genome doesn't stay. Fitness (`fitnessOf` in `genome.sd`) is crossings, deaths,
+`src/bot_train.sd` evolves the genomes. A population plays games against each other, three to a game with one of the
+hall of fame (the best of earlier generations) as the fourth. Two ways of learning from them (`--method`):
+
+* **CMA-ES** (`cmaes`, the default, `bots/cmaes.sd`): the genomes are drawn from a cloud, a normal distribution with a
+  middle, a size and a shape. From the order the genomes came in, the middle moves towards the better half, the shape
+  stretches the way the steps that worked went (so it learns which genes go together, e.g. that more `survive` only
+  helps with less `leadTime`), and the cloud gets bigger while it keeps going the same way and smaller near the best. It
+  only uses the order, so a lucky game counts for less, and the middle of the cloud is what it keeps.
+* **A genetic algorithm** (`ga`): the fittest have the children of the next generation (tournaments, crossover of the
+  genes, and mutations that get smaller as it goes). The best are kept as they are and played again, so a lucky genome
+  doesn't stay. Fitness (`fitnessOf` in `genome.sd`) is crossings, deaths,
 kills (an enemy a car gets within 3 seconds of being hooked, bashed or locked), how far across the hero is at the end,
 and how fast the best crossing was.
 
