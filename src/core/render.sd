@@ -46,9 +46,9 @@ drawScene :: method (game: *Game, assets: *Assets) {
     }
     profileEnd(.cars);
     for sign in game.stopSigns { drawStopSign(assets, sign); }
-    drawBridges(game);
+    drawBridges(game, assets);
     drawCones(game);
-    drawTrampolines(game);
+    drawTrampolines(game, assets);
     drawPortals(game);
     drawRods(game);
     drawPeels(game);

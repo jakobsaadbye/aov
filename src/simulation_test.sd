@@ -1287,11 +1287,18 @@ testRedesignedKits :: () {
     assert(near(game.traffic.cars[0].x(), core.laneCenter(5)));
     clearRoad(game);
 
-    // Birgit's trampoline bounces whoever walks onto it, the way it walks, over the cars
+    // Birgit's trampoline bounces whoever walks onto it, the way it walks, over the cars, once it has landed
     game.spawnHero(0, .birgit);
     you.hero.position = Vector3{grass + 20, 0, 0};
     game.cast(0, 1, {grass + 24, 0});
-    assert(game.trampolines.count == 1);
+    assert(game.trampolines.count == 1 && !game.trampolines[0].hasLanded());
+    you.hero.position = Vector3{grass + 23, 0, 0};
+    you.hero.moveTo(Vector3{grass + 40, 0, 0});
+    game.simulate(Dt);
+    assert(!you.hero.isAirborne());
+    you.hero.position = Vector3{grass + 20, 0, 0};
+    for 0..(25 * 60 / 100) { game.simulate(Dt); }
+    you.hero.position = Vector3{grass + 20, 0, 0};
     you.hero.moveTo(Vector3{grass + 40, 0, 0});
     for 0..30 {
         game.simulate(Dt);

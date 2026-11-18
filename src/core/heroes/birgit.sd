@@ -25,6 +25,7 @@ castFootbridge :: (game: *Game, caster: int, ability: *Ability, target: Vector2)
     hero := &game.players[caster].hero;
     point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
     if math.fabsf(point.x) > RoadHalfWidth { return false; }
+    faceTowards(hero, point);         // She slams her hammer down towards it
     lane := laneAt(point.x);
     halfWidth := LaneWidth * ability.count as f32 * 0.5 + RampLength;
     // On the road, not over the walls
@@ -38,9 +39,17 @@ castTrampoline :: (game: *Game, caster: int, ability: *Ability, target: Vector2)
     hero := &game.players[caster].hero;
     point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
     point = game.world.resolveCollisions(point, TrampolineRadius, false);
-    game.trampolines.add(Trampoline{position: point, timeLeft: ability.duration * hero.stats.buildTime, power: ability.power});
-    game.effects.particles.emit(.dust, point.at(0.5), 16);
+    faceTowards(hero, point);         // and tosses it out towards where it lands
+    // It flies from her hand, as she swings it forward, and bounces no one until it is down
+    hand := hero.position + Vector3{math.sinf(hero.facing) * 0.8, 2.6, math.cosf(hero.facing) * 0.8};
+    game.trampolines.add(Trampoline{position: point, timeLeft: ability.duration * hero.stats.buildTime, power: ability.power, from: hand});
     return true;
+}
+
+// Turns a hero that stands still to a point, e.g to what she builds. One that walks keeps the way it walks
+faceTowards :: (hero: *Hero, point: Vector2) {
+    toward := point - hero.ground();
+    if !hero.isMoving && toward.length() > 0.1 { hero.facing = math.atan2f(toward.x, toward.y); }
 }
 
 // A trampoline: anyone that walks onto it is bounced on, the way it walks
@@ -48,6 +57,17 @@ Trampoline :: struct {
     position: Vector2;
     timeLeft: f32;
     power:    f32;              // How far it bounces
+    age:      f32;              // Seconds since it was tossed: it flies, lands at TrampolineLands and pops up
+    bounced:  f32 = 100;        // Seconds since it last bounced someone, for how its mat dips
+    from:     Vector3;          // Where it was tossed from
+}
+
+TrampolineThrown :: 0.2;    // Seconds into her toss that it leaves her hand
+TrampolineLands  :: 0.5;    // and that it lands
+
+// Down, where it bounces
+hasLanded :: method (trampoline: Trampoline) -> bool {
+    return trampoline.age >= TrampolineLands;
 }
 
 TrampolineRadius :: 1.4;
@@ -55,34 +75,53 @@ TrampolineAir    :: 0.7;        // Seconds a bounce takes
 TrampolineHeight :: 6.0;
 
 updateTrampolines :: method (game: *Game, dt: f32) {
-    for *trampoline in game.trampolines { trampoline.timeLeft -= dt; }
+    for *trampoline in game.trampolines {
+        trampoline.timeLeft -= dt;
+        before := trampoline.hasLanded();
+        trampoline.age += dt;
+        trampoline.bounced += dt;
+        if !before && trampoline.hasLanded() { game.effects.particles.emit(.dust, trampoline.position.at(0.5), 16); }
+    }
     game.trampolines.removeWhere(trampoline => trampoline.timeLeft <= 0);
 }
 
 bounceOnTrampoline :: method (game: *Game, index: int) {
     hero := &game.players[index].hero;
     if !hero.isMoving || hero.isAirborne() { return; }
-    for trampoline in game.trampolines {
-        if hero.ground().distance(trampoline.position) > TrampolineRadius + hero.info().hitRadius * 0.5 { continue; }
+    for *trampoline in game.trampolines {
+        if !trampoline.hasLanded() || hero.ground().distance(trampoline.position) > TrampolineRadius + hero.info().hitRadius * 0.5 { continue; }
         heading := hero.target.xz() - hero.ground();
         if heading.length() < 0.1 { return; }
         to := hero.ground() + heading.normalize() * trampoline.power;
         hero.startLeap(to, TrampolineAir, TrampolineHeight);
+        trampoline.bounced = 0;
         game.effects.particles.emit(.dust, trampoline.position.at(0.5), 10);
         game.sounds.playAt("ability.leap", hero.position, 0.9, 0.1);
         return;
     }
 }
 
-drawTrampolines :: (game: *Game) {
+// The model of tools/make_heroes.py: folded small, it flies in an arc from her hand, tumbling, then pops up where it
+// lands with a wobble. Its mat dips when it bounces someone, and it folds away at the end
+drawTrampolines :: (game: *Game, assets: *Assets) {
     for trampoline in game.trampolines {
         base := trampoline.position.at(0);
-        fade := math.min(trampoline.timeLeft * 2, 1);
-        DrawCylinder(base + Vector3{0, 0.6, 0}, TrampolineRadius, TrampolineRadius, 0.12, 20, ColorAlpha({40, 40, 50, 255}, fade));
-        DrawCylinder(base + Vector3{0, 0.65, 0}, TrampolineRadius * 0.85, TrampolineRadius * 0.85, 0.1, 20, ColorAlpha({60, 140, 230, 255}, fade));
-        for k in 0..4 {
-            angle := k as f32 * Pi * 0.5 + 0.4;
-            DrawCylinder(base + Vector3{math.sinf(angle) * TrampolineRadius * 0.9, 0, math.cosf(angle) * TrampolineRadius * 0.9}, 0.08, 0.08, 0.6, 6, ColorAlpha({90, 90, 100, 255}, fade));
+        if trampoline.age < TrampolineThrown { continue; }
+        if !trampoline.hasLanded() {
+            k := (trampoline.age - TrampolineThrown) / (TrampolineLands - TrampolineThrown);
+            at := Vector3Lerp(trampoline.from, base, k) + Vector3{0, math.sinf(k * Pi) * 3, 0};
+            DrawModelEx(assets.trampoline, at, {1, 0, 0.3}, k * 540, {0.35, 0.35, 0.35}, White);
+            continue;
         }
+        t := math.min((trampoline.age - TrampolineLands) / TrampolinePop, 1);
+        size := (t + math.sinf(t * Pi) * 0.3) * math.min(trampoline.timeLeft * 3, 1);
+        if size <= 0.01 { continue; }
+        DrawModelEx(assets.trampoline, base, {0, 1, 0}, 0, {size, size, size}, White);
+        dip: f32 = 0;
+        if trampoline.bounced < TrampolineDip { dip = math.sinf(trampoline.bounced / TrampolineDip * Pi) * 0.3; }
+        DrawModelEx(assets.trampolineMat, base - Vector3{0, dip * size, 0}, {0, 1, 0}, 0, {size, size, size}, White);
     }
 }
+
+TrampolinePop :: 0.25;      // Seconds it takes to pop up
+TrampolineDip :: 0.35;      // and for its mat to dip and spring back
