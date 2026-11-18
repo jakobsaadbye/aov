@@ -169,6 +169,7 @@ Game :: struct {
     isStepping:  bool;                      // In a frame of advance, which is recorded or replayed
     difficulty:  Difficulty;                // Of the bots
     startLevel:  int;                       // The level of the traffic before anyone has crossed, e.g for training
+    serial:      u64;                       // Tells games apart, e.g for what the bots work out once a frame
     nextDifficulty: ?Difficulty;            // Chosen while paused, for the next game
     restartPending:  bool;                  // Keys of this frame, carried out by advance
     pendingHero: ?HeroKind;                 // The hero the player at the keyboard changes to, e.g by setHero
@@ -224,8 +225,12 @@ StopSign :: struct {
 
 // A game with you (or no one at the keyboard with humans: 0) and bots with these brains, named by the names. The bots
 // namespace makes the brains, e.g with bots.newGame
+gamesMade: u64;
+
 newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
     game := new(Game);
+    gamesMade += 1;
+    game.serial = gamesMade;
     game.rng = random.newRandom(seed);
     game.effects.particles = newParticles(seed);
     game.world = newWorld();

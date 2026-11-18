@@ -12,6 +12,9 @@
 //     saad run bot_arena.sd -- --level 5                       the traffic starts at level 5 (6 crossings in)
 //     saad run bot_arena.sd -- --bots 1 --trace > trace.txt    what a bot does each frame; tools/plot_bot.py draws it
 //     saad run bot_arena.sd -- --nododge                       without the reflex: what the plans do on their own
+//     saad run bot_arena.sd -- --lanes 5                       a search looks 5 lanes to either side (0 for all)
+//     saad run bot_arena.sd -- --look 0.5                      a plan that doesn't get across is searched again this often
+//     saad run bot_arena.sd -- --dt 30                         30 steps a second instead of 60
 //
 // Build it with --llvm (saad build bot_arena.sd --llvm): the bots think about 10 times as fast
 
@@ -23,7 +26,8 @@ import time;
 import random;
 use raylib;
 
-Dt :: 1.0 / 60.0;
+GameDt :: 1.0 / 60.0;
+dt: f32 = GameDt;          // The time step of a game: --dt 30 for 30 steps a second
 
 main :: () {
     botCount := 4;
@@ -56,6 +60,9 @@ main :: () {
             case "--hits"     { bots.debugHits = true; }
             case "--level"    { level = (next.toInt() ?? 0) as int; i += 1; }     // The traffic starts at this level
             case "--nododge"  { bots.noDodge = true; }
+            case "--look"     { bots.lookEvery = (next.toFloat() ?? 0) as f32; i += 1; }     // 0.5 for every half second
+            case "--dt"       { dt = 1 / ((next.toFloat() ?? 60) as f32); i += 1; }
+            case "--lanes"    { bots.searchLanes = (next.toInt() ?? 8) as int; i += 1; }     // How far a search looks, 0 for all
             case "--trace"    { bots.debugTrace = true; bots.debugHits = true; }
             case "--default"  { bots.useGenome(bots.defaultGenome()); }     // The hand tuned genes, not the trained ones
             case "--genome" {
@@ -103,10 +110,10 @@ main :: () {
             for *player in game.players { (player.brain as *bots.Bot).personality.genome.set(.aggression, 0); }
         }
 
-        steps := (seconds as f32 / Dt) as int;
+        steps := (seconds as f32 / dt) as int;
         for 0..steps {
             start := time.clock();
-            game.simulate(Dt);
+            game.simulate(dt);
             took := time.clock() - start;
             thinking += took;
             if took > worstFrame { worstFrame = took; }
@@ -125,6 +132,7 @@ main :: () {
                 fmt.fixed((profile.planSeconds / plans as f64 * 1000) as f32, 1), profile.plans, profile.forecasts,
                 fmt.fixed((profile.forecastSeconds / atLeastOne(profile.forecasts) as f64 * 1000) as f32, 2),
                 profile.expanded / plans as i64, fmt.fixed(profile.reachedGoal as f32 / plans as f32, 2));
+            fmt.print("        searched because: told % times, the plan broke %, for a better one %", profile.searchedFor[bots.SearchReason.told], profile.searchedFor[bots.SearchReason.broken], profile.searchedFor[bots.SearchReason.better]);
             if mixed {
                 level := &byDifficulty[(i + g) % core.Difficulty.count];
                 fitnessOf[(i + g) % core.Difficulty.count] += bots.fitnessOf(game, i as int);

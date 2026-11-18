@@ -53,6 +53,7 @@ Trajectory :: struct {
     leaveWith:  int = -1;       // A car that isn't spawned yet: when it leaves a cell is by the slowest it could be, in
                                 // Forecast.slowSpawns
     harmlessUntil: f32;         // Up on Karl's jack until then: it hits nobody
+    ambulance:  bool;           // That Ditte's ambulance proof heroes needn't keep out of the way of
 
     add :: method * (start: f32, z: f32, speed: f32) {
         assert(self.count < MaxPieces);
@@ -374,29 +375,31 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
     forecast := Forecast{options: options, reachX: CarWidth * 0.5 + options.radius + options.margin};
     forecast.blocked = blockedCells(game, options);
     for slick in game.slicks.list { forecast.slicks.add(slick); }
-    // Nothing worked out yet: -1 for every cell (all its bytes set), and no intervals
+    // Nothing worked out yet: -1 for every cell (all its bytes set), and no intervals. The count of a cell, and where
+    // what is known of it ends, are only read once it is worked out
     forecast.firstSafe.reserve(GridCells);
     forecast.safeCount.reserve(GridCells);
     mem.set(forecast.firstSafe.data, 255, GridCells * sizeof(int));
-    mem.set(forecast.safeCount.data, 0, GridCells * sizeof(int));
     forecast.firstSafe.count = GridCells;
     forecast.safeCount.count = GridCells;
     forecast.known.reserve(GridCells);
     forecast.known.count = GridCells;
     forecast.safe.reserve(4096);
 
-    for car in game.traffic.cars {
-        if !car.isActive || (options.ambulanceProof && car.kind == .ambulance) { continue; }
-        trajectory := trajectoryOf(game, car, 0);
-        sweep := reverseSweep(game, car);
-        forecast.lanes[car.lane].add(trajectory);
-        if sweep.hasValue() { forecast.lanes[car.lane].add(sweep.value()); }
-        // Sliding over from another lane: still in that one too, for a moment
-        if car.fromLane >= 0 && car.fromLane != car.lane {
-            forecast.lanes[car.fromLane].add(trajectory);
-            if sweep.hasValue() { forecast.lanes[car.fromLane].add(sweep.value()); }
+    // The cars: the same for every bot, so worked out once a frame (trafficSnapshot), and copied
+    snapshot := trafficSnapshot(game);
+    for trajectories, lane in snapshot.lanes {
+        forecast.lanes[lane].reserve(trajectories.count);
+        for trajectory in trajectories {
+            if options.ambulanceProof && trajectory.ambulance { continue; }
+            forecast.lanes[lane].add(trajectory);
         }
     }
+    forecast.slowSpawns.reserve(snapshot.slowSpawns.count);
+    for trajectory in snapshot.slowSpawns { forecast.slowSpawns.add(trajectory); }
+    forecast.unknownFrom = snapshot.unknownFrom;
+    forecast.fastest = snapshot.fastest;
+
     for player, i in game.players {
         if i as int == options.me || !player.isPlaying() || player.hero.isAirborne() { continue; }
         hero := &player.hero;
@@ -419,36 +422,110 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
         start := math.max(BridgeRaiseTime - bridge.age, 0) + 0.1;
         forecast.safeZones.add(SafeZone{inner, start, bridge.timeLeft - 0.3});
     }
+    return forecast;
+}
+
+// Where the cars will be: what every bot's forecast of a frame has in common, worked out once a frame for each thread
+TrafficSnapshot :: struct {
+    serial:      u64;               // Of the game,
+    time:        f32;               // the time of the game, it was made at,
+    checksum:    f64;               // and what the cars were like: something can change them in the middle of a frame,
+                                    // e.g a bot that freezes them after another bot has looked
+    lanes:       [LaneCount][..]Trajectory;
+    slowSpawns:  [..]Trajectory;
+    unknownFrom: [LaneCount]f32;
+    fastest:     [LaneCount]f32;
+}
+
+@private @threadLocal snapshotOfThread: *TrafficSnapshot;
+
+trafficSnapshot :: (game: *Game) -> *TrafficSnapshot {
+    snapshot := snapshotOfThread;
+    checksum := trafficChecksum(game);
+    if snapshot != null && snapshot.serial == game.serial && snapshot.time == game.time && snapshot.checksum == checksum { return snapshot; }
+
+    // On the heap, whatever the allocator of the thread is, e.g a bot's arena: it is kept, and made again next frame
+    previous := mem.setAllocator(mem.heap());
+    defer mem.setAllocator(previous);
+    if snapshot == null {
+        snapshot = new(TrafficSnapshot, mem.heap());
+        snapshotOfThread = snapshot;
+    }
+    snapshot.serial = game.serial;
+    snapshot.time = game.time;
+    snapshot.checksum = checksum;
+    for *lane in snapshot.lanes { lane.clear(); }
+    snapshot.slowSpawns.clear();
+
+    zones := game.slowZones();
+    defer zones.free();
+    buses: [..]Car;             // Few, and the cars behind them are held up by them
+    defer buses.free();
+    for car in game.traffic.cars {
+        if car.isActive && car.kind == .bus { buses.add(car); }
+    }
+    for car in game.traffic.cars {
+        if !car.isActive { continue; }
+        trajectory := trajectoryOf(game, car, 0, zones, buses);
+        sweep := reverseSweep(game, car);
+        snapshot.lanes[car.lane].add(trajectory);
+        if sweep.hasValue() { snapshot.lanes[car.lane].add(sweep.value()); }
+        // Sliding over from another lane: still in that one too, for a moment
+        if car.fromLane >= 0 && car.fromLane != car.lane {
+            snapshot.lanes[car.fromLane].add(trajectory);
+            if sweep.hasValue() { snapshot.lanes[car.fromLane].add(sweep.value()); }
+        }
+    }
     // An ambulance that was heard: it is on the road after its siren
     traffic := &game.traffic;
-    if traffic.emergencyLane >= 0 && !options.ambulanceProof {
+    if traffic.emergencyLane >= 0 {
         first, last := traffic.emergencyLanes();
         for lane in first...last {
             ambulance := Car{isActive: true, kind: .ambulance, lane: lane, z: traffic.emergencyStart(lane), speed: traffic.emergencySpeed()};
-            forecast.lanes[lane].add(trajectoryOf(game, ambulance, traffic.emergencyIn));
+            snapshot.lanes[lane].add(trajectoryOf(game, ambulance, traffic.emergencyIn, zones, buses));
         }
     }
     for lane, i in game.traffic.lanes {
         // The next car of the lane, from when it is spawned. It gets to the cells as soon as a truck as fast as a car of
-        // the lane gets would
-        // A rush hour that is coming makes it come sooner
+        // the lane gets would. A rush hour that is coming makes it come sooner
         soonest := lane.spawnTimer;
         if game.traffic.rush == .coming { soonest *= RushGap; }
         next := Car{isActive: true, kind: .truck, lane: i as int, z: -RoadEnd - TruckLength * 0.5, speed: lane.speed * MaxSpawnSpeed};
-        fast := trajectoryOf(game, next, soonest);
+        fast := trajectoryOf(game, next, soonest, zones, buses);
         // Leaving: the slowest it can be, a truck. Else a plan that goes right behind it, before anything more is known
         // of the lane, can find the way blocked when the car is spawned
         next.speed = lane.speed * MinSpawnSpeed;
-        slow := trajectoryOf(game, next, lane.spawnTimer);
-        fast.leaveWith = forecast.slowSpawns.count as int;
-        forecast.slowSpawns.add(slow);
-        forecast.lanes[i].add(fast);
+        slow := trajectoryOf(game, next, lane.spawnTimer, zones, buses);
+        fast.leaveWith = snapshot.slowSpawns.count as int;
+        snapshot.slowSpawns.add(slow);
+        snapshot.lanes[i].add(fast);
 
         // The one after it can't come sooner than the shortest gap
-        forecast.unknownFrom[i] = lane.spawnTimer + minSpawnGap(&game.traffic, lane.speed);
-        forecast.fastest[i] = lane.speed * MaxSpawnSpeed;
+        snapshot.unknownFrom[i] = lane.spawnTimer + minSpawnGap(&game.traffic, lane.speed);
+        snapshot.fastest[i] = lane.speed * MaxSpawnSpeed;
     }
-    return forecast;
+    return snapshot;
+}
+
+// All that goes into where the cars will be, added up: it is different when any of it changes
+@private
+trafficChecksum :: (game: *Game) -> f64 {
+    sum: f64 = 0;
+    for car, i in game.traffic.cars {
+        if !car.isActive { continue; }
+        k := (i + 1) as f64;
+        sum += k * (car.z as f64 + 3.1 * car.speed + 5.3 * car.frozenLeft + 7.7 * car.liftedLeft + 11.3 * car.shift
+            + 13.1 * car.lane as f64 + 17.9 * car.fromLane as f64 + 19.7 * (car.kind as int) as f64);
+    }
+    for lane, l in game.traffic.lanes {
+        k := (l + 1000) as f64;
+        sum += k * (lane.spawnTimer + 2.3 * lane.speed + 3.7 * lane.pace + 5.9 * lane.paceLeft + 7.1 * lane.haltLeft + 9.3 * lane.haltLine);
+    }
+    sum += 23.3 * game.traffic.emergencyLane as f64 + 29.9 * game.traffic.emergencyIn + 31.1 * (game.traffic.rush as int) as f64;
+    zones := game.slowZones();
+    defer zones.free();
+    for zone in zones { sum += 37.7 * (zone.center.x + 41.3 * zone.center.y + 43.1 * zone.radius) as f64; }
+    return sum;
 }
 
 // The cells where a hero of a size doesn't fit: the walls (unless it goes through them) and the edges of the field. The
@@ -479,10 +556,10 @@ blockedCells :: (game: *Game, options: ForecastOptions) -> []bool {
 }
 
 // Where a car will be, the way Traffic.update moves it, from the time it appears
-trajectoryOf :: (game: *Game, car: Car, appears: f32) -> Trajectory {
+trajectoryOf :: (game: *Game, car: Car, appears: f32, zones: []SlowZone, buses: []Car) -> Trajectory {
     traffic := &game.traffic;
     lane := traffic.lanes[car.lane];
-    trajectory := Trajectory{halfLength: car.length() * 0.5};
+    trajectory := Trajectory{halfLength: car.length() * 0.5, ambulance: car.kind == .ambulance};
 
     // An ambulance drives on at its speed, whatever happens
     if car.kind == .ambulance {
@@ -504,15 +581,13 @@ trajectoryOf :: (game: *Game, car: Car, appears: f32) -> Trajectory {
 
     // Slower near a hero with a chill aura, as long as it is in there now
     speed := car.speed;
-    zones := game.slowZones();
-    defer zones.free();
     for zone in zones {
         if CheckCollisionCircleRec(zone.center, zone.radius, car.rect()) { speed *= 1 - zone.slow; }
     }
     // Behind a bus, no faster than it
     if car.kind != .bus {
-        for other in traffic.cars {
-            if other.isActive && other.kind == .bus && other.lane == car.lane && other.z > car.z { speed = math.min(speed, other.speed); }
+        for bus in buses {
+            if bus.lane == car.lane && bus.z > car.z { speed = math.min(speed, bus.speed); }
         }
     }
 
