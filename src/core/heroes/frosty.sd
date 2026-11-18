@@ -44,11 +44,21 @@ updateIgloo :: method (game: *Game, index: int, dt: f32) {
 
 IglooHeal :: 0.1;
 
-drawIgloo :: (hero: *Hero) {
+// Seconds since he built his igloo
+iglooAge :: (hero: *Hero) -> f32 {
+    return hero.status(.igloo).duration - hero.timeLeft(.igloo);
+}
+
+IglooBuild :: 0.4;      // Seconds it takes to go up round him
+
+// The model of tools/make_heroes.py, its door towards the side he is going: it grows up out of the snow round him with
+// a little bounce, and slumps and spreads as it melts
+drawIgloo :: (assets: *Assets, hero: *Hero) {
+    t := math.min(iglooAge(hero) / IglooBuild, 1);
     melt := math.min(hero.timeLeft(.igloo) / 0.4, 1);
-    at := hero.position;
-    DrawSphereEx(at, IglooRadius * melt, 12, 12, {235, 245, 255, 255});
-    // The blocks of snow, and the door towards the far side
-    for k in 1..4 { DrawCircle3D(at + Vector3{0, k as f32 * 0.55 * melt, 0}, IglooRadius * melt * math.sqrtf(1 - (k as f32 * 0.23) * (k as f32 * 0.23)), {1, 0, 0}, 90, {180, 200, 220, 255}); }
-    DrawCube(at + Vector3{hero.goalSign * IglooRadius * 0.85 * melt, 0.6 * melt, 0}, 0.8 * melt, 1.2 * melt, 1.1 * melt, {60, 70, 90, 255});
+    tall := (t + math.sinf(t * Pi) * 0.15) * melt;
+    wide := (0.8 + 0.2 * t) * (1 + 0.12 * (1 - melt));
+    angle: f32 = 0;
+    if hero.goalSign < 0 { angle = 180; }
+    DrawModelEx(assets.igloo, hero.position, {0, 1, 0}, angle, {wide, tall, wide}, White);
 }

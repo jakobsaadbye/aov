@@ -62,7 +62,7 @@ bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its
 walk, and one for each ability, named by its icon. The game plays a hero's
 GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
 hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
-else idle. The Butcher and Birgit have one so far; the others are still OBJ.
+else idle. The Butcher, Birgit and Frosty have one so far; the others are still OBJ.
 
 The Butcher's face has bones of its own: a jaw, two brows and two eyelids, over sculpted eyeballs, lips, teeth and
 tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks, chews and sneers while he stands,
@@ -83,6 +83,14 @@ one until it is down. Her builds are models of their own: a span of the footbrid
 with the scaffold under it, so nothing stands where the cars drive (`models/footbridge_span.obj`,
 `models/footbridge_ramp.obj`), and the trampoline with its mat apart (`models/trampoline.obj`,
 `models/trampoline_mat.obj`), which dips when it bounces someone.
+
+Frosty is a little snow golem on the same skeleton, made round: a big belly of packed snow on stubby snowball feet, a
+big head with shiny coal eyes (snow lids blink over them), twig brows, rosy cheeks, a short carrot nose and a smile of
+coal pebbles over a chin of snow that drops open, green mittens, shards of blue ice out of his back, and a bobble hat
+and a scarf whose pompom and tail are on bones of their own, so they bounce and swing after him. He sways on the spot,
+waddles, claps his mittens over his head and flings them out for his cold snap, blowing, and crouches and hugs himself
+as his igloo goes up round him. The igloo is a model too (`models/igloo.obj`): rows of snow blocks, a tunnel to a dark
+door on the side he is going, icicles. It grows up out of the snow round him, crouching in it, and slumps as it melts.
 
 **Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape
 as a layer, and paints them like raised objects: a bevel lit from the top left, lighter at the top, a shine, a little

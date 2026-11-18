@@ -240,7 +240,9 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
         // In the car: only a wisp over its roof
         return;
     } else if hero.has(.igloo) {
-        drawIgloo(hero);
+        drawIgloo(assets, hero);
+        // While it goes up round him, he is still seen, crouching in it
+        if iglooAge(hero) < IglooBuild { assets.drawHero(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing, tint, false); }
     } else if hero.has(.hex) {
         drawToad(hero.position + Vector3{0, bob, 0}, hero.facing, game.time);
     } else {
