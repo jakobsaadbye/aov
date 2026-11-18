@@ -1,7 +1,7 @@
 namespace core;
 
-// Frosty: the cars slow down near him, and stop when he snaps his fingers. When it gets too hot on the road, he builds
-// himself an igloo
+// Frosty: the cars slow down near him, and stop when he snaps his fingers, and so do his enemies, for a moment. When it
+// gets too hot on the road, he builds himself an igloo and hides in it, healing, while the cars drive through
 
 import math;
 use raylib;
@@ -10,13 +10,13 @@ defineFrosty :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Frosty", title: "the Snowman", color: {110, 220, 235, 255}, width: 2.6, height: 4.6, moveSpeed: 8, hitRadius: 0.7, maxHealth: 35};
     hero.abilities.add(Ability{
         name: "Cold snap", icon: "freeze", sound: "ability.freeze", cooldown: 10, cast: castFreeze, bot: .stopCars,
-        description: "Freezes the cars around him for 2.5 seconds",
-        radius: 20, duration: 2.5,
+        description: "Freezes the cars around him for 2.5 seconds, and the enemies for 1.2",
+        radius: 20, duration: 2.5, power: 1.2,
     });
     hero.abilities.add(Ability{
-        name: "Igloo", icon: "igloo", sound: "ability.igloo", cooldown: 13, cast: castIgloo, bot: .untouchable,
-        description: "Builds an igloo round himself for 3 seconds. Nothing gets in: no car, no spell. A car that drives into it is stuck in the ice until it melts. He can't move meanwhile",
-        duration: 3, radius: IglooRadius,
+        name: "Igloo", icon: "igloo", sound: "ability.igloo", cooldown: 20, cast: castIgloo, bot: .untouchable,
+        description: "Hides in an igloo for up to 10 seconds, healing 10% of his health a second. Nothing gets in: the cars drive through it, and no spell finds him. W again, or a move, and he comes out",
+        duration: 10, radius: IglooRadius, power: 0.1, endsEarly: .igloo,
     });
     hero.abilities.add(passive("Chill aura", "chill", "Cars near him drive 40% slower", Trait{chillAura: {radius: 12, slow: 0.4}}));
     return hero;
@@ -31,17 +31,18 @@ castIgloo :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> b
     return true;
 }
 
-// The cars that run into an igloo are stuck in it until it melts
-holdCarsAtIgloo :: method (game: *Game, index: int) {
+// In the igloo he heals, power of his most health a second
+updateIgloo :: method (game: *Game, index: int, dt: f32) {
     hero := &game.players[index].hero;
     if !hero.has(.igloo) { return; }
-    for *car in game.traffic.cars {
-        if !car.isActive || car.kind == .ambulance { continue; }
-        if CheckCollisionCircleRec(hero.ground(), IglooRadius, car.rect()) {
-            car.frozenLeft = math.max(car.frozenLeft, hero.timeLeft(.igloo));
-        }
+    heal := IglooHeal;
+    for ability in hero.abilities() {
+        if ability.endsEarly.hasValue() && ability.endsEarly.value() == .igloo { heal = ability.power; }
     }
+    hero.health = math.min(hero.maxHealth(), hero.health + hero.maxHealth() * heal * dt);
 }
+
+IglooHeal :: 0.1;
 
 drawIgloo :: (hero: *Hero) {
     melt := math.min(hero.timeLeft(.igloo) / 0.4, 1);

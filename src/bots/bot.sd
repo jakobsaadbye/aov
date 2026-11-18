@@ -200,6 +200,10 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     }
     bot.lastKind = hero.kind;
     bot.wasActing = canAct;
+    // In an igloo: out once it has healed, when no car will be on it for a while
+    if hero.has(.igloo) && hero.health >= hero.maxHealth() * 0.98 && !carComing(game, hero.ground(), hero.info().hitRadius + 0.5) {
+        player.order(Command{move: hero.ground()});
+    }
     if !canAct {
         bot.decision.mode = .cantAct;
         return;
@@ -242,6 +246,16 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     bot.follow(game, me, dt);
     bot.trace(game, me);
 }
+
+// If a car will be on a circle in the next IglooLookAhead seconds, as the cars drive now
+carComing :: (game: *Game, center: Vector2, radius: f32) -> bool {
+    for k in 0..5 {
+        if game.traffic.carWillHit(center, radius, k as f32 * IglooLookAhead / 4) { return true; }
+    }
+    return false;
+}
+
+IglooLookAhead :: 2.0;
 
 // bot_arena.sd --trace: what a bot does each frame, the cars near it and its plans, which tools/plot_bot.py draws
 debugTrace := false;

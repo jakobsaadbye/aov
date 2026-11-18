@@ -18,7 +18,7 @@
 // How it sounds is all in this file: every spell belongs to a family, whose words come into each of its prompts, so
 // spells of a kind sound like each other (smoke and shadows hiss and breathe, ice crackles, time ticks and runs
 // backwards), and every hero has a voice, with its lines for when it comes onto the field, casts, gets across, is run
-// over, and gets an enemy run over. The sounds are trimmed and made as loud as each other, and the voices are pitched and
+// over, gets an enemy run over, and is told to move. The sounds are trimmed and made as loud as each other, and the voices are pitched and
 // put in a room for their hero, e.g a deeper ogre or a ghost in an echo. The four pieces of the soundtrack share a
 // style, so they go together like the movements of one piece: the game plays them one at a time, with silence between.
 
@@ -154,6 +154,7 @@ VoiceEvent :: enum {
     crossed,
     death,
     kill,
+    move,
 }
 
 // A hero's voice: the ElevenLabs voice, how much higher or lower it is made (semitones), its speed, a room (none, echo,
@@ -430,6 +431,71 @@ Lines :: [
     Line{"twins", .death, "Tim!"},
     Line{"twins", .kill, "Double trouble!"},
     Line{"twins", .kill, "Ha! Fooled you!"},
+
+    // Answers to a move order: short, and said quietly (core/voices.sd)
+    Line{"allan", .move, "On my way!"},
+    Line{"allan", .move, "Let's move!"},
+    Line{"allan", .move, "Easy pace."},
+    Line{"bent", .move, "Next stop."},
+    Line{"bent", .move, "Pulling out."},
+    Line{"bent", .move, "All aboard."},
+    Line{"birgit", .move, "On the job."},
+    Line{"birgit", .move, "Coming through."},
+    Line{"birgit", .move, "Got it, boss."},
+    Line{"bjorn", .move, "Forward!"},
+    Line{"bjorn", .move, "Shield ready."},
+    Line{"bjorn", .move, "I march."},
+    Line{"butcher", .move, "Walking..."},
+    Line{"butcher", .move, "Meat that way?"},
+    Line{"butcher", .move, "Hrrm. Fine."},
+    Line{"ditte", .move, "On my way."},
+    Line{"ditte", .move, "Coming through!"},
+    Line{"ditte", .move, "Copy that."},
+    Line{"frosty", .move, "Brr, okay."},
+    Line{"frosty", .move, "Sliding over."},
+    Line{"frosty", .move, "Stay frosty."},
+    Line{"ghosty", .move, "I drift..."},
+    Line{"ghosty", .move, "Whooo..."},
+    Line{"ghosty", .move, "Floating..."},
+    Line{"gudrun", .move, "Yes, dear."},
+    Line{"gudrun", .move, "Coming, coming."},
+    Line{"gudrun", .move, "Mind my hip."},
+    Line{"hilda", .move, "Walk, don't run."},
+    Line{"hilda", .move, "Single file."},
+    Line{"hilda", .move, "Clear the way."},
+    Line{"hugo", .move, "As you wish..."},
+    Line{"hugo", .move, "I follow."},
+    Line{"hugo", .move, "Mmm, yes..."},
+    Line{"ivar", .move, "Raaah!"},
+    Line{"ivar", .move, "To battle!"},
+    Line{"ivar", .move, "Onward!"},
+    Line{"karl", .move, "Righto."},
+    Line{"karl", .move, "On it."},
+    Line{"karl", .move, "Where's my wrench?"},
+    Line{"kenji", .move, "Silently."},
+    Line{"kenji", .move, "Like the wind."},
+    Line{"kenji", .move, "Hai."},
+    Line{"mads", .move, "Rolling!"},
+    Line{"mads", .move, "Sweet."},
+    Line{"mads", .move, "Cruising."},
+    Line{"magnus", .move, "Drawn there."},
+    Line{"magnus", .move, "Magnus moves."},
+    Line{"magnus", .move, "Attracted."},
+    Line{"mira", .move, "In good time."},
+    Line{"mira", .move, "Tick, tock."},
+    Line{"mira", .move, "Precisely."},
+    Line{"sigrid", .move, "Hehehe, off we go."},
+    Line{"sigrid", .move, "Broom's ready."},
+    Line{"sigrid", .move, "Of course, dearie."},
+    Line{"stormy", .move, "Blowing over!"},
+    Line{"stormy", .move, "Winds shifting!"},
+    Line{"stormy", .move, "Coming in hot!"},
+    Line{"tobias", .move, "Ooh, over there?"},
+    Line{"tobias", .move, "Where's my map?"},
+    Line{"tobias", .move, "Lovely!"},
+    Line{"twins", .move, "Race you!"},
+    Line{"twins", .move, "This way!"},
+    Line{"twins", .move, "Wait for me!"},
 ];
 
 //

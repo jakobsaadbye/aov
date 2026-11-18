@@ -57,6 +57,7 @@ Ability :: struct {
     power:       f32;
     count:       int;
     delay:       f32;           // Seconds before it gets where it goes, e.g a leap, for the bots
+    endsEarly:   ?StatusKind;   // A status it puts on the hero that the hero can end: its key again, or a move order
 
     isPassive :: method () -> bool {
         return self.cast == null;
@@ -80,9 +81,14 @@ passive :: (name: string, icon: string, description: string, trait: Trait) -> Ab
     return Ability{name: name, icon: icon, description: description, targeting: .passive, trait: trait};
 }
 
-// Casts the ability in a slot (0 is Q) of a player's hero, aimed at a point, if it is ready
+// Casts the ability in a slot (0 is Q) of a player's hero, aimed at a point, if it is ready. While what it started can be
+// ended early, e.g Frosty's igloo, it ends it instead
 cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
     hero := &game.players[index].hero;
+    if hero.canEndEarly(slot) {
+        game.endEarly(index);
+        return;
+    }
     if !hero.abilityReady(slot) { return; }
     abilities := hero.abilities();
     ability := &abilities[slot];
@@ -96,6 +102,13 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
     }
     if ability.sound.len > 0 { game.sounds.playAt(ability.sound, hero.position); }
     game.say(index, .cast);
+}
+
+// Ends what the hero's abilities started that it can end early, e.g Frosty comes out of his igloo
+endEarly :: method (game: *Game, index: int) {
+    hero := &game.players[index].hero;
+    if !hero.endEarly() { return; }
+    game.effects.particles.emit(.snow, hero.position + Vector3{0, 1.5, 0}, 30);
 }
 
 KnockbackSpeed   :: 30.0;
@@ -236,5 +249,16 @@ castFreeze :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> 
     frozen := game.traffic.freezeAround(ground, ability.radius, ability.duration + hero.stats.coldBlooded);
     game.effects.addRing(ground, 1, ability.radius, {160, 240, 255, 255}, 0.6);
     if frozen > 0 { game.announce(caster, {160, 240, 255, 255}, "% froze % cars", hero.info().name, frozen); }
+
+    // and the enemies in it, for power seconds
+    if ability.power > 0 {
+        for *player, i in game.players {
+            if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
+            if player.hero.ground().distance(ground) > ability.radius { continue; }
+            player.hero.addStatus(.frozen, ability.power, source: caster, time: game.time);
+            game.effects.particles.emit(.snow, player.hero.position + Vector3{0, 1.5, 0}, 20);
+            game.announce(caster, {160, 240, 255, 255}, "% froze %", hero.info().name, player.name);
+        }
+    }
     return true;
 }

@@ -323,14 +323,37 @@ testAbilities :: () {
     assert(game.you().phase.kind == .playing && game.you().hero.abilityReady(0) && game.you().hero.nearMissLeft > 0);
     clearRoad(game);
 
-    // Frosty's igloo: the cars that run into it are stuck in it, and he is safe inside until it melts
+    // Frosty's igloo: he hides in it and heals, the cars drive through it, and W again or a move brings him out
     game.spawnHero(0, .frosty);
-    game.you().hero.position = Vector3{core.laneCenter(4), 0, 0};
+    snowman := &game.you().hero;
+    snowman.position = Vector3{core.laneCenter(4), 0, 0};
+    snowman.health = 10;
     game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -8, speed: 12};
     game.useAbility(1);
-    assert(game.you().hero.has(.igloo) && !game.you().hero.isTargetable() && !game.you().hero.abilityReady(1));
+    assert(snowman.has(.igloo) && !snowman.isTargetable() && !snowman.abilityReady(1) && snowman.canEndEarly(1));
     for 0..(2 * 60) { game.simulate(Dt); }
-    assert(game.you().phase.kind == .playing && game.traffic.cars[0].frozenLeft > 0 && game.traffic.cars[0].z < -1);
+    assert(game.you().phase.kind == .playing && game.traffic.cars[0].frozenLeft == 0 && game.traffic.cars[0].z > 2);
+    assert(near(snowman.health, 10 + 35 * 0.1 * 2, 0.3));
+    game.useAbility(1);
+    assert(!snowman.has(.igloo) && snowman.canAct() && snowman.cooldowns[1] > 15);
+
+    // A move brings him out too, and walks
+    clearRoad(game);
+    snowman.cooldowns[1] = 0;
+    game.useAbility(1);
+    game.you().order(core.Command{move: {core.laneCenter(4) + 5, 0}});
+    game.simulate(Dt);
+    assert(!snowman.has(.igloo) && snowman.isMoving);
+
+    // Else it lasts 10 seconds, and he can't walk meanwhile
+    snowman.stop();
+    snowman.cooldowns[1] = 0;
+    game.useAbility(1);
+    snowman.moveTo(Vector3{0, 0, 30});
+    for 0..(9 * 60) { game.simulate(Dt); }
+    assert(snowman.has(.igloo) && !snowman.isMoving);
+    for 0..(2 * 60) { game.simulate(Dt); }
+    assert(!snowman.has(.igloo));
     clearRoad(game);
 
     // The keys go to the abilities that are cast, in order. Passives have none
@@ -557,6 +580,23 @@ testEnemySpells :: () {
     enemy.order(core.Command{move: {-118, 20}});
     for 0..60 { game.simulate(Dt); }
     assert(near(enemy.hero.position.x, -108) && near(enemy.hero.position.z, 5));
+
+    // Frosty's cold snap freezes the enemies around him too, for less time than the cars
+    game.spawnHero(0, .frosty);
+    enemy.hero.clearStatus(.timeLock);
+    game.you().hero.position = Vector3{-118, 0, 0};
+    enemy.hero.position = Vector3{-108, 0, 0};
+    game.cast(0, 0, {-118, 0});
+    assert(enemy.hero.has(.frozen) && !enemy.hero.canAct() && enemy.hero.harmedBy == 0);
+    assert(enemy.hero.timeLeft(.frozen) < 2.5);
+    for 0..90 { game.simulate(Dt); }
+    assert(!enemy.hero.has(.frozen) && enemy.hero.canAct());
+
+    // but not the ones out of its reach
+    game.you().hero.cooldowns[0] = 0;
+    enemy.hero.position = Vector3{-118 + 25, 0, 0};
+    game.cast(0, 0, {-118, 0});
+    assert(!enemy.hero.has(.frozen));
 }
 
 // The forecast of the bots says when the cars it knows of will be where: what it says is free, is

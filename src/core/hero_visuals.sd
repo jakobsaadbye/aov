@@ -52,6 +52,13 @@ drawHeroExtras :: (game: *Game, index: int, bob: f32) {
             DrawCircle3D(hero.position + Vector3{0, 0.3, 0}, RepelRadius * t, {1, 0, 0}, 90, ColorAlpha({110, 160, 255, 255}, (1 - t) * 0.8));
         }
     }
+    // Frozen: a block of ice round it
+    if hero.has(.frozen) {
+        info := hero.info();
+        center := hero.position + Vector3{0, info.height * 0.5, 0};
+        DrawCube(center, info.width * 0.95, info.height * 1.05, info.width * 0.95, ColorAlpha({200, 240, 255, 255}, 0.35));
+        DrawCubeWires(center, info.width * 0.95, info.height * 1.05, info.width * 0.95, ColorAlpha({235, 250, 255, 255}, 0.8));
+    }
     if hero.has(.tangled) {
         DrawCylinderWires(hero.position + Vector3{0, 0.6, 0}, hero.info().hitRadius + 0.3, hero.info().hitRadius + 0.3, 1.2, 8, {230, 90, 160, 255});
     }
