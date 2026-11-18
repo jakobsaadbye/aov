@@ -14,8 +14,8 @@ defineSigrid :: () -> HeroDefinition {
     });
     hero.abilities.add(Ability{
         name: "Hex", icon: "hex", sound: "ability.hex", cooldown: 12, targeting: .enemy, cast: castHex, bot: .disableEnemy,
-        description: "Turns the enemy nearest the cursor, up to 14 away, into a toad for 2.5 seconds: slow, and it can't cast",
-        range: 14, duration: 2.5,
+        description: "Turns the enemy nearest the cursor, up to 28 away, into a toad for 2.5 seconds: slow, and it can't cast",
+        range: 28, duration: 2.5,
     });
     hero.abilities.add(passive("Nine lives", "nine_lives", "Her black cat watches over her: once each life, a car that would run her over leaves her alive", Trait{saves: 1}));
     return hero;

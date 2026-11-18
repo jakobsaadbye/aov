@@ -15,8 +15,8 @@ defineTobias :: () -> HeroDefinition {
     });
     hero.abilities.add(Ability{
         name: "Selfie", icon: "selfie", sound: "ability.selfie", cooldown: 16, targeting: .enemy, cast: castSelfie, bot: .swapEnemy,
-        description: "A selfie with the enemy nearest the cursor, up to 15 away: they swap places",
-        range: 15,
+        description: "A selfie with the enemy nearest the cursor, up to 30 away: they swap places",
+        range: 30,
     });
     hero.abilities.add(passive("Blend in", "blend_in", "Once he has stood still for 1.5 seconds, enemies can't target him, until he moves", .blendIn));
     return hero;

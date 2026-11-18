@@ -1521,6 +1521,7 @@ testNewItems :: () {
     assert(game.portals.count == 1);
     for 0..90 { game.simulate(Dt); }           // Off the portal it opened under itself
     you.hero.position = Vector3{grass + 3, 0, 0};
+    you.hero.portalLeft = 0;                    // It may have gone through it standing on it: ready again
     walkTo(game, Vector3{grass, 0, 0});
     assert(you.hero.ground().distance({grass, 20}) < 2);
 }

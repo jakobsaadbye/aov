@@ -15,8 +15,8 @@ defineMagnus :: () -> HeroDefinition {
     });
     hero.abilities.add(Ability{
         name: "Attract", icon: "attract", sound: "ability.attract", cooldown: 12, targeting: .enemy, cast: castAttract, bot: .pullEnemy,
-        description: "Pulls the enemy nearest the cursor, up to 16 away, right up to him, through whatever is in the way",
-        range: 16,
+        description: "Pulls the enemy nearest the cursor, up to 32 away, right up to him, through whatever is in the way",
+        range: 32,
     });
     hero.abilities.add(passive("Steel frame", "steel_frame", "Too heavy to move: nobody shoves him, and nothing knocks him away", .unshovable));
     return hero;

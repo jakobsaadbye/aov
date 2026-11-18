@@ -14,8 +14,8 @@ defineHugo :: () -> HeroDefinition {
     });
     hero.abilities.add(Ability{
         name: "Sleep", icon: "sleep", sound: "ability.sleep", cooldown: 15, targeting: .enemy, cast: castSleep, bot: .disableEnemy,
-        description: "The enemy nearest the cursor, up to 12 away, falls asleep for 4 seconds, until it is shoved or hit",
-        range: 12, duration: 4,
+        description: "The enemy nearest the cursor, up to 24 away, falls asleep for 4 seconds, until it is shoved or hit",
+        range: 24, duration: 4,
     });
     hero.abilities.add(passive("Calm mind", "calm_mind", "Stuns, sleep and the like hold him half as long", Trait{stunTaken: 0.5}));
     return hero;
