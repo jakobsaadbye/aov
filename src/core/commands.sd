@@ -93,6 +93,20 @@ toggleMusic :: (game: *Game) {
     game.sounds.toggleSoundtrack();
 }
 
+@console.command("Plays another soundtrack, e.g folk, or lists them")
+soundtrack :: (game: *Game, name: ?string) {
+    if name.hasValue() && game.sounds.playSoundtrack(name.value(), game.sounds.soundtrackVolume) {
+        console.print("Playing the soundtrack %", name.value());
+        return;
+    }
+    if name.hasValue() { console.fail("There is no soundtrack named %", name.value()); }
+    for info in Soundtracks {
+        mark := " ";
+        if info.name == game.sounds.soundtrackName { mark = ">"; }
+        console.print("% %: %", mark, info.name, info.about);
+    }
+}
+
 @console.command("The time of the game, and how each player is doing")
 status :: (game: *Game) {
     state := "playing";
