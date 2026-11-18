@@ -224,8 +224,16 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     DrawTexturePro(assets.portrait.texture, {0, 0, size, -size}, {portraitRect.x + 5, portraitRect.y + 5, PortraitBox - 10, PortraitBox - 10}, {0, 0}, 0, White);
     uiIconFrame(portraitRect);
 
-    // The name on a plaque over the top of the panel, and how long the hero has lived
-    uiPlaque(info.name, (panel.x + panel.width * 0.5) as int, panel.y as int - 22, 22);
+    // The name across the foot of the portrait, on a band that darkens towards the bottom, so the row of what is on the
+    // hero has the top of the panel to itself; and how long the hero has lived, at the top in the middle
+    band := Rectangle{portraitRect.x + 5, portraitRect.y + PortraitBox - 5 - 30, PortraitBox - 10, 30};
+    DrawRectangleGradientV(band.x as int, band.y as int, band.width as int, band.height as int, {0, 0, 0, 0}, {0, 0, 0, 200});
+    nameSize := 18;
+    if titleWidth(info.name, nameSize) > (band.width - 8) as int { nameSize = 15; }
+    nameX := (portraitRect.x + PortraitBox * 0.5) as int - titleWidth(info.name, nameSize) / 2;
+    nameY := (portraitRect.y + PortraitBox) as int - 5 - nameSize - 6;
+    drawTitle(info.name, nameX + 1, nameY + 1, nameSize, ColorAlpha(Black, 0.8));
+    drawTitle(info.name, nameX, nameY, nameSize, UiGold);
     alive := tprint("Alive % s", fmt.fixed(hero.timeAlive, 1));
     drawText(alive, (panel.x + panel.width * 0.5) as int - textWidth(alive, 14) / 2, panel.y as int + 16, 14, UiGoldDim);
 
