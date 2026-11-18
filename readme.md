@@ -391,16 +391,28 @@ the ones the inspector draws with. The game knows nothing else of the bots, whic
 (`src/bots/`). The bot there
 thinks in three parts, which can each be changed on its own:
 
-1. **Forecast** (`forecast.sd`): when each cell of a grid on the ground is free of cars, for the next 12 seconds. A car
+1. **Forecast** (`forecast.sd`): when each cell of a grid on the ground is free of cars, for the next 24 seconds. A car
    only drives along its lane, so where it will be is a few straight pieces (frozen, sped up or backing up with its lane, held at a stop
-   sign, at its own speed), and when it covers a cell is solved from them exactly. The next car of each lane is in it too.
-   The intervals of a cell are only worked out when the search asks for them.
+   sign, at its own speed), and when it covers a cell is solved from them exactly. The next car of each lane is in it too,
+   from when it could come at the earliest until the slowest it could be (a truck) has gone. A car after that isn't known
+   at all, so a cell of the road is only known to be free until such a car could get to it: that is where what the bot
+   knows of the cell ends (`known`). The other heroes are in the way too, walking on the way they walk for a moment, so
+   the bots don't walk into each other and shove each other in front of a car. The intervals of a cell are only worked
+   out when the search asks for them.
 2. **Plan** (`planner.sd`): the fastest way across through those free times, with *Safe Interval Path Planning* (SIPP).
    It is A*, but with a state for each cell and *interval of time it is free*, instead of each cell at each step of time,
    so it waits for a gap where it must and has far fewer states. Its heuristic is the distance around the walls to the
-   goal, made once for each side and size of hero, so the search only spreads out where the cars make it. A plan is
-   checked against each new forecast, a few times a second, and only searched again when it doesn't hold. The bots take
-   turns, one search a frame.
+   goal, made once for each side and size of hero, so the search only spreads out where the cars make it.
+
+   The road is 32 lanes wide, so a way all the way across is seldom known yet. Then the plan goes to the state furthest
+   across (a meter across the road counts for more than one along it, and the top and the bottom of the field count
+   against it) from which the bot can stay alive for a while from now (the gene `survive`): by waiting there, or by a way
+   on from there, which the search finds back from the leaves of its tree. So it doesn't walk into a corner, e.g in front
+   of a car at the end of the field, or into a lane where a car that is known will catch it. When there is no such state,
+   it takes the way that lives the longest. A plan is checked against each new forecast, a few times a second; one that
+   doesn't get across is searched again every half second, as more is known, and a plan that still holds isn't swapped
+   for a worse one. While it walks to the next point of its plan, the next search starts there, when it gets there. The
+   bots take turns, one search a frame.
 3. **Tactics** (`bot.sd`): which ability to cast and where, from a score per ability: e.g a blink out of the way of a car,
    a stop sign while it waits for a gap, or a hook at an enemy that is ahead. Under the plan is a reflex that steps away
    from a car that is about to hit it, e.g after an enemy moved it.
@@ -419,6 +431,12 @@ as they are and played again, so a lucky genome doesn't stay. Fitness (`fitnessO
 kills (an enemy a car gets within 3 seconds of being hooked, bashed or locked), how far across the hero is at the end,
 and how fast the best crossing was.
 
+So that what it learns works for any game, and not only the games it happened to play: in each round of a generation
+every game has the same seed (the same traffic, and the same heroes in each seat), and the candidates are shuffled into
+the seats, so they are compared on the same road; the seeds are new each round, so the heroes and the events are always
+others; and the traffic starts at a level at random each round (`--levels N`, up to 6), so it plays slow and fast traffic
+alike.
+
 The best of a generation is often just the luckiest in its few games, so at the end there is a playoff (`--playoff N`
 games each): the hall of fame, the last elite and the hand tuned genome play against each other, and the one with the
 best mean is written to `data/bots/genomes.json` (it is also written after each generation, in case training is
@@ -428,7 +446,7 @@ think about 10 times as fast:
 ```
 cd src
 saad build bot_train.sd --llvm
-build/out.exe --generations 60 --population 24 --games 8 --seconds 120 --threads 4
+build/out.exe --generations 50 --population 36 --games 8 --seconds 150 --threads 4
 ```
 
 It starts from the trained genome (or the hand tuned one with `--from-default`), so training again goes on from where

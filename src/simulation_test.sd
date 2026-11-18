@@ -592,6 +592,27 @@ testForecast :: () {
     frozen := bots.newForecast(game, bots.ForecastOptions{radius: radius});
     point := Vector2{core.laneCenter(3), 0};
     assert(frozen.hitTime(point, 0) == 0 && frozen.safeFor(point, 1.5) == 0);
+
+    // A car that has gone past a cell doesn't block it, not even for a moment
+    for *car in game.traffic.cars { car.isActive = false; }
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 3, z: 30, speed: 10};
+    past := bots.newForecast(game, bots.ForecastOptions{radius: radius, fearUnknownCars: false});
+    assert(past.intervalAt(bots.cellAt(point), 0) >= 0);
+
+    // The next car of a lane, that isn't spawned yet, blocks a cell until the slowest it can be has gone past
+    lane := &game.traffic.lanes[3];
+    lane.spawnTimer = 1;
+    next := bots.newForecast(game, bots.ForecastOptions{radius: radius, margin: 0, leadTime: 0, trailTime: 0, fearUnknownCars: false});
+    slowest := lane.speed * core.MinSpawnSpeed;
+    gone := 1 + (point.y + core.RoadEnd + core.TruckLength + radius + bots.CellSize) / slowest;
+    assert(next.safeFor(point, gone - 0.5) == 0);
+
+    // Another hero is in the way while it stands there
+    game.spawnHero(0, .allan);
+    game.players[0].hero.position = Vector3{core.laneCenter(3), 0, -20};
+    heroes := bots.newForecast(game, bots.ForecastOptions{radius: radius, fearUnknownCars: false, me: -1, heroPredict: 1});
+    there := Vector2{core.laneCenter(3), -20};
+    assert(heroes.safeFor(there, 0.5) == 0 && heroes.safeFor(there, 1.5) > 0);
 }
 
 // A bot gets across on its own, without being run over, on a road with traffic

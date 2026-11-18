@@ -76,6 +76,7 @@ Bot :: struct {
     stats:       BotProfile;
     job:         *SearchJob;        // Searches on a thread of its own, with game.asyncBots (search_job.sd)
     generation:  int;               // Counts the resets, so a search of before one is thrown away
+    committed:   ?Waypoint;         // The point it was walking to when it searched, which the new plan starts with
 }
 
 // What the thinking of a bot has cost, for bot_arena.sd and the debug overlay
@@ -166,6 +167,7 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
         player.order(Command{choosePerk: bot.rng.between(0, PerkChoices - 1)});
     }
     if !player.isPlaying() {
+        if debugTrace && bot.decision.mode != .notPlaying { fmt.print("DEATH % at (% %) crossings %", fmt.fixed(game.time, 2), fmt.fixed(player.hero.position.x, 1), fmt.fixed(player.hero.position.z, 1), player.stats.crossings); }
         bot.plan.clear();
         bot.replanIn = 0;
         bot.decision.mode = .notPlaying;
@@ -217,16 +219,48 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
 
     if bot.dodge(game, me) {
         bot.decision.mode = .dodging;
+        bot.trace(game, me);
         return;
     }
     bot.follow(game, me, dt);
+    bot.trace(game, me);
+}
+
+// bot_arena.sd --trace: what a bot does each frame, the cars near it and its plans, which tools/plot_bot.py draws
+debugTrace := false;
+trace :: method (bot: *Bot, game: *Game, me: int) {
+    if !debugTrace { return; }
+    hero := &game.players[me].hero;
+    now := game.time - bot.forecastAt;
+    next := "-";
+    if bot.next < bot.plan.count {
+        w := bot.plan[bot.next];
+        next = tprint("(% %) dep % arr % [%/%] safeAtArrive %", fmt.fixed(w.point.x, 2), fmt.fixed(w.point.y, 2), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2), bot.next, bot.plan.count,
+            fmt.fixed(bot.forecast.safeFor(w.point, w.arrive - bot.forecastAt), 2));
+    }
+    // Every half second: the cars near it and its plan, to draw (tools/plot_bot.py)
+    if (game.time * 60) as int % 15 == 0 {
+        fmt.print("SNAP % % %", fmt.fixed(game.time, 2), fmt.fixed(hero.position.x, 2), fmt.fixed(hero.position.z, 2));
+        for car in game.traffic.cars {
+            if !car.isActive || math.fabsf(car.x() - hero.position.x) > 30 || math.fabsf(car.z - hero.position.z) > 40 { continue; }
+            fmt.print("CAR % % % % %", fmt.fixed(car.x(), 2), fmt.fixed(car.z, 2), fmt.fixed(car.length(), 1), fmt.fixed(car.speed, 1), car.lane);
+        }
+        for i in bot.next..bot.plan.count {
+            w := bot.plan[i];
+            fmt.print("PLAN % % % %", fmt.fixed(w.point.x, 2), fmt.fixed(w.point.y, 2), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2));
+        }
+    }
+    fmt.print("TRACE % % pos (% %) % hit % safeFor % searched % | %", fmt.fixed(game.time, 2), BotMode.names[bot.decision.mode], fmt.fixed(hero.position.x, 2), fmt.fixed(hero.position.z, 2),
+        hero.isMoving, fmt.fixed(bot.forecast.hitTime(hero.ground(), now, 0) - now, 2), fmt.fixed(bot.forecast.safeFor(hero.ground(), now), 2), fmt.fixed(bot.searchedAt, 2), next);
 }
 
 // The reflex under the plan: a car that is about to be on the hero, which the plan doesn't take it away from, e.g as
 // the forecast changed, or an enemy moved it. It goes to the point near it it can get to without a car on the way, that
 // then stays free the longest. On the road without a plan, it doesn't wait for a car to come
+noDodge := false;     // bot_arena.sd --nododge: no reflex, to see what the plans do on their own
+
 dodge :: method (bot: *Bot, game: *Game, me: int) -> bool {
-    if !bot.hasForecast { return false; }
+    if !bot.hasForecast || noDodge { return false; }
     player := &game.players[me];
     hero := &player.hero;
     now := game.time - bot.forecastAt;
@@ -298,6 +332,9 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         margin:       bot.gene(.margin),
         leadTime:     bot.gene(.leadTime),
         trailTime:    bot.gene(.trailTime),
+        me:             me,
+        heroMargin:     bot.gene(.heroMargin),
+        heroPredict:    bot.gene(.heroPredict),
         oilProof:       hero.stats.oilProof,
         ambulanceProof: hero.stats.ambulanceProof,
     };
@@ -315,7 +352,8 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         bot.mustSearch = true;
     }
 
-    lookForBetter := !bot.reachesGoal && game.time - bot.searchedAt > 1.0;
+    // A plan that doesn't get across yet ends where what is known ends: as more is known, it can go further
+    lookForBetter := !bot.reachesGoal && game.time - bot.searchedAt > 0.5;
     if !bot.mustSearch && !lookForBetter && bot.planHolds() { return; }
 
     // On a thread of its own, the frame doesn't wait for it. Otherwise: another bot searched this frame, so its turn is
@@ -328,17 +366,34 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
     bot.searchedAt = game.time;
 
     speed := hero.speed();
+    // Momentum (Mads) is lost when he turns, so the plan counts on the speed without it
+    if hero.stats.momentum { speed /= 1 + MomentumBonus * hero.momentum; }
     sprintSpeed := speed;
     if hero.has(.haste) { speed = speed / hero.status(.haste).amount; }
+    // Walking to the next point of a plan that still holds: the new plan starts there, when it gets there, so it doesn't
+    // plan from the cell it is passing through, which may be about to be blocked
+    bot.committed = null;
+    start := hero.ground();
+    startAt: f32 = 0;
+    if hero.isMoving && bot.next < bot.plan.count && bot.planHolds() && bot.plan[bot.next].arrive > game.time {
+        bot.committed = bot.plan[bot.next];
+        start = bot.plan[bot.next].point;
+        startAt = bot.plan[bot.next].arrive - game.time;
+    }
     request := PlanRequest{
-        start:       hero.ground(),
+        start:       start,
+        startAt:     startAt,
         goalSide:    game.players[me].startSide.opposite(),
         goalPoint:   bot.chasing,
         speed:       speed,
         sprintSpeed: sprintSpeed,
         sprintLeft:  hero.timeLeft(.haste),
         now:         game.time,
-        waitOnRoad:  bot.gene(.waitOnRoad),
+        survive:     bot.gene(.survive),
+        stay:        bot.gene(.stay),
+        trust:       bot.gene(.trust),
+        laneWeight:  bot.gene(.laneWeight),
+        safety:      bot.gene(.safety),
     };
     if game.asyncBots {
         if bot.job == null { bot.job = new(SearchJob, mem.heap()); }
@@ -358,6 +413,13 @@ takeSearch :: method (bot: *Bot, game: *Game) {
 
 @private
 usePlan :: method (bot: *Bot, result: *PlanResult, seconds: f64) {
+    // A plan that still holds isn't swapped for one that is cornered: the search starts from the cell the hero is in,
+    // which between two cells can be one that is about to be blocked, as it walks on out of it
+    if result.cornered && !bot.reachesGoal && bot.next < bot.plan.count && bot.planHolds() {
+        bot.stats.plans += 1;
+        bot.stats.planSeconds += seconds;
+        return;
+    }
     bot.stats.plans += 1;
     bot.stats.planSeconds += seconds;
     bot.decision.lastSearch = seconds;
@@ -365,7 +427,12 @@ usePlan :: method (bot: *Bot, result: *PlanResult, seconds: f64) {
     bot.stats.expanded += result.expanded;
     if result.reachesGoal { bot.stats.reachedGoal += 1; }
 
+    if debugTrace {
+        holds := bot.next < bot.plan.count && bot.planHolds();
+        fmt.print("SEARCH % goal % cornered % lives % waypoints % | the old plan had % left, holds % | %", fmt.fixed(bot.forecastAt, 2), result.reachesGoal, result.cornered, fmt.fixed(result.lives, 2), result.waypoints.count, bot.plan.count - bot.next, holds, HeroKind.names[bot.lastKind]);
+    }
     bot.plan.clear();
+    if bot.committed.hasValue() { bot.plan.add(bot.committed.value()); }
     for waypoint in result.waypoints { bot.plan.add(waypoint); }
     bot.next = 0;
     bot.reachesGoal = result.reachesGoal;
@@ -710,10 +777,11 @@ wasHit :: method (bot: *Bot, game: *Game, index: int, car: *Car) {
     hero := game.players[index].hero;
     rel := game.time - bot.forecastAt;
     newCar := car.age < game.time - bot.searchedAt;
+    console.print("HIT mode % reachesGoal % harmedBy % (% s ago) displaced %", BotMode.names[bot.decision.mode], bot.reachesGoal, hero.harmedBy, fmt.fixed(game.time - hero.harmedAt, 2), hero.displacement.hasValue());
     console.print("HIT car new since the plan: % (age % s, plan % s old, forecast % s old)", newCar, fmt.fixed(car.age, 2), fmt.fixed(game.time - bot.searchedAt, 2), fmt.fixed(game.time - bot.forecastAt, 2));
-    console.print("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % z % speed % frozen % braking %",
+    console.print("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % (from % shift %) z % speed % frozen % braking %",
         fmt.fixed(game.time, 2), game.players[index].name, fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.isMoving, hero.canAct(), fmt.fixed(hero.timeLeft(.stun), 2),
-        fmt.fixed(rel, 2), fmt.fixed(bot.forecast.safeFor(hero.ground(), rel), 2), car.lane, fmt.fixed(car.z, 1), fmt.fixed(car.speed, 1), fmt.fixed(car.frozenLeft, 1), car.isBraking);
+        fmt.fixed(rel, 2), fmt.fixed(bot.forecast.safeFor(hero.ground(), rel), 2), car.lane, car.fromLane, fmt.fixed(car.shift, 1), fmt.fixed(car.z, 1), fmt.fixed(car.speed, 1), fmt.fixed(car.frozenLeft, 1), car.isBraking);
     if bot.next < bot.plan.count {
         w := bot.plan[bot.next];
         console.print("     next waypoint (% %) depart % arrive %, % of % left", fmt.fixed(w.point.x, 1), fmt.fixed(w.point.y, 1), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2), bot.next, bot.plan.count);

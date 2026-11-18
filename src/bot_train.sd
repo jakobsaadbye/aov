@@ -7,7 +7,17 @@
 //     build/out.exe --generations 40 --threads 4
 //
 // Options: --generations N, --population N, --games N (games each genome plays a generation), --seconds N (of a game),
-// --threads N, --seed N, --playoff N (games each finalist plays at the end), --from-default (start from the hand tuned genes instead of the trained ones), --out FILE
+// --threads N, --seed N, --playoff N (games each finalist plays at the end), --levels N (the traffic starts at a level
+// from 0 to N, at random for each round), --from-default (start from the hand tuned genes instead of the trained ones),
+// --out FILE
+//
+// So that what is trained works for any hero, any traffic and any enemies, and not for the games it happened to play:
+//
+//   * Each round of a generation, every game has the same seed: the same traffic, and the same heroes in each seat. The
+//     candidates are shuffled into the seats, so each plays the others on the same road, and luck counts for less
+//   * The seeds are new each round and each generation, so the heroes, the traffic and its events are always others
+//   * The traffic starts at a level at random each round, so it plays slow and fast traffic alike
+//   * The fourth bot of each game is one of the hall of fame, so it doesn't only learn to beat the population
 
 import core;
 import bots;
@@ -30,6 +40,7 @@ Config :: struct {
     tournament:  int = 3;
     fromDefault: bool;
     playoff:     int = 32;          // Games each finalist plays at the end
+    levels:      int = 6;           // The traffic starts at a level up to this, at random each round
     out:         string;
 }
 
@@ -52,6 +63,7 @@ GameJob :: struct {
     candidates: [PerGame]int;       // The candidate of each bot, -1 for the one of the hall of fame
     seed:       u64;
     seconds:    int;
+    level:      int;
     fitness:    [PerGame]f32;
     crossings:  [PerGame]int;
     deaths:     [PerGame]int;
@@ -78,6 +90,7 @@ playGame :: (job: *GameJob) {
     for genome in job.genomes { personalities.add(bots.BotPersonality{label: "trained", genome: genome}); }
     game := bots.newGameWith(job.seed, personalities, humans: 0);
     defer game.free();
+    if job.level > 0 { game.startAtLevel(job.level); }
 
     steps := (job.seconds as f32 / Dt) as int;
     for 0..steps { game.simulate(Dt); }
@@ -131,6 +144,7 @@ readConfig :: () -> Config {
             case "--seed"         { config.seed = (next.toInt() ?? 1) as u64; i += 1; }
             case "--from-default" { config.fromDefault = true; }
             case "--playoff"      { config.playoff = (next.toInt() ?? 32) as int; i += 1; }
+            case "--levels"       { config.levels = (next.toInt() ?? 6) as int; i += 1; }
             case "--out"          { config.out = next; i += 1; }
             else                  { fmt.print("Unknown option '%'", args[i]); }
         }
@@ -162,7 +176,7 @@ main :: () {
     hallOfFame: [..]bots.Genome;
     hallOfFame.add(start);
 
-    fmt.print("Training % generations of %, % games of % s each, on % threads", config.generations, config.population, config.games, config.seconds, config.threads);
+    fmt.print("Training % generations of %, % games of % s each, traffic from level 0 to %, on % threads", config.generations, config.population, config.games, config.seconds, config.levels, config.threads);
     best: Candidate;
     for generation in 0..config.generations {
         started := time.clock();
@@ -176,8 +190,10 @@ main :: () {
         for i in 0..population.count { order.add(i as int); }
         for round in 0..config.games {
             rng.shuffle(order);
+            seed := config.seed * 1000003 + (generation * 1000 + round) as u64;     // The same for every game of the round
+            level := rng.between(0, config.levels);
             for g in 0..population.count / Candidates {
-                job := GameJob{seed: config.seed * 1000003 + (generation * 1000 + round * 100 + g) as u64, seconds: config.seconds};
+                job := GameJob{seed: seed, seconds: config.seconds, level: level};
                 for k in 0..Candidates {
                     index := order[g * Candidates + k];
                     job.genomes[k] = population[index].genome;
@@ -262,11 +278,27 @@ playoff :: (finalists: []bots.Genome, games: int, config: Config, rng: *random.R
     for round in 0..games {
         rng.shuffle(order);
         for g in 0..finalists.count / PerGame {
-            job := GameJob{seed: config.seed * 7919 + (round * 100 + g) as u64 + 99999, seconds: config.seconds};
+            job := GameJob{seed: config.seed * 7919 + round as u64 + 99999, seconds: config.seconds, level: round % (config.levels + 1)};
             for k in 0..PerGame {
                 index := order[g * PerGame + k];
                 job.genomes[k] = finalists[index];
                 job.candidates[k] = index;
+            }
+            jobs.add(job);
+        }
+        // The ones left over play too, with others that don't count again
+        left := finalists.count % PerGame;
+        if left > 0 {
+            job := GameJob{seed: config.seed * 7919 + round as u64 + 99999, seconds: config.seconds, level: round % (config.levels + 1)};
+            for k in 0..PerGame {
+                if k < left {
+                    index := order[finalists.count - left + k];
+                    job.genomes[k] = finalists[index];
+                    job.candidates[k] = index;
+                } else {
+                    job.genomes[k] = finalists[order[k]];
+                    job.candidates[k] = -1;
+                }
             }
             jobs.add(job);
         }
@@ -277,6 +309,7 @@ playoff :: (finalists: []bots.Genome, games: int, config: Config, rng: *random.R
     for genome, i in finalists { results.add(Candidate{genome: genome, index: i as int}); }
     for job in jobs {
         for k in 0..PerGame {
+            if job.candidates[k] < 0 { continue; }
             result := &results[job.candidates[k]];
             result.fitness += job.fitness[k];
             result.games += 1;
