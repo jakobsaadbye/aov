@@ -24,13 +24,14 @@ StatusKind :: enum {
     windedDown,     // After an energy drink: amount slower
     mending,        // Heals amount of its most health a second while it stands still (Ditte)
     sugarRush,      // amount times as fast, then winded down when it is over (an energy drink)
-    igloo,          // In an igloo: stands still, out of reach of cars and spells (Frosty)
+    igloo,          // In an igloo: stands still and heals, out of reach of cars and spells (Frosty)
     leashed,        // Tied to the hero of source: can't get further from it than amount (Gudrun)
     substitute,     // A log waits at point: a car that would hit the hero hits the log, and the hero is back at point (Kenji)
     trance,         // Walks slowly in a trance, and the cars go through it as if it weren't there (Hugo)
     berserk,        // A car that hits it is thrown a lane aside instead, for a little of its health (Ivar)
     repel,          // The cars that come near are pushed out of its way, into the lanes beside it (Magnus)
     crossing,       // The cars that come to it stop and wait until it has gone by (Gudrun)
+    frozen,         // Frozen solid: can't move or cast (Frosty's cold snap)
 }
 
 Status :: struct {
@@ -74,6 +75,7 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .berserk    => StatusRules{good: true};
         case .repel      => StatusRules{good: true};
         case .crossing   => StatusRules{good: true};
+        case .frozen     => StatusRules{stops: true, silences: true, harms: true};
     };
 }
 
@@ -100,13 +102,14 @@ statusLook :: (kind: StatusKind) -> StatusLook {
         case .windedDown => StatusLook{"Winded", "Walks slower, after a sugar rush", "status_winded"};
         case .mending    => StatusLook{"Mending", "Heals while standing still", "bandage"};
         case .sugarRush  => StatusLook{"Sugar Rush", "Runs much faster, for now", "item_energy_drink"};
-        case .igloo      => StatusLook{"Igloo", "Safe inside: no car or spell gets in", "igloo"};
+        case .igloo      => StatusLook{"Igloo", "Safe inside, and healing: no car or spell gets in", "igloo"};
         case .leashed    => StatusLook{"Leashed", "Tied to an enemy: can't get far from it", "yarn_leash"};
         case .substitute => StatusLook{"Substitute", "A car that would hit takes a log instead, and back to the mark", "substitution"};
         case .trance     => StatusLook{"Trance", "Walks slowly, and the cars go through", "trance_walk"};
         case .berserk    => StatusLook{"Berserk", "A car that hits is thrown aside instead", "berserk"};
         case .repel      => StatusLook{"Repel", "The cars that come near are pushed aside", "repel"};
         case .crossing   => StatusLook{"Crossing", "The cars stop and wait until she has gone by", "grannys_crossing"};
+        case .frozen     => StatusLook{"Frozen", "Frozen solid: can't move or cast", "freeze"};
     };
 }
 

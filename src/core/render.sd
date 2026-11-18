@@ -232,6 +232,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     if hero.walksThroughWalls() { tint.a = 150; }      // Ghosty is see-through
     if hero.isFaded()           { tint.a = 70; }       // and more so when he fades
     if hero.has(.timeLock)      { tint = {200, 160, 255, 255}; }
+    if hero.has(.frozen)        { tint = {165, 220, 255, 255}; }       // Frozen by Frosty
     if hero.has(.trance)        { tint = {215, 175, 255, 150}; }       // Hugo, half there
     if hero.has(.berserk)       { tint = {255, 165, 140, 255}; }       // Ivar, seeing red
     if hero.isBlended() || hero.inShadow { tint.a = 110; }

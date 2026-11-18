@@ -339,6 +339,25 @@ Hero :: struct {
         return !abilities[slot].isPassive() && self.cooldowns[slot] <= 0 && self.canCast();
     }
 
+    // If the key of an ability now ends what the ability started, e.g Frosty in his igloo comes out
+    canEndEarly :: method (slot: int) -> bool {
+        abilities := self.abilities();
+        if slot < 0 || slot >= abilities.count { return false; }
+        ends := abilities[slot].endsEarly;
+        return ends.hasValue() && self.has(ends.value());
+    }
+
+    // Ends what the abilities started that can be ended early. True when there was something to end
+    endEarly :: method * () -> bool {
+        ended := false;
+        for ability in self.abilities() {
+            if !ability.endsEarly.hasValue() || !self.has(ability.endsEarly.value()) { continue; }
+            self.clearStatus(ability.endsEarly.value());
+            ended = true;
+        }
+        return ended;
+    }
+
     // Starts walking to a point on the ground
     moveTo :: method * (point: Vector3) {
         if !self.canAct() { return; }     // A hook, a leap or a stun is in charge until it is done

@@ -114,9 +114,15 @@ the soundtrack. All of it is written in that file:
   craft, care, tourist), whose words come into each of its prompts, so spells of a kind sound like each other: smoke and
   shadows hiss and breathe (Kenji's substitution, Ghosty's possession), ice crackles, time ticks and runs backwards.
 * **Voices.** Each hero has an ElevenLabs voice, made higher or lower, slower, or put in an echo for its hero (an ogre's
-  growl for the Butcher, a ghost in a cave for Ghosty, kids for the twins), and a few lines for each of five events: when
-  it comes onto the field, casts, gets across, is run over, and gets an enemy run over. A hero says a line at most every
-  4 seconds, only a third of the times it casts, and the hero the camera follows is heard at full volume.
+  growl for the Butcher, a ghost in a cave for Ghosty, kids for the twins), and a few lines for each of six events: when
+  it comes onto the field, casts, gets across, is run over, gets an enemy run over, and is told to move. A hero says a
+  line at most every 4 seconds, only a third of the times it casts, and the hero the camera follows is heard at full
+  volume.
+* **Frosty doesn't talk:** he is a snow golem, so his lines are cute noises made with the sound effects API instead
+  (little squeaks, crunching snow, twinkling ice, a slushy splat when he melts).
+* **Moving.** Your hero answers a right-click with one of three short lines ("On my way!", "Meat that way?", "Tick, tock."),
+  quietly and only to you, as in Dota 2: the first order after 6 seconds without one gets an answer, and the clicks in
+  between don't, nor while it says something else.
 
 Each file is trimmed, made as loud as the others (-16 LUFS, the music -18 with a fade in and out), and written as an .ogg; a file that is there and was made
 from the same prompt isn't made again (`data/sounds/.elevenlabs.json`). It needs an API key in `ELEVENLABS_API_KEY`, and
@@ -216,7 +222,7 @@ hero is run over, the player gets another at random.
 | Allan, the Runner | **Sprint** (Q): twice as fast for a moment. **Adrenaline** (passive): a car that misses him by a hair makes his abilities ready again |
 | Ghosty, the Restless | **Possess** (Q): slips into a car for 4 seconds; a click beside it steers it a lane over, and it still hits whoever is in its way. He comes out on the side he is going. **Phase walk** (passive): floats through the walls |
 | The Butcher, a swamp brute of a butcher-monger | **Meat hook** (Q): bites into the first car it meets, up to 34 away, and he is pulled to the side of the car as it drives on. He can walk while it flies. **Heave** (W): throws a car next to him two lanes over |
-| Frosty, the Snowman | **Cold snap** (Q): freezes the cars around him. **Igloo** (W): safe inside an igloo for 3 seconds; the cars that run into it are stuck until it melts. **Chill aura** (passive): cars near him drive 40% slower |
+| Frosty, the Snowman | **Cold snap** (Q): freezes the cars around him for 2.5 seconds, and the enemies for 1.2. **Igloo** (W): hides in an igloo for up to 10 seconds, healing 10% of his health a second; the cars drive through it and no spell finds him. W again, or a move order, and he comes out. **Chill aura** (passive): cars near him drive 40% slower |
 | Bjørn, the Shieldbearer | **Leap** (Q): high over cars and walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away. **Iron hide** (passive): half the damage |
 | Hilda, the Crossing Guard | **Stop!** (Q): the five lanes around her stop for 3 seconds. **Wave through** (W): the lanes at the cursor drive two and a half times as fast for a moment. **Lollipop lady** (passive): her sign stays up as long as she stands by it, up to 8 seconds |
 | Mira, the Timekeeper | **Reverse** (Q): the cars of five lanes back up the road for 2 seconds. **Rewind** (W): back to where she was 3 seconds ago. **Time lock** (E): an enemy can't move or cast for 2 seconds |

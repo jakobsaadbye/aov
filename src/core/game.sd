@@ -56,6 +56,7 @@ Player :: struct {
     decoy:     ?Decoy;                      // Tim & Tom's other twin, while it walks (world_effects.sd)
     perkOffer: ?PerkOffer;                  // The perks it may pick one of, after a crossing (perks.sd)
     voiceUntil: f32;                        // Its hero says nothing more until then, unless it matters (voices.sd)
+    moveLineAt: f32;                        // and answers no move order until then
 
     isBot :: method () -> bool {
         return self.brain != null;
@@ -498,6 +499,7 @@ readInput :: method (game: *Game) {
             point := game.mouseGround.value().xz();
             player.order(Command{move: point});
             game.effects.clickMarker(point);
+            game.sayMove(game.local);
         }
     }
 
@@ -508,9 +510,9 @@ readInput :: method (game: *Game) {
             ability := player.hero.abilities()[game.hoveredAbility];
             if ability.isPassive() {
                 // Nothing to cast
-            } else if !player.hero.abilityReady(game.hoveredAbility) {
+            } else if !player.hero.abilityReady(game.hoveredAbility) && !player.hero.canEndEarly(game.hoveredAbility) {
                 game.sounds.play("ui.not_ready");
-            } else if ability.aimsAtPoint() {
+            } else if ability.aimsAtPoint() && !player.hero.canEndEarly(game.hoveredAbility) {
                 game.aiming = game.hoveredAbility;
             } else {
                 player.order(Command{cast: {slot: game.hoveredAbility, target: player.hero.ground()}});
@@ -539,7 +541,7 @@ readInput :: method (game: *Game) {
         if !IsKeyPressed(key) { continue; }
         slot := player.hero.abilityOnKey(i as int);
         if slot < 0 { continue; }
-        if !player.hero.abilityReady(slot) {
+        if !player.hero.abilityReady(slot) && !player.hero.canEndEarly(slot) {
             game.sounds.play("ui.not_ready");
             continue;
         }
@@ -607,7 +609,7 @@ simulate :: method (game: *Game, dt: f32) {
     game.holdStopSigns(dt);
     for i in 0..game.players.count {
         if !game.players[i].isPlaying() { continue; }
-        game.holdCarsAtIgloo(i as int);
+        game.updateIgloo(i as int, dt);
         game.repelCars(i as int);
         game.waitForGranny(i as int);
     }
@@ -683,7 +685,10 @@ carryOut :: method (game: *Game, index: int) {
         // A perk can be picked while the hero isn't on the field, e.g after a crossing. Nothing else
         if !player.isPlaying() && command.kind != .choosePerk { continue; }
         switch v in command {
-            case .move { player.hero.moveTo(v.at()); }
+            case .move {
+                game.endEarly(index);           // Out of the igloo, and away
+                player.hero.moveTo(v.at());
+            }
             case .stop { player.hero.stop(); }
             case .cast { game.cast(index, v.slot, v.target); }
             case .lockItem {

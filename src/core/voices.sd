@@ -1,8 +1,8 @@
 namespace core;
 
-// The voices of the heroes: a few lines each, for when it comes onto the field, casts, gets across, is run over, and
-// gets an enemy run over. They are sounds like the others, in data/sounds/voice/ (tools/make_audio.sd): "voice.hugo_cast"
-// is one of hugo_cast_1.ogg, hugo_cast_2.ogg, ... at random.
+// The voices of the heroes: a few lines each, for when it comes onto the field, casts, gets across, is run over, gets an
+// enemy run over, and is told where to walk. They are sounds like the others, in data/sounds/voice/
+// (tools/make_audio.sd): "voice.hugo_cast" is one of hugo_cast_1.ogg, hugo_cast_2.ogg, ... at random.
 //
 // So that the heroes don't talk over each other all the time, a hero says a line at most every few seconds, and only
 // some of the times it casts; being run over and getting a kill always get a line. The hero the camera follows is heard
@@ -17,11 +17,15 @@ VoiceEvent :: enum {
     crossed,
     death,
     kill,
+    move,
 }
 
 VoiceGap         :: 4.0;     // Seconds after a hero said something before it says something else, unless it matters
 CastLineChance   :: 0.35;    // How often a cast gets a line
 OtherSpawnChance :: 0.3;     // How often another player's hero says its line when it comes onto the field
+MoveLineGap      :: 6.0;     // Seconds from an answer to a move order until the next order gets one
+MoveLineLength   :: 1.5;     // About how long an answer takes, so no other line starts in it
+MoveLineVolume   :: 0.55;    // Quiet: it is said a lot
 
 say :: method (game: *Game, index: int, event: VoiceEvent) {
     player := &game.players[index];
@@ -36,4 +40,15 @@ say :: method (game: *Game, index: int, event: VoiceEvent) {
     if index == game.watched { sounds.play(name, 1.0); }
     else                     { sounds.playAt(name, player.hero.position, 0.85); }
     player.voiceUntil = game.time + VoiceGap;
+}
+
+// Your hero answers a move order, like "On my way!": quietly, only to you, and only the first order after a while, so a
+// stream of clicks gets one answer, not one each. Not while it says something else
+sayMove :: method (game: *Game, index: int) {
+    player := &game.players[index];
+    if !game.sounds.isReady || index != game.local || !player.isPlaying() { return; }
+    if game.time < player.voiceUntil || game.time < player.moveLineAt { return; }
+    game.sounds.play(tprint("voice.%_move", HeroKind.names[player.hero.kind]), MoveLineVolume);
+    player.voiceUntil = game.time + MoveLineLength;
+    player.moveLineAt = game.time + MoveLineGap;
 }
