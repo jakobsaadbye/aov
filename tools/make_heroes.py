@@ -2241,31 +2241,152 @@ def make_tobias():
     finish(m, "tobias")
 
 
+def mads_clips():
+    """Mads rides sideways on his board, left foot forward, his head turned to where he is going. Every pose turns his
+    hips a quarter round (Sideways), so the rest of each is in the frame of his body: x across his chest, z the way his
+    chest faces. The board is on a bone of its own, under him, along the way he goes. He bobs on it and looks about,
+    pushes with his back foot to roll, ollies (crouch, pop the tail, tuck with the board, land), and grinds, low, his
+    arms out"""
+    from rig import clip, layered
+    from anatomy import once
+
+    def hips(y=0.0, rot=(0, 0, 0), z=0.0):
+        return {"rot": (rot[0], Sideways + rot[1], rot[2]), "pos": (0, y, z)}
+    # Standing on the board: knees soft, arms loose, head turned towards the nose of the board (his left)
+    ride = {"hips": hips(-0.06), "thigh_r": (-8, 0, 0), "thigh_l": (-8, 0, 0), "shin_r": (16, 0, 0), "shin_l": (16, 0, 0), "foot_r": (-8, 0, 0),
+            "foot_l": (-8, 0, 0), "spine": (6, -12, 0), "chest": (4, -14, 0), "neck": (0, -25, 0), "head": (-4, -40, 0),
+            "upper_r": (8, 0, 18), "fore_r": (-25, 0, 0), "upper_l": (-6, 0, -22), "fore_l": (-30, 0, 0)}
+    low = dict(ride, hips=hips(-0.14), thigh_r=(-18, 0, 0), thigh_l=(-18, 0, 0), shin_r=(34, 0, 0), shin_l=(34, 0, 0), foot_r=(-16, 0, 0), foot_l=(-16, 0, 0))
+    look = dict(ride, head=(-10, -10, 0), neck=(0, -10, 0), chest=(4, -6, 0))
+    board0, board_r, board_l = {"board": (0, 0, 0)}, {"board": (0, 0, 4)}, {"board": (0, 0, -4)}
+    # Pushing: the back foot (his right) off the board and down to the road behind, a push, and back on
+    push_down = dict(ride, hips=hips(-0.22, rot=(0, 0, 4)), thigh_l=(-34, 0, 0), shin_l=(58, 0, 0), foot_l=(-24, 0, 0),
+                     thigh_r=(-10, 0, 22), shin_r=(28, 0, 0), foot_r=(-10, 0, 0), upper_r=(-20, 0, 30), upper_l=(20, 0, -30))
+    push_back = dict(push_down, thigh_r=(14, 0, 30), shin_r=(12, 0, 0), foot_r=(20, 0, 0), upper_r=(10, 0, 30), upper_l=(-14, 0, -30))
+    # The ollie: down, the tail popped (the nose comes up), up with the board, its tail and nose level, down again
+    crouch = dict(low, hips=hips(-0.28), thigh_r=(-36, 0, 0), thigh_l=(-36, 0, 0), shin_r=(66, 0, 0), shin_l=(66, 0, 0), foot_r=(-30, 0, 0),
+                  foot_l=(-30, 0, 0), upper_r=(30, 0, 30), upper_l=(30, 0, -30), fore_r=(-40, 0, 0), fore_l=(-40, 0, 0))
+    pop = dict(ride, hips=hips(0.12), thigh_r=(-4, 0, 0), thigh_l=(-20, 0, 0), shin_r=(6, 0, 0), shin_l=(30, 0, 0), upper_r=(-60, 0, 40), upper_l=(-60, 0, -40))
+    tuck = dict(ride, hips=hips(0.15), thigh_r=(-62, 0, 0), thigh_l=(-62, 0, 0), shin_r=(92, 0, 0), shin_l=(92, 0, 0), foot_r=(-30, 0, 0), foot_l=(-30, 0, 0),
+                upper_r=(-50, 0, 55), upper_l=(-50, 0, -55), fore_r=(-30, 0, 0), fore_l=(-30, 0, 0), spine=(14, -12, 0))
+    land = dict(crouch, hips=hips(-0.22))
+    # The grind: low, knees bent, arms out wide for balance, one up
+    grind = dict(low, hips=hips(-0.2, rot=(0, 0, -6)), thigh_r=(-28, 0, 0), thigh_l=(-28, 0, 0), shin_r=(52, 0, 0), shin_l=(52, 0, 0), foot_r=(-24, 0, 0),
+                 foot_l=(-24, 0, 0), upper_r=(10, 0, 80), upper_l=(-30, 0, -100), fore_r=(-10, 0, 0), fore_l=(-20, 0, 0), spine=(14, -10, 6), head=(-14, -45, 0))
+    body = {
+        "idle": clip(3.0, (0.0, ride), (0.7, low), (1.4, ride), (1.9, look), (2.4, look), (2.8, ride)),
+        "walk": clip(1.0, (0.0, ride), (0.25, push_down), (0.5, push_back), (0.75, ride)),
+        "ollie": once(0.42, (0.0, ride), (0.06, crouch), (0.13, pop), (0.24, tuck), (0.34, land), (0.42, ride)),
+        "grind": once(0.8, (0.0, ride), (0.1, grind), (0.7, grind), (0.8, ride)),
+    }
+    boards = {
+        "idle": clip(3.0, (0.0, board0), (0.7, board_r), (1.4, board0), (2.1, board_l)),
+        "walk": clip(1.0, (0.0, board0), (0.25, board_l), (0.5, board_r), (0.75, board0)),
+        "ollie": once(0.42, (0.0, board0), (0.06, board0), (0.13, {"board": {"rot": (-28, 0, 0), "pos": (0, 0.1, 0)}}),
+                      (0.24, {"board": {"rot": (0, 0, 0), "pos": (0, 0.62, 0)}}), (0.34, {"board": {"rot": (4, 0, 0), "pos": (0, 0.02, 0)}}), (0.42, board0)),
+        "grind": once(0.8, (0.0, board0), (0.1, {"board": (0, 0, -8)}), (0.4, {"board": (0, 0, -5)}), (0.7, {"board": (0, 0, -8)}), (0.8, board0)),
+    }
+    bored, blink = face_pose(jaw=1, brow=-2, lid=30), face_pose(jaw=1, brow=-2, lid=88)
+    chew = face_pose(jaw=7, brow=-2, lid=32)
+    stoked, focus = face_pose(jaw=16, brow=-10, lid=6, lift=0.015), face_pose(jaw=3, brow=14, lid=24)
+    face = {
+        "idle": clip(3.0, (0.0, bored), (0.4, chew), (0.8, bored), (1.2, chew), (1.6, bored), (2.2, bored), (2.25, blink), (2.32, bored)),
+        "walk": clip(1.0, (0.0, bored), (0.5, chew)),
+        "ollie": once(0.42, (0.0, bored), (0.06, focus), (0.2, stoked), (0.42, stoked)),
+        "grind": once(0.8, (0.0, bored), (0.1, focus), (0.5, stoked), (0.8, bored)),
+    }
+    clips_ = {name: layered(body[name], boards[name], face[name]) for name in body}
+    for name in body:
+        still = clip(body[name]["duration"], (0.0, ride))
+        still["once"] = body[name].get("once", False)
+        clips_[name + "_face"] = layered(still, clip(body[name]["duration"], (0.0, board0)), face[name])
+    return clips_
+
+
+Sideways = 90       # Mads' hips are turned this far round in every pose: he rides sideways
+
+
 def make_mads():
-    """A skater on his board: lanky, a baggy orange hoodie with a pocket and strings, wide grey jeans with a torn knee,
-    a cap on backwards, and a bored, half-lidded look"""
-    m = hero_model("mads")
-    bd = replace(SLIM, hunch=0.15, shoulder=0.72, chest=0.64, waist=0.55, hip=0.52, arm=0.19, fore=0.17, thigh=0.25, calf=0.22, foot=1.05)
-    hoodie = cloth((0.95, 0.42, 0.12), folds=7) + rect((0.85, 0.36, 0.1), 0.38, 0.62, 0.15, 0.35) + stitches((0.6, 0.25, 0.05), [0.12, 0.35]) + \
-        patch((0.15, 0.15, 0.16), 0.5, 0.68, 0.11, 0.11)
-    jeans = cloth((0.5, 0.52, 0.56), folds=7) + patch((0.86, 0.84, 0.8), 0.5, 0.45, 0.06, 0.05) + stitches((0.75, 0.6, 0.3), [0.5], axis="u")
-    b = person(m, bd, hoodie, jeans, shoes=color((0.14, 0.14, 0.16)) + bands(WHITE, [(0.0, 0.3)]) + stitches(WHITE, [0.7]), sole=(0.9, 0.9, 0.88),
-               arms=cloth((0.95, 0.42, 0.12)) + bands((0.85, 0.36, 0.1), [(0.0, 0.12)]), hair_paint=hair((0.2, 0.14, 0.1)), hair_style="short",
-               eyes_kw=dict(iris=(0.35, 0.25, 0.15), lid=0.6, size=0.07, look=(0.4, 0)), mouth_kw=dict(kind="line"),
-               brows_kw=dict(c=(0.2, 0.14, 0.1), tilt=0.1, thick=0.6), nose="round", arm_pose=("out", "out"))
-    cap(m, b, color((0.15, 0.38, 0.72)) + stitches((0.1, 0.25, 0.5), [0.3]), back=True)
-    m.add(ellipsoid((0, b.sh_y + 0.05, b.lean(b.sh_y) - 0.5), (0.55, 0.3, 0.3)), cloth((0.88, 0.36, 0.1)))
+    """Mads the Skater, riding sideways on his board: lanky, a baggy orange hoodie with its hood down, strings and a
+    pocket, headphones round his neck, wide grey jeans torn at a knee, chunky skate shoes with white soles, a blue cap on
+    backwards with his hair sticking out under it, a bored, half-lidded look, and a board with kicktails, black grip
+    tape on top, a flame on the bottom, steel trucks and teal wheels. Rigged like the Butcher, with clips for riding,
+    pushing, the ollie and the grind (mads_clips), written as models/mads.glb too"""
+    from anatomy import human_joints, human_body, make_rig, skin_paint, L
+    from rig import write_glb
+    m = Model("mads", size=1024, light=0.5, ao=1.3, detail=0.07)
+    up = 0.36                                   # His feet are on the deck
+    J = human_joints(hips=(0, 1.78 + up, 0), spine=(0, 2.22 + up, 0.03), chest=(0, 2.75 + up, 0.05), neck=(0, 3.18 + up, 0.06), head=(0, 3.38 + up, 0.1),
+                     shoulder_r=(0.58, 3.04 + up, 0.0), elbow_r=(0.76, 2.36 + up, -0.06), wrist_r=(0.84, 1.74 + up, 0.1), hand_end_r=(0.86, 1.48 + up, 0.17),
+                     hip_r=(0.3, 1.74 + up, 0.0), knee_r=(0.46, 0.98 + up, 0.1), ankle_r=(0.56, 0.28 + up, 0.0), toe_r=(0.58, 0.08 + up, 0.5))
+    m.rig = make_rig(J)
+    sk = (0.93, 0.74, 0.6)
+    skin_p = skin_paint(sk)
+    orange = (0.95, 0.42, 0.12)
+    hoodie = cloth(orange, folds=7) + stitches((0.6, 0.25, 0.05), [0.12]) + stains((0.5, 0.25, 0.1), 0.08, 3)
+    sleeve = cloth(orange, folds=6) + bands((0.82, 0.34, 0.08), [(0.88, 1.0)])
+    jeans = cloth((0.5, 0.52, 0.58), folds=7) + stitches((0.75, 0.6, 0.3), [0.5], axis="u") + stains((0.35, 0.36, 0.4), 0.15, 3)
+    shoes = color((0.16, 0.16, 0.2)) + bands((0.9, 0.9, 0.88), [(0.0, 0.25)]) + stitches((0.9, 0.9, 0.88), [0.6, 0.75]) + edges(0.25, 0.06, dark=True)
+    hands = skin_paint(sk) + stains((0.3, 0.25, 0.2), 0.1, 6)
+    human_body(m, J, hoodie, sleeve, skin_p, jeans, hands, shoes, sole_p=color((0.92, 0.92, 0.9)) + edges(0.2, 0.1, dark=True),
+               chest=0.98, hips=0.98, bust=0.0, arm=1.1, leg=1.18, rolled=False, knee_p=None)
+    h, s_, c, n = J["hips"], J["spine"], J["chest"], J["neck"]
+    # The hoodie: baggy round the middle, a pocket on the front, the hood down on his back, strings
+    m.add(loft([h + [0, -0.16, 0], h + [0, 0.05, 0], s_ + [0, 0.1, 0.02]], [(0.55, 0.39, 2.5), (0.56, 0.4, 2.5), (0.53, 0.38, 2.5)], nu=24, nv=10, caps=None),
+          hoodie + bands((0.82, 0.34, 0.08), [(0.0, 0.12)]), bones=["hips", "spine"])
+    m.add(blob(s_ + [0, -0.12, 0.38], (0.34, 0.18, 0.06), (0.4, 0.4)), cloth((0.85, 0.36, 0.1), folds=3) + edges(0.3, 0.08, dark=True), bones="spine")
+    m.add(blob(n + [0, -0.1, -0.28], (0.3, 0.22, 0.14), (0.7, 0.7)), cloth((0.88, 0.38, 0.1), folds=4) + edges(0.3, 0.1, dark=True), bones="chest")
     for side in (1, -1):
-        m.add(tube([(side * 0.15, b.neck_y - 0.1, 0.42), (side * 0.18, b.chest_y, 0.5)], 0.025), color(WHITE))
-    for s in m.surfaces:
-        s.t = s.t + [0, 0.34, 0]
-    board = wood((0.82, 0.62, 0.34), 18) + bands((0.15, 0.55, 0.85), [(0.2, 0.8)], axis="v") + edges(0.2, 0.05, dark=True)
-    m.add(blob((0, 0.25, 0.1), (0.55, 0.06, 1.45), (0.2, 0.6)), board)
-    for z in (-0.85, 1.05):
-        m.add(blob((0, 0.15, z), (0.42, 0.04, 0.08), (0.3, 0.3)), metal((0.7, 0.7, 0.72)))
-        for x in (0.35, -0.35):
-            m.add(cylinder((x, 0.11, z), 0.11, 0.16, rot=(0, 0, 90 if x > 0 else -90)), color((0.98, 0.88, 0.45)))
+        m.add(tube([n + [side * 0.12, -0.06, 0.2], n + [side * 0.15, -0.45, 0.33], n + [side * 0.14, -0.62, 0.35]], 0.022), color((0.95, 0.94, 0.9)), bones="chest")
+    # A torn knee on his left leg
+    kn = L(J["knee_r"])
+    m.add(blob(kn + [0, 0.02, 0.17], (0.11, 0.08, 0.04), (0.5, 0.5)), skin_p + stitches((0.85, 0.84, 0.8), [0.1, 0.9], axis="u"), bones="shin_l")
+    # Headphones round his neck
+    phones = color((0.12, 0.12, 0.14)) + edges(0.3, 0.1)
+    m.add(torus(n + [0, -0.08, 0.05], 0.26, 0.035, rot=(-10, 0, 0), nu=24), phones, bones="chest")
+    for side in (1, -1):
+        m.add(cylinder(n + [side * 0.27, -0.05, 0.12], 0.11, 0.08, rot=(0, 0, 90)), phones + bands((0.15, 0.7, 0.75), [(0.4, 0.6)], axis="u"), bones="chest")
+    # The head: bored, half-lidded, a scatter of freckles
+    hd = J["head"] + np.array([0, 0.28, 0.08])
+    S = 1.0
+    P = human_face(m, hd, sk, m.rig, S=S, iris=(0.4, 0.3, 0.18), brow_c=(0.25, 0.17, 0.1), lips=(0.8, 0.52, 0.45), freckles=0.5)
+    hair_c = (0.25, 0.17, 0.1)
+    hair_p = hair(hair_c) + stripes((0.18, 0.12, 0.08), 12, 0.3, axis="u")
+    m.add(ellipsoid(P(0, 0.06, -0.13), (0.39, 0.38, 0.38), vrange=(0.35, 1.0), nu=20, nv=10), hair_p, bones="head", weight=3)
+    # The cap, on backwards: its bill over the back of his neck, the hair poking out in the gap at the front
+    cap_p = color((0.15, 0.38, 0.72)) + stitches((0.1, 0.25, 0.5), [0.3]) + edges(0.2, 0.08, dark=True)
+    m.add(ellipsoid(P(0, 0.16, -0.02), (0.42, 0.33, 0.43), vrange=(0.5, 1.0), nu=24, nv=10), cap_p, bones="head", weight=2)
+    m.add(loft([P(0, 0.17, -0.28), P(0, 0.12, -0.66)], [dict(w=0.3, d=0.03, e=2.4), dict(w=0.25, d=0.03, e=2.4)], facing=(0, 1, 0), nu=16, caps="flat"),
+          cap_p, bones="head")
+    # The strap of the cap, across his forehead
+    m.add(loft([P(-0.14, 0.24, 0.37), P(0, 0.25, 0.4), P(0.14, 0.24, 0.37)], [(0.012, 0.03, 2.4)] * 3, facing=(0, 0, 1), nu=8, nv=10), cap_p, bones="head")
+    # The board, on a bone of its own, under his feet, along the way he goes (z): a deck that kicks up at both ends, grip
+    # tape on top, a flame under it, two trucks and four wheels
+    deck_y = up - 0.06
+    m.rig.bone("board", np.array([0, deck_y, 0]), np.array([0, deck_y, 0.6]))
+    path = [(0, deck_y + 0.22, -1.25), (0, deck_y + 0.02, -0.95), (0, deck_y, -0.6), (0, deck_y, 0.6), (0, deck_y + 0.02, 0.95), (0, deck_y + 0.22, 1.25)]
+
+    def deck_paint(ctx):
+        top = ctx.n[..., 1] > 0.3
+        grip = np.array([0.08, 0.08, 0.09]) * (0.85 + 0.3 * fbm(ctx.p, 40, 1, 3))[..., None]
+        wood_c = np.array([0.82, 0.62, 0.36])
+        z = ctx.p[..., 2]
+        x = ctx.p[..., 0]
+        flame = smoothstep(0.03, 0.0, np.abs(x) - 0.2 * (1 - np.clip((z + 0.9) / 1.6, 0, 1)) - 0.04 * np.sin(z * 18))
+        under = np.where((ctx.n[..., 1] < -0.3)[..., None], wood_c * (1 - flame)[..., None] + np.array([0.95, 0.35, 0.08]) * flame[..., None], wood_c)
+        return np.where(top[..., None], grip, under)
+    m.add(loft(path, [dict(w=0.32, d=0.035, e=6), dict(w=0.32, d=0.035, e=6), dict(w=0.32, d=0.035, e=6), dict(w=0.32, d=0.035, e=6),
+                      dict(w=0.32, d=0.035, e=6), dict(w=0.28, d=0.035, e=6)], facing=(0, 1, 0), nu=16, nv=30, caps="round"), Paint(deck_paint), bones="board")
+    steel = metal((0.72, 0.73, 0.76), 0.55) + edges(0.3, 0.05)
+    for z in (-0.68, 0.68):
+        m.add(beam((-0.26, deck_y - 0.13, z), (0.26, deck_y - 0.13, z), 0.035, 0.04, facing=(0, 0, 1)), steel, bones="board")
+        m.add(blob((0, deck_y - 0.07, z), (0.08, 0.05, 0.1), (0.5, 0.5)), steel, bones="board")
+        for x in (0.3, -0.3):
+            m.add(cylinder((x, deck_y - 0.13, z), 0.1, 0.1, rot=(0, 0, 90 if x > 0 else -90)), color((0.2, 0.8, 0.75)) + edges(0.3, 0.15), bones="board")
+    m.clips = mads_clips()
     finish(m, "mads")
+    print(write_glb(m, fps=30))
+    return m
 
 
 def make_ditte():
