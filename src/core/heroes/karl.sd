@@ -1,7 +1,8 @@
 namespace core;
 
-// Karl the Mechanic: he jacks the cars up and walks under them, and leaves oil for the others to slide on
+// Karl the Mechanic: he jacks the cars up and walks under them, and slings oil for the others to go skidding off on
 
+import math;
 use raylib;
 
 defineKarl :: () -> HeroDefinition {
@@ -13,8 +14,8 @@ defineKarl :: () -> HeroDefinition {
     });
     hero.abilities.add(Ability{
         name: "Oil change", icon: "oil_change", sound: "ability.oil_change", cooldown: 8, targeting: .point, cast: castOilChange, bot: .dropTrap,
-        description: "Pours a puddle of oil at the cursor, up to 24 away. A hero on it can't turn",
-        range: 24, radius: 2.6,
+        description: "Slings a big splash of oil from his can at the cursor, up to 24 away, for 20 seconds. Whoever walks onto it shoots off twice as fast the way it was going, and can't turn until it is off",
+        range: 24, radius: 5.0, power: 2.0, duration: 20,
     });
     hero.abilities.add(passive("Grease monkey", "grease_monkey", "Oil is nothing new to him: he doesn't slide on it", .oilProof));
     return hero;
@@ -32,10 +33,26 @@ castJack :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bo
     return true;
 }
 
+// The oil flies from the can in his left hand, in an arc, and lands as a big puddle
 castOilChange :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
     point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
-    game.addSlick(point, ability.radius);
-    game.effects.particles.emit(.oil, point.at(1), 20);
+    toward := point - hero.ground();
+    if !hero.isMoving && toward.length() > 0.1 { hero.facing = math.atan2f(toward.x, toward.y); }
+    forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
+    left := Vector3{forward.z, 0, -forward.x};
+    can := hero.position + forward * 0.9 + left * 0.6 + Vector3{0, 2.6, 0};
+    game.throwSlick(can, point, ability.radius, ability.power, ThrowFlight, ability.duration * hero.stats.buildTime);
+    game.effects.particles.emit(.oilSplash, can, 14, tint: White);
     return true;
 }
+
+// The jack under a car he lifts, at each end of it: a scissor jack that opens up as the car goes up
+drawJacks :: (assets: *Assets, car: *Car, lift: f32) {
+    for k in [-1.0, 1.0] {
+        foot := car.position() + Vector3{0, 0, k * car.length() * 0.25};
+        DrawModelEx(assets.carJack, foot, {0, 1, 0}, 90, {1, math.max(lift + 0.25, 0.3) / JackModelHeight, 1}, White);
+    }
+}
+
+JackModelHeight :: 2.85;     // How tall the model of the jack is made, from the ground to the top of its saddle

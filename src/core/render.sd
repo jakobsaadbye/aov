@@ -160,11 +160,7 @@ drawCar :: (game: *Game, assets: *Assets, car: *Car) {
         // Up on Karl's jack: raised, with the jack under it
         lift := LiftHeight * math.min(1, math.min(car.liftedLeft * 3, (LiftTime - car.liftedLeft + 0.01) * 6));
         position.y += lift;
-        for k in [-1.0, 1.0] {
-            foot := car.position() + Vector3{0, 0, k * car.length() * 0.25};
-            DrawCube(foot + Vector3{0, 0.15, 0}, 1.2, 0.3, 0.8, {200, 40, 30, 255});
-            DrawCylinderEx(foot + Vector3{0, 0.3, 0}, foot + Vector3{0, lift + 0.2, 0}, 0.18, 0.18, 6, {120, 120, 130, 255});
-        }
+        drawJacks(assets, car, lift);
     }
     assets.drawVehicle(car.kind, position, color, scale);
     if car.kind == .ambulance { drawEmergencyLights(assets, car, time); }
