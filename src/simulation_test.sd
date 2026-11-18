@@ -1434,6 +1434,18 @@ testRedesignedKits :: () {
     assert(you.hero.leap.hasValue() && you.hero.variants[0] == you.hero.castCount);
     for 0..30 { game.simulate(Dt); }
     assert(!you.hero.leap.hasValue() && you.hero.isMoving && you.hero.target.z > you.hero.position.z + 4 && you.hero.momentum >= speedBefore * 0.9);
+
+    // and he can't stop: told to, he rolls on the way he faces. A stun holds him, and then he rolls on again
+    you.order(.stop);
+    z3 := you.hero.position.z;
+    for 0..20 { game.simulate(Dt); }
+    assert(you.hero.isMoving && you.hero.position.z > z3 + 1);
+    you.hero.addStatus(.stun, 0.5);
+    z4 := you.hero.position.z;
+    for 0..20 { game.simulate(Dt); }
+    assert(near(you.hero.position.z, z4, 0.01));
+    for 0..40 { game.simulate(Dt); }
+    assert(you.hero.isMoving && you.hero.position.z > z4 + 0.5);
     clearRoad(game);
 
     // Magnus repels the cars that come at him into the lanes beside his
