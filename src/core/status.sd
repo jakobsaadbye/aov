@@ -32,6 +32,7 @@ StatusKind :: enum {
     repel,          // The cars that come near are pushed out of its way, into the lanes beside it (Magnus)
     crossing,       // The cars that come to it stop and wait until it has gone by (Gudrun)
     frozen,         // Frozen solid: can't move or cast (Frosty's cold snap)
+    greased,        // Runs faster, from the oil it ran on, for a moment after it is off it (Karl)
 }
 
 Status :: struct {
@@ -76,6 +77,7 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .repel      => StatusRules{good: true};
         case .crossing   => StatusRules{good: true};
         case .frozen     => StatusRules{stops: true, silences: true, harms: true};
+        case .greased    => StatusRules{good: true};
     };
 }
 
@@ -110,6 +112,7 @@ statusLook :: (kind: StatusKind) -> StatusLook {
         case .repel      => StatusLook{"Repel", "The cars that come near are pushed aside", "repel"};
         case .crossing   => StatusLook{"Crossing", "The cars stop and wait until she has gone by", "grannys_crossing"};
         case .frozen     => StatusLook{"Frozen", "Frozen solid: can't move or cast", "freeze"};
+        case .greased    => StatusLook{"Greased", "Runs 60% faster on oil, and for a moment after it", "grease_monkey"};
     };
 }
 

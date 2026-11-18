@@ -213,7 +213,7 @@ Hero :: struct {
         speed := self.info().moveSpeed * self.stats.speed * self.statusSpeed() * (1 - self.slowedBy);
         stats := self.stats;
         if stats.momentum { speed *= 1 + MomentumBonus * self.momentum; }
-        if self.onOil { speed *= stats.oilSpeed; }
+        if self.has(.greased) { speed *= stats.oilSpeed; }
         return speed;
     }
 

@@ -17,12 +17,13 @@ defineKarl :: () -> HeroDefinition {
         description: "Slings a big splash of oil from his can at the cursor, up to 24 away, for 20 seconds. Whoever walks onto it shoots off twice as fast the way it was going, and can't turn until it is off",
         range: 24, radius: 5.0, power: 2.0, duration: 20,
     });
-    hero.abilities.add(passive("Grease monkey", "grease_monkey", "Oil is nothing new to him: he doesn't slide on it, he runs on it, 60% faster, and turns as he likes",
+    hero.abilities.add(passive("Grease monkey", "grease_monkey", "Oil is nothing new to him: he doesn't slide on it, he runs on it, 60% faster, and turns as he likes, and he keeps the speed for 1.5 seconds after he is off it",
         Trait{greaseMonkey: GreaseSpeed}));
     return hero;
 }
 
-GreaseSpeed :: 1.6;         // Times his speed on oil
+GreaseSpeed  :: 1.6;        // Times his speed on oil
+GreasedAfter :: 1.5;        // and for this many seconds after he is off it
 
 castJack :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;

@@ -823,9 +823,12 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     before := hero.position;
     facingBefore := hero.facing;
     hero.onOil = game.slickAt(hero.ground());
-    // Karl on oil: he runs on it, faster, kicking up drops
-    if hero.onOil && hero.isMoving && hero.stats.oilSpeed > 1 {
-        game.effects.particles.emitRate(.oilSplash, hero.position + Vector3{0, 0.2, 0}, 22, dt);
+    // Karl on oil: he runs on it, faster, kicking up drops, and the oil on his boots keeps him fast for a moment after
+    if hero.onOil && hero.stats.oilSpeed > 1 { hero.addStatus(.greased, GreasedAfter); }
+    if hero.has(.greased) && hero.isMoving {
+        rate: f32 = 10;
+        if hero.onOil { rate = 22; }
+        game.effects.particles.emitRate(.oilSplash, hero.position + Vector3{0, 0.2, 0}, rate, dt);
     }
     if game.slide(hero, dt) {
         // On the oil: it can't turn
