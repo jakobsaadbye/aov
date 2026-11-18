@@ -8,7 +8,7 @@ use raylib;
 defineHugo :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Hugo", title: "the Hypnotist", color: {120, 50, 140, 255}, width: 2.2, height: 5.2, moveSpeed: 8, hitRadius: 0.75, maxHealth: 26};
     hero.abilities.add(Ability{
-        name: "Trance walk", icon: "trance_walk", sound: "ability.fade", cooldown: 13, cast: castTranceWalk, bot: .untouchable,
+        name: "Trance walk", icon: "trance_walk", sound: "ability.trance_walk", cooldown: 13, cast: castTranceWalk, bot: .untouchable,
         description: "Talks himself into a trance for 2.2 seconds: the cars aren't real to him, and go through him as he walks, slowly",
         duration: 2.2,
     });

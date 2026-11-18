@@ -120,6 +120,11 @@ isNumber :: (text: string) -> bool {
     return true;
 }
 
+// True with a chance from 0 to 1, from the sounds' own random numbers, which a game doesn't depend on
+chance :: method (player: *SoundPlayer, p: f32) -> bool {
+    return player.rng.uniform(0, 1) < p as f64;
+}
+
 // Plays a sound by its name, e.g "hero.crossed". pitchSpread changes the pitch a bit at random, e.g 0.05
 play :: method (player: *SoundPlayer, name: string, volume: f32 = 1, pitchSpread: f32 = 0) {
     player.playPanned(name, volume, 0.5, pitchSpread);

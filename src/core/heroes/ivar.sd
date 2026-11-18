@@ -9,7 +9,7 @@ use raylib;
 defineIvar :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Ivar", title: "the Berserker", color: {190, 70, 30, 255}, width: 3.9, height: 6.0, moveSpeed: 7.5, hitRadius: 0.95, maxHealth: 50};
     hero.abilities.add(Ability{
-        name: "Berserk", icon: "berserk", sound: "ability.battle_cry", cooldown: 12, cast: castBerserk, bot: .untouchable,
+        name: "Berserk", icon: "berserk", sound: "ability.berserk", cooldown: 12, cast: castBerserk, bot: .untouchable,
         description: "Goes berserk for 3 seconds: a car that hits him is thrown a lane aside instead of running him over, and he loses a little health",
         duration: 3, power: BerserkToll,
     });

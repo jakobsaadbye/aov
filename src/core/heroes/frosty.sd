@@ -14,7 +14,7 @@ defineFrosty :: () -> HeroDefinition {
         radius: 20, duration: 2.5,
     });
     hero.abilities.add(Ability{
-        name: "Igloo", icon: "igloo", sound: "ability.freeze", cooldown: 13, cast: castIgloo, bot: .untouchable,
+        name: "Igloo", icon: "igloo", sound: "ability.igloo", cooldown: 13, cast: castIgloo, bot: .untouchable,
         description: "Builds an igloo round himself for 3 seconds. Nothing gets in: no car, no spell. A car that drives into it is stuck in the ice until it melts. He can't move meanwhile",
         duration: 3, radius: IglooRadius,
     });

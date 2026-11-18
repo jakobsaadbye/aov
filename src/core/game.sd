@@ -55,6 +55,7 @@ Player :: struct {
     perks:     [..]PerkKind;                // Picked after the crossings, for all of its heroes (perks.sd)
     decoy:     ?Decoy;                      // Tim & Tom's other twin, while it walks (world_effects.sd)
     perkOffer: ?PerkOffer;                  // The perks it may pick one of, after a crossing (perks.sd)
+    voiceUntil: f32;                        // Its hero says nothing more until then, unless it matters (voices.sd)
 
     isBot :: method () -> bool {
         return self.brain != null;
@@ -938,6 +939,8 @@ heroRunOver :: method (game: *Game, index: int, car: *Car) {
     particles.addStain(hero.ground(), info.width * 2.2, {130, 10, 15, 230});
     if index == game.watched { game.camera.shake = 0.35; }
     game.sounds.playAt("hero.death", hero.position);
+    game.say(index, .death);
+    if killer >= 0 { game.say(killer, .kill); }
 
     vehicle := switch car.kind {
         case .car   => "a car";
@@ -979,6 +982,7 @@ heroCrossed :: method (game: *Game, index: int) {
         game.sounds.playAt("hero.crossed", hero.position, 0.5);
     }
 
+    game.say(index, .crossed);
     hero.stop();
     game.effects.addRing(hero.ground(), 0.5, 8, {120, 255, 140, 255}, 0.8);
     player.phase = Phase{crossed: {timeLeft: RegroupTime}};
@@ -1021,6 +1025,7 @@ spawnHero :: method (game: *Game, index: int, kind: HeroKind) {
     player.hero.savesLeft = player.hero.stats.saves;
     player.hero.health = player.hero.maxHealth();
     if index == game.watched { game.sounds.play("hero.spawn", 0.6); }
+    game.say(index, .spawn);
 }
 
 SpawnSpacing :: 7.0;

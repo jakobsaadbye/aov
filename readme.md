@@ -98,8 +98,33 @@ fades down to a murmur. M turns the music off and on.
 | --- | --- |
 | `hero.hurt`, `hero.death` | A car on the hero, and run over |
 | `hero.spawn`, `hero.crossed` | A new hero, and across the road |
-| `ability.*` | The abilities: `sprint`, `charge`, `blink`, `hook_throw`, `hook_hit`, `freeze`, `fade`, `leap`, `land`, `stop_sign`, `time_warp`, `rewind` |
+| `ability.<icon>` | Each spell has a sound of its own, named by its icon, e.g `ability.trance_walk` |
+| `item.<icon>` | Each item that is used, e.g `item.rubber_chicken` |
+| `voice.<hero>_<event>` | What the heroes say (`core/voices.sd`) |
 | `ui.not_ready` | An ability that is cooling down |
+
+### Made with ElevenLabs
+
+The sounds of the spells, the items and the heroes, and the voices, are made with [ElevenLabs](https://elevenlabs.io) by
+`tools/make_audio.py`: its sound effects API for the sounds, and text to speech for the voices. All of it is written in
+that file:
+
+* **Families.** Each spell belongs to a family (stealth, arcane, mind, time, ice, storm, traffic, motion, force, magnet,
+  craft, care, tourist), whose words come into each of its prompts, so spells of a kind sound like each other: smoke and
+  shadows hiss and breathe (Kenji's substitution, Ghosty's possession), ice crackles, time ticks and runs backwards.
+* **Voices.** Each hero has an ElevenLabs voice, made higher or lower, slower, or put in an echo for its hero (an ogre's
+  growl for the Butcher, a ghost in a cave for Ghosty, kids for the twins), and a few lines for each of five events: when
+  it comes onto the field, casts, gets across, is run over, and gets an enemy run over. A hero says a line at most every
+  4 seconds, only a third of the times it casts, and the hero the camera follows is heard at full volume.
+
+Each file is trimmed, made as loud as the others (-16 LUFS), and written as an .ogg; a file that is there and was made
+from the same prompt isn't made again (`data/sounds/.elevenlabs.json`). It needs an API key in `ELEVENLABS_API_KEY`:
+
+```
+python3 tools/make_audio.py              what isn't there yet, or has changed
+python3 tools/make_audio.py --list       the prompts and the lines
+python3 tools/make_audio.py ability.hex voice.hugo_cast_1
+```
 
 The music (`theme`) is a loop of a minute for a small orchestra in D minor: strings, cellos, horns, a choir, a harp and
 war drums. `tools/make_sounds.py` synthesizes all of it in layers (a low body, a sharp front and a tail of reverb), from
