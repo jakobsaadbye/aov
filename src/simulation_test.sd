@@ -1394,6 +1394,20 @@ testRedesignedKits :: () {
     assert(you.phase.kind == .playing && near(you.hero.health, you.hero.maxHealth()) && game.traffic.cars[0].lane != 4);
     clearRoad(game);
 
+    // A car that rushes past in the lane beside him leaves a scrap of metal on him, and one that would hit him knocks it
+    // off instead, and is flung aside
+    game.spawnHero(0, .magnus);
+    you.hero.position = Vector3{lane, 0, 0};
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 5, z: -14, speed: 15};
+    for 0..90 { game.simulate(Dt); }
+    assert(you.hero.scrap == 1);
+    clearRoad(game);
+    you.hero.scrapLeft = 100;
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -14, speed: 15};
+    for 0..90 { game.simulate(Dt); }
+    assert(you.phase.kind == .playing && you.hero.scrap == 0 && near(you.hero.health, you.hero.maxHealth()) && game.traffic.cars[0].lane != 4);
+    clearRoad(game);
+
     // The cars stop for Gudrun when she crosses, before they get to her
     game.spawnHero(0, .gudrun);
     you.hero.position = Vector3{lane, 0, 0};

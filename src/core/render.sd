@@ -54,6 +54,7 @@ drawScene :: method (game: *Game, assets: *Assets) {
     drawPeels(game);
     drawProjectiles(game);
     drawStrikes(game);
+    drawArcs(game);
     drawDecoys(game, assets);
 
     // Shadows, stains and rings lie on the ground, above the road

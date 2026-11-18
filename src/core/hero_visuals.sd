@@ -45,13 +45,33 @@ drawHeroExtras :: (game: *Game, index: int, bob: f32) {
         throb := 0.5 + 0.5 * math.sinf(game.time * 14);
         DrawCylinder(hero.position + Vector3{0, 0.14, 0}, hero.info().hitRadius + 0.8 + throb * 0.3, hero.info().hitRadius + 0.8, 0.02, 16, ColorAlpha({255, 60, 30, 255}, 0.35 + throb * 0.25));
     }
-    // Repelling: blue rings that run out to as far as he pushes the cars
+    // Repelling: blue rings that run out to as far as he pushes the cars, and the lines of his field, looping from
+    // over his head round to his feet as round a bar magnet, turning slowly, with a spark running along each
     if hero.has(.repel) {
         for k in 0..3 {
             t := math.fmodf(game.time * 1.5 + k as f32 / 3, 1);
             DrawCircle3D(hero.position + Vector3{0, 0.3, 0}, RepelRadius * t, {1, 0, 0}, 90, ColorAlpha({110, 160, 255, 255}, (1 - t) * 0.8));
         }
+        height := hero.info().height;
+        fade := math.min(hero.timeLeft(.repel) / 0.3, 1);
+        for line in 0..8 {
+            angle := line as f32 * Pi / 4 + game.time * 0.9;
+            out := Vector3{math.cosf(angle), 0, math.sinf(angle)};
+            reach := 2.6 + 0.6 * (line % 2) as f32;
+            previous := hero.position + Vector3{0, height + 0.3 + bob, 0};
+            Steps :: 12;
+            for k in 1..(Steps + 1) {
+                t := k as f32 / Steps as f32;
+                point := hero.position + out * (math.sinf(t * Pi) * reach) + Vector3{0, (height + 0.3) * (1 - t) + 0.1 + bob * (1 - t), 0};
+                DrawCylinderEx(previous, point, 0.04, 0.04, 4, ColorAlpha({120, 175, 255, 255}, 0.5 * fade));
+                previous = point;
+            }
+            s := math.fmodf(game.time * 1.4 + line as f32 * 0.37, 1);
+            spark := hero.position + out * (math.sinf(s * Pi) * reach) + Vector3{0, (height + 0.3) * (1 - s) + 0.1, 0};
+            DrawSphere(spark, 0.11, ColorAlpha({220, 235, 255, 255}, fade));
+        }
     }
+    drawScrap(game, hero, bob);
     // Frozen: a block of ice round it
     if hero.has(.frozen) {
         info := hero.info();

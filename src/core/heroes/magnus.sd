@@ -1,7 +1,7 @@
 namespace core;
 
 // Magnus the Magnet: a man of steel. He turns his poles round and the cars are pushed out of his way, he pulls his enemies
-// in to him, and nothing pushes him
+// in to him, and the scrap the cars shed as they rush past him sticks to him and takes their hits
 
 import math;
 use raylib;
@@ -18,17 +18,32 @@ defineMagnus :: () -> HeroDefinition {
         description: "Pulls the enemy nearest the cursor, up to 32 away, right up to him, through whatever is in the way",
         range: 32,
     });
-    hero.abilities.add(passive("Steel frame", "steel_frame", "Too heavy to move: nobody shoves him, and nothing knocks him away", .unshovable));
+    hero.abilities.add(passive("Scrap armor", "scrap_armor",
+        "The cars that rush past close to him leave scraps of metal stuck to him, up to 3, which circle him. A car that would hit him knocks one off instead, and is flung a lane aside",
+        Trait{scrapArmor: ScrapMost}));
     return hero;
 }
 
 RepelRadius :: 8.0;
 
+// A burst as his poles turn round: three rings of force that run out over the ground, arcs that crackle out to the edge
+// of his field, a spray of sparks, and a jolt of the camera when he is the one followed
 castRepel :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
     hero.addStatus(.repel, ability.duration);
-    game.effects.addRing(hero.ground(), 1, RepelRadius, {120, 170, 255, 255}, 0.35);
-    game.effects.particles.emit(.sparks, hero.position + Vector3{0, 2.5, 0}, 20, tint: {150, 190, 255, 255});
+    ground := hero.ground();
+    game.effects.addRing(ground, 0.5, RepelRadius, {130, 180, 255, 255}, 0.3);
+    game.effects.addRing(ground, 0.5, RepelRadius * 1.15, {200, 225, 255, 255}, 0.5);
+    game.effects.addRing(ground, 2.0, RepelRadius * 0.7, {90, 140, 255, 255}, 0.7);
+    chest := hero.position + Vector3{0, hero.info().height * 0.55, 0};
+    for k in 0..10 {
+        angle := k as f32 * Pi / 5 + game.time * 3;
+        edge := Vector3{ground.x + math.cosf(angle) * RepelRadius, 0.2, ground.y + math.sinf(angle) * RepelRadius};
+        game.arcs.add(MagnetArc{from: chest, to: edge, timeLeft: 0.3 + 0.03 * (k % 3) as f32, seed: k as f32 * 7.3 + game.time});
+    }
+    game.effects.particles.emit(.sparks, chest, 50, tint: {150, 200, 255, 255});
+    game.effects.particles.emit(.dust, hero.position, 24);
+    if caster == game.watched { game.camera.shake = math.max(game.camera.shake, 0.18); }
     return true;
 }
 
@@ -47,7 +62,11 @@ repelCars :: method (game: *Game, index: int) {
         if car.x() < ground.x { side = -1; }
         if car.lane + side < 0 || car.lane + side >= LaneCount { side = -side; }
         game.traffic.moveToLane(c as int, car.lane + side);
-        game.effects.particles.emit(.sparks, car.position() + Vector3{0, car.height(), 0}, 8, tint: {150, 190, 255, 255});
+        // An arc from him to it as it is shoved, and a clang
+        top := car.position() + Vector3{0, car.height(), 0};
+        game.arcs.add(MagnetArc{from: hero.position + Vector3{0, hero.info().height * 0.55, 0}, to: top, timeLeft: 0.25, seed: c as f32 + game.time});
+        game.effects.particles.emit(.sparks, top, 16, tint: {150, 190, 255, 255});
+        game.sounds.playAt("ability.repel_push", car.position(), 0.9, 0.08);
     }
 }
 
@@ -109,3 +128,109 @@ drawMagnetPull :: (game: *Game, assets: *Assets, index: int, bob: f32) {
 }
 
 AttractShown :: 1.2;        // Seconds at most that the field is drawn
+
+//
+// Scrap armor: the cars that rush past close to him leave scraps of metal stuck to him, which circle him, and a car that
+// would hit him knocks one off instead
+//
+
+ScrapMost  :: 3;
+ScrapReach :: 4.0;      // How close a car must rush past, besides his size: the lanes beside his
+ScrapEvery :: 1.2;      // Seconds at least between two scraps
+
+collectScrap :: method (game: *Game, index: int, dt: f32) {
+    hero := &game.players[index].hero;
+    hero.scrapLeft = math.max(0, hero.scrapLeft - dt);
+    hero.scrapCarLeft = math.max(0, hero.scrapCarLeft - dt);
+    if hero.stats.scrapArmor <= 0 || hero.scrap >= hero.stats.scrapArmor || hero.scrapLeft > 0 || hero.carsPass() { return; }
+    car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius + ScrapReach);
+    if !car.hasValue() || car.value().speed < 4 || car.value().kind == .ambulance { return; }
+    hero.scrap += 1;
+    hero.scrapLeft = ScrapEvery;
+    from := car.value().position() + Vector3{0, car.value().height(), 0};
+    game.arcs.add(MagnetArc{from: from, to: hero.position + Vector3{0, hero.info().height * 0.55, 0}, timeLeft: 0.2, seed: game.time});
+    game.effects.particles.emit(.sparks, from, 10, tint: {190, 210, 255, 255});
+    game.sounds.playAt("ability.scrap_clang", hero.position, 0.8, 0.1);
+}
+
+// A car on him with scrap on him: one is knocked off, and the car is flung a lane aside, away from him
+scrapShield :: method (game: *Game, index: int) -> bool {
+    hero := &game.players[index].hero;
+    car := game.traffic.carIndexHitting(hero.ground(), hero.info().hitRadius);
+    if car < 0 { return false; }
+    if car == hero.scrapCar && hero.scrapCarLeft > 0 { return true; }
+    if hero.scrap <= 0 { return false; }
+    hero.scrap -= 1;
+    hero.scrapCar = car;
+    hero.scrapCarLeft = 0.8;
+    side := 1;
+    if game.traffic.cars[car].x() < hero.position.x { side = -1; }
+    lane := game.traffic.cars[car].lane;
+    if lane + side < 0 || lane + side >= LaneCount { side = -side; }
+    game.traffic.moveToLane(car, lane + side);
+    chest := hero.position + Vector3{0, hero.info().height * 0.55, 0};
+    game.effects.particles.emit(.bits, chest, 20, push: Vector3{side as f32 * 6, 4, game.traffic.cars[car].speed * 0.3}, tint: {170, 175, 185, 255});
+    game.effects.particles.emit(.sparks, chest, 30, tint: {255, 220, 150, 255});
+    game.sounds.playAt("ability.scrap_hit", hero.position, 1.0, 0.06);
+    if index == game.watched { game.camera.shake = math.max(game.camera.shake, 0.2); }
+    return true;
+}
+
+// The scraps circle him at the height of his chest, bobbing: a hubcap, a number plate, a bent exhaust pipe
+drawScrap :: (game: *Game, hero: *Hero, bob: f32) {
+    if hero.scrap <= 0 { return; }
+    chest := hero.position + Vector3{0, hero.info().height * 0.5 + bob, 0};
+    for k in 0..hero.scrap {
+        angle := game.time * 2.2 + k as f32 * Pi * 2 / 3;
+        at := chest + Vector3{math.cosf(angle) * 2.0, math.sinf(game.time * 3 + k as f32 * 2) * 0.35, math.sinf(angle) * 2.0};
+        switch k % 3 {
+            case 0 {
+                DrawCylinderEx(at - Vector3{0, 0.05, 0}, at + Vector3{0, 0.05, 0}, 0.45, 0.45, 12, {200, 205, 215, 255});
+                DrawCylinderEx(at - Vector3{0, 0.08, 0}, at + Vector3{0, 0.08, 0}, 0.16, 0.16, 8, {120, 125, 135, 255});
+            }
+            case 1 {
+                DrawCube(at, 0.9, 0.42, 0.06, {245, 215, 60, 255});
+                DrawCube(at, 0.7, 0.18, 0.08, {40, 40, 45, 255});
+            }
+            else {
+                DrawCylinderEx(at - Vector3{0.45, 0, 0.1}, at + Vector3{0.2, 0.1, 0}, 0.12, 0.12, 6, {110, 100, 95, 255});
+                DrawCylinderEx(at + Vector3{0.2, 0.1, 0}, at + Vector3{0.45, 0.35, 0.05}, 0.12, 0.1, 6, {110, 100, 95, 255});
+            }
+        }
+        DrawSphere(at + Vector3{0, 0.25, 0}, 0.06, ColorAlpha({160, 200, 255, 255}, 0.5 + 0.5 * math.sinf(game.time * 15 + k as f32)));
+    }
+}
+
+// An arc of Magnus' field: a jagged line of blue that flickers, from one point to another
+MagnetArc :: struct {
+    from:     Vector3;
+    to:       Vector3;
+    timeLeft: f32;
+    seed:     f32;
+}
+
+drawArcs :: (game: *Game) {
+    for arc in game.arcs {
+        along := arc.to - arc.from;
+        length := Vector3Length(along);
+        if length < 0.1 { continue; }
+        side := Vector3Normalize(Vector3CrossProduct(along, {0, 1, 0.3}));
+        up := Vector3Normalize(Vector3CrossProduct(side, along));
+        flicker := math.floorf(game.time * 30);
+        previous := arc.from;
+        segments := 8;
+        for k in 1..(segments + 1) {
+            t := k as f32 / segments as f32;
+            jag: f32 = 0;
+            lift: f32 = 0;
+            if k < segments {
+                jag = (math.sinf(arc.seed * 13.1 + k as f32 * 7.7 + flicker * 3.3) * 0.5) * math.min(length * 0.12, 1.2);
+                lift = math.sinf(arc.seed * 5.3 + k as f32 * 4.1 + flicker * 1.7) * 0.4;
+            }
+            point := arc.from + along * t + side * jag + up * lift;
+            DrawCylinderEx(previous, point, 0.12, 0.12, 4, ColorAlpha({140, 190, 255, 255}, 0.45));
+            DrawCylinderEx(previous, point, 0.05, 0.05, 4, {235, 245, 255, 255});
+            previous = point;
+        }
+    }
+}
