@@ -7,7 +7,7 @@ import math;
 use raylib;
 
 defineMads :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Mads", title: "the Skater", color: {250, 90, 40, 255}, width: 2.2, height: 4.1, moveSpeed: 7.6, hitRadius: 0.7, maxHealth: 25, drawExtras: drawMads};
+    hero := HeroDefinition{name: "Mads", title: "the Skater", color: {250, 90, 40, 255}, width: 2.2, height: 4.1, moveSpeed: 6.4, hitRadius: 0.7, maxHealth: 25, drawExtras: drawMads};
     hero.abilities.add(Ability{
         name: "Ollie", icon: "ollie", sound: "ability.ollie", cooldown: 6, targeting: .point, cast: castLeap, bot: .escape,
         description: "Pops the board up and jumps to the cursor, up to 7 away, over a car, with a trick, and lands rolling on",
@@ -18,7 +18,8 @@ defineMads :: () -> HeroDefinition {
         description: "Grinds along the lane lines towards the cursor, very fast, for 0.8 seconds. The cars can't touch him",
         range: GrindSpeed * 0.8, duration: 0.8, power: GrindSpeed, delay: 0.8,
     });
-    hero.abilities.add(passive("Rolling", "rolling", "The longer he goes straight on, the faster he rolls: up to 35%. Turning slows him down", .momentum));
+    hero.abilities.add(passive("Rolling", "rolling", "He never stops: with nowhere to go he rolls on the way he faces, and off walls. The longer he goes straight on, the faster he rolls, up to 90%. Turning slows him down",
+        .momentum));
     return hero;
 }
 

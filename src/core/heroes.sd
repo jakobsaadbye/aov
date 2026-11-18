@@ -119,7 +119,9 @@ Displacement :: struct {
 
 LeapHeight :: 7.0;
 BlendInAfter :: 1.5;       // Seconds it stands still before it blends in (the trait blendIn)
-MomentumBonus :: 0.35;     // How much faster the trait momentum makes it, at the most
+MomentumBonus :: 0.9;      // How much faster the trait momentum makes it, at the most
+MomentumGain  :: 0.4;      // How much of that it gathers each second it goes straight on
+RollOn        :: 6.0;      // How far ahead a hero that never stops (the trait momentum) rolls when it has nowhere to go
 
 // A jump through the air, over cars and walls, e.g Bjørn's leap
 LeapState :: struct {

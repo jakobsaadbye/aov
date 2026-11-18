@@ -823,6 +823,11 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     before := hero.position;
     facingBefore := hero.facing;
     hero.onOil = game.slickAt(hero.ground());
+    // Mads can't stop: with nowhere to go, or told to stop, he rolls on the way he faces. Only what holds him stops him
+    if hero.stats.momentum && !hero.isMoving && hero.canAct() {
+        hero.target = (hero.ground() + Vector2{math.sinf(hero.facing), math.cosf(hero.facing)} * RollOn).at();
+        hero.isMoving = true;
+    }
     // Karl on oil: he runs on it, faster, kicking up drops, and the oil on his boots keeps him fast for a moment after
     if hero.onOil && hero.stats.oilSpeed > 1 { hero.addStatus(.greased, GreasedAfter); }
     if hero.has(.greased) && hero.isMoving {
@@ -860,12 +865,20 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
         turn := math.fabsf(math.remainderf(hero.facing - facingBefore, Pi * 2));
         if !hero.isMoving       { hero.momentum = math.max(0, hero.momentum - dt * 2); }
         else if turn > 0.4      { hero.momentum *= 0.3; }
-        else                    { hero.momentum = math.min(1, hero.momentum + dt * 0.5); }
+        else                    { hero.momentum = math.min(1, hero.momentum + dt * MomentumGain); }
     }
 
-    // Walking into a wall: give up after a moment, instead of pushing against it forever
+    // Walking into a wall: give up after a moment, instead of pushing against it forever. One that never stops bounces
+    // off it and rolls back the way it came
     if hero.isMoving && Vector3Distance(before, hero.position) < hero.speed() * dt * 0.1 {
-        hero.stop();
+        if hero.stats.momentum {
+            back := Vector2{-math.sinf(hero.facing), -math.cosf(hero.facing)};
+            hero.facing = math.atan2f(back.x, back.y);
+            hero.target = (hero.ground() + back * RollOn).at();
+            hero.momentum *= 0.3;
+        } else {
+            hero.stop();
+        }
     }
 }
 

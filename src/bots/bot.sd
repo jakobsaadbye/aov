@@ -64,6 +64,9 @@ Bot :: struct {
     hasForecast: bool;
     plan:        [..]Waypoint;      // On the heap: it lives longer than the arena
     next:        int;               // The waypoint it is going to
+    pacing:      bool;              // A hero that can't stop (Mads), waiting: rolling to and fro over paceAnchor
+    paceAnchor:  Vector2;
+    paceSign:    f32 = 1;
     reachesGoal: bool;
     replanIn:    f32;
     searchedAt:  f32;               // The time of the game of the last search
@@ -339,6 +342,24 @@ dodge :: method (bot: *Bot, game: *Game, me: int) -> bool {
 
 DodgeEnough :: 3.0;     // Seconds free that are as good as any more, so a nearer point wins
 
+// A hero that can't stop (Mads) waits by rolling to and fro over the spot it waits on, along the road, not into it
+pace :: method (bot: *Bot, game: *Game, me: int) {
+    player := &game.players[me];
+    hero := &player.hero;
+    if !bot.pacing {
+        bot.pacing = true;
+        bot.paceAnchor = hero.ground();
+    }
+    target := bot.paceAnchor + Vector2{0, bot.paceSign * PaceReach};
+    if hero.ground().distance(target) < 0.8 {
+        bot.paceSign = -bot.paceSign;
+        target = bot.paceAnchor + Vector2{0, bot.paceSign * PaceReach};
+    }
+    if !hero.isMoving || hero.target.xz().distance(target) > 0.3 { player.order(Command{move: target}); }
+}
+
+PaceReach :: 1.6;
+
 // If a hero going straight from one point to another at a speed, from a time, has no car on it on the way
 wayIsFree :: method (bot: *Bot, from: Vector2, to: Vector2, start: f32, speed: f32, margin: f32) -> bool {
     distance := from.distance(to);
@@ -533,7 +554,8 @@ follow :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
         bot.next += 1;
     }
     if bot.next >= bot.plan.count {
-        if hero.isMoving { player.order(.stop); }
+        if hero.stats.momentum { bot.pace(game, me); }
+        else if hero.isMoving  { player.order(.stop); }
         bot.stats.noPlan += dt;
         bot.decision.mode = .noPlan;
         return;
@@ -541,11 +563,13 @@ follow :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
 
     waypoint := bot.plan[bot.next];
     if game.time < waypoint.depart - 0.02 {
-        if hero.isMoving { player.order(.stop); }       // Waiting for a gap
+        if hero.stats.momentum { bot.pace(game, me); }
+        else if hero.isMoving  { player.order(.stop); }       // Waiting for a gap
         bot.stats.waiting += dt;
         bot.decision.mode = .waiting;
         return;
     }
+    bot.pacing = false;
     bot.stats.walking += dt;
     bot.decision.mode = .walking;
     if !hero.isMoving || hero.target.xz().distance(waypoint.point) > 0.01 {
