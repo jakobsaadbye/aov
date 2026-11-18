@@ -118,7 +118,9 @@ the soundtrack. All of it is written in that file:
   it comes onto the field, casts, gets across, is run over, gets an enemy run over, and is told to move. A hero says a
   line at most every 4 seconds, only a third of the times it casts, and the hero the camera follows is heard at full
   volume.
-* **Moving.** Your hero answers a right-click with one of three short lines ("On my way!", "Brr, okay.", "Tick, tock."),
+* **Frosty doesn't talk:** he is a snow golem, so his lines are cute noises made with the sound effects API instead
+  (little squeaks, crunching snow, twinkling ice, a slushy splat when he melts).
+* **Moving.** Your hero answers a right-click with one of three short lines ("On my way!", "Meat that way?", "Tick, tock."),
   quietly and only to you, as in Dota 2: the first order after 6 seconds without one gets an answer, and the clicks in
   between don't, nor while it says something else.
 

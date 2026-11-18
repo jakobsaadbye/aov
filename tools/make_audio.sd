@@ -19,7 +19,8 @@
 // spells of a kind sound like each other (smoke and shadows hiss and breathe, ice crackles, time ticks and runs
 // backwards), and every hero has a voice, with its lines for when it comes onto the field, casts, gets across, is run
 // over, gets an enemy run over, and is told to move. The sounds are trimmed and made as loud as each other, and the voices are pitched and
-// put in a room for their hero, e.g a deeper ogre or a ghost in an echo. The four pieces of the soundtrack share a
+// put in a room for their hero, e.g a deeper ogre or a ghost in an echo. A hero that doesn't talk, Frosty the snow golem,
+// makes noises instead, with the sound effects API: its lines say what each noise is. The four pieces of the soundtrack share a
 // style, so they go together like the movements of one piece: the game plays them one at a time, with silence between.
 
 import net.http;
@@ -166,6 +167,7 @@ Voice :: struct {
     speed:     f32 = 1;
     stability: f32 = 0.4;
     room:      string;
+    noises:    string;      // A hero that doesn't talk makes noises: what they sound like. Its lines say what each is
 }
 
 Voices :: [
@@ -175,7 +177,7 @@ Voices :: [
     Voice{hero: "bjorn", id: "pNInz6obpgDQGcFmaJgB", pitch: -2.0, speed: 1.0, stability: 0.45, room: "echo"},
     Voice{hero: "butcher", id: "SOYHLrjzK2X1ezoPC6cr", pitch: -6.0, speed: 0.92, stability: 0.35, room: ""},
     Voice{hero: "ditte", id: "hpp4J3VqNfWAUOO0d1Us", pitch: 0.0, speed: 1.0, stability: 0.45, room: ""},
-    Voice{hero: "frosty", id: "N2lVS1w4EtoT3dr4eOWO", pitch: 1.0, speed: 1.0, stability: 0.35, room: ""},
+    Voice{hero: "frosty", noises: "A tiny, cute snow golem in a cartoon game: soft crunchy snow, squeaky packed snow, little twinkling ice chimes, and small happy high-pitched squeaks. No words, no speech, no music"},
     Voice{hero: "ghosty", id: "SAz9YHcvj6GT2YYXdXww", pitch: -1.0, speed: 0.9, stability: 0.3, room: "cave"},
     Voice{hero: "gudrun", id: "pFZP5JQG7iQjIQuC4Bku", pitch: 1.0, speed: 0.88, stability: 0.4, room: ""},
     Voice{hero: "hilda", id: "Xb7hH8MSUJpSbSDYk0k2", pitch: 0.0, speed: 1.0, stability: 0.4, room: ""},
@@ -266,17 +268,17 @@ Lines :: [
     Line{"ditte", .death, "Medic!"},
     Line{"ditte", .kill, "I'll call you a ride."},
     Line{"ditte", .kill, "That'll need stitches."},
-    Line{"frosty", .spawn, "Chill out, I'm here."},
-    Line{"frosty", .spawn, "Brr, let's go."},
-    Line{"frosty", .cast, "Freeze!"},
-    Line{"frosty", .cast, "Cool it!"},
-    Line{"frosty", .cast, "Snow way!"},
-    Line{"frosty", .crossed, "Ice and easy."},
-    Line{"frosty", .crossed, "Still frosty!"},
-    Line{"frosty", .death, "I'm melting!"},
-    Line{"frosty", .death, "Slush!"},
-    Line{"frosty", .kill, "Put on ice!"},
-    Line{"frosty", .kill, "Cold as ice."},
+    Line{"frosty", .spawn, "A happy little squeak as it pops out of a pile of fresh snow, with a soft snowy poof"},
+    Line{"frosty", .spawn, "A cheerful crunchy wobble and a tiny twinkle of ice"},
+    Line{"frosty", .cast, "A short excited squeak with a sparkle of frost"},
+    Line{"frosty", .cast, "A tiny puff of icy breath and a crisp crackle of ice"},
+    Line{"frosty", .cast, "A determined little squeak and a snowball crunch"},
+    Line{"frosty", .crossed, "A delighted giggly squeak and a happy jingle of icicles"},
+    Line{"frosty", .crossed, "A joyful little hop in the snow, crunch crunch, and a twinkle"},
+    Line{"frosty", .death, "A sad little squeak and a soft slushy splat as it melts"},
+    Line{"frosty", .death, "A tiny whimper and snow crumbling into slush"},
+    Line{"frosty", .kill, "A smug little squeak and a crisp icy chime"},
+    Line{"frosty", .kill, "A playful snowball thwack and a pleased squeak"},
     Line{"ghosty", .spawn, "I have returned..."},
     Line{"ghosty", .spawn, "Boo."},
     Line{"ghosty", .cast, "Through the walls..."},
@@ -451,9 +453,9 @@ Lines :: [
     Line{"ditte", .move, "On my way."},
     Line{"ditte", .move, "Coming through!"},
     Line{"ditte", .move, "Copy that."},
-    Line{"frosty", .move, "Brr, okay."},
-    Line{"frosty", .move, "Sliding over."},
-    Line{"frosty", .move, "Stay frosty."},
+    Line{"frosty", .move, "A tiny crunch of a step in fresh snow and a soft squeak"},
+    Line{"frosty", .move, "A quick, squeaky little slide on ice"},
+    Line{"frosty", .move, "A soft snowy pat-pat and a cute little squeak"},
     Line{"ghosty", .move, "I drift..."},
     Line{"ghosty", .move, "Whooo..."},
     Line{"ghosty", .move, "Floating..."},
@@ -579,6 +581,18 @@ prompt :: (effect: Effect) -> string {
     return fmt.sprint("%. %. Clean game sound effect, no music, no voices", effect.what, familyWords(effect.family));
 }
 
+// The noise of a hero that doesn't talk, e.g Frosty: what this one is, and what its noises sound like
+noisePrompt :: (line: Line) -> string {
+    return fmt.sprint("%. %", line.text, voiceOf(line.hero).noises);
+}
+
+// How long a noise is: an answer to a move order is short
+noiseSeconds :: (event: VoiceEvent) -> f32 {
+    if event == .move  { return 0.7; }
+    if event == .death { return 2; }
+    return 1.4;
+}
+
 // The lines of a hero for an event are numbered from 1
 lineName :: (index: int) -> string {
     line := Lines[index];
@@ -601,6 +615,7 @@ recipe :: (job: Job) -> string {
     }
     line := Lines[job.line];
     voice := voiceOf(line.hero);
+    if voice.noises.len > 0 { return fmt.sprint("% | % | sound", noisePrompt(line), noiseSeconds(line.event)); }
     return fmt.sprint("% | % % % % % | % | %", voice.id, voice.pitch, voice.speed, voice.stability, voice.room, Model, line.text, Model);
 }
 
@@ -640,6 +655,10 @@ makeAudio :: (job: Job) -> string, string {
     }
     line := Lines[job.line];
     voice := voiceOf(line.hero);
+    if voice.noises.len > 0 {
+        body := json.encode(SoundRequest{noisePrompt(line), noiseSeconds(line.event), 0.6}, json.SnakeCase);
+        return post("/sound-generation?output_format=mp3_44100_128", body);
+    }
     settings := VoiceSettings{stability: voice.stability, similarityBoost: 0.8, style: 0.45, useSpeakerBoost: true};
     body := json.encode(SpeechRequest{line.text, Model, settings}, json.SnakeCase);
     return post(fmt.sprint("/text-to-speech/%?output_format=mp3_44100_128", voice.id), body);
