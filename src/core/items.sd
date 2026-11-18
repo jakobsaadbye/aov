@@ -71,37 +71,37 @@ itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
         case .mirror     => ItemDefinition{"Mirror", "The next spell cast on the hero goes back to whoever cast it. Every 15 seconds", "item_mirror", {210, 230, 255, 255}, .mirror};
         case .umbrella   => ItemDefinition{"Umbrella", "Floats: leaps, flights and bounces stay up 40% longer, and the hero is knocked half as far", "item_umbrella", {230, 60, 80, 255}, Trait{airTime: 1.4}, Trait{knockTaken: 0.5}};
         case .bananaPeel => ItemDefinition{name: "Banana Peel", description: "Throws a banana peel at the cursor, up to 14 away. The first enemy that steps on it slips. 3 of them",
-            icon: "item_banana_peel", color: {250, 220, 60, 255}, action: Ability{name: "Banana Peel", icon: "item_banana_peel", sound: "item.banana", cooldown: 2,
+            icon: "item_banana_peel", color: {250, 220, 60, 255}, action: Ability{name: "Banana Peel", icon: "item_banana_peel", sound: "item.banana_peel", cooldown: 2,
             targeting: .point, cast: castBananaPeel, bot: .dropTrap, range: 14}, charges: 3};
         case .energyDrink => ItemDefinition{name: "Energy Drink", description: "70% faster for 3 seconds, then 35% slower for 2. Two cans",
-            icon: "item_energy_drink", color: {60, 140, 255, 255}, action: Ability{name: "Energy Drink", icon: "item_energy_drink", sound: "item.drink", cooldown: 1,
+            icon: "item_energy_drink", color: {60, 140, 255, 255}, action: Ability{name: "Energy Drink", icon: "item_energy_drink", sound: "item.energy_drink", cooldown: 1,
             cast: castEnergyDrink, bot: .speedUp, duration: 3, power: 1.7}, charges: 2};
         case .trafficCone => ItemDefinition{name: "Traffic Cone", description: "Puts a cone in the lane at the cursor, up to 10 away, for 8 seconds: the cars that come to it swerve into the lane beside it. A bus runs it over. 3 of them",
-            icon: "item_traffic_cone", color: {255, 120, 30, 255}, action: Ability{name: "Traffic Cone", icon: "item_traffic_cone", sound: "item.cone", cooldown: 3,
+            icon: "item_traffic_cone", color: {255, 120, 30, 255}, action: Ability{name: "Traffic Cone", icon: "item_traffic_cone", sound: "item.traffic_cone", cooldown: 3,
             targeting: .point, cast: castTrafficCone, bot: .stopCarsAhead, range: 10, duration: 8}, charges: 3};
         case .megaphone => ItemDefinition{name: "Megaphone", description: "Shouts at every enemy: 3 seconds more on all of their cooldowns. Every 25 seconds",
             icon: "item_megaphone", color: {240, 240, 240, 255}, action: Ability{name: "Megaphone", icon: "item_megaphone", sound: "item.megaphone", cooldown: 25,
             cast: castMegaphone, bot: .disableEnemy, range: 200, power: 3}};
         case .rubberChicken => ItemDefinition{name: "Rubber Chicken", description: "Squeaks: the enemies within 10 walk towards the hero for 1.2 seconds. Every 18 seconds",
-            icon: "item_rubber_chicken", color: {255, 230, 80, 255}, action: Ability{name: "Rubber Chicken", icon: "item_rubber_chicken", sound: "item.chicken", cooldown: 18,
+            icon: "item_rubber_chicken", color: {255, 230, 80, 255}, action: Ability{name: "Rubber Chicken", icon: "item_rubber_chicken", sound: "item.rubber_chicken", cooldown: 18,
             cast: castRubberChicken, bot: .disableEnemy, range: 10, duration: 1.2}};
         case .balloon => ItemDefinition{name: "Decoy Balloon", description: "A balloon that looks just like the hero walks on ahead for 4 seconds. Spells cast on the hero hit it first. Every 20 seconds",
             icon: "item_balloon", color: {255, 80, 120, 255}, trait: .decoysFirst, action: Ability{name: "Decoy Balloon", icon: "item_balloon", sound: "item.balloon", cooldown: 20,
             cast: castSplit, bot: .speedUp, duration: 4}};
         case .luckyDice => ItemDefinition{name: "Lucky Dice", description: "Casts a random ability of a random hero, at the cursor. Every 15 seconds",
-            icon: "item_lucky_dice", color: {245, 245, 245, 255}, action: Ability{name: "Lucky Dice", icon: "item_lucky_dice", sound: "item.dice", cooldown: 15,
+            icon: "item_lucky_dice", color: {245, 245, 245, 255}, action: Ability{name: "Lucky Dice", icon: "item_lucky_dice", sound: "item.lucky_dice", cooldown: 15,
             targeting: .point, cast: castLuckyDice, bot: .speedUp, range: 20}};
         case .remoteControl => ItemDefinition{name: "Remote Control", description: "Steers the car nearest the cursor, up to 20 away, two lanes over, away from the hero. Every 9 seconds",
-            icon: "item_remote_control", color: {70, 70, 80, 255}, action: Ability{name: "Remote Control", icon: "item_remote_control", sound: "ability.honk", cooldown: 9,
+            icon: "item_remote_control", color: {70, 70, 80, 255}, action: Ability{name: "Remote Control", icon: "item_remote_control", sound: "item.remote_control", cooldown: 9,
             targeting: .point, cast: castRemoteControl, bot: .stopCarsAhead, range: 20, count: 2}};
         case .stopwatch => ItemDefinition{name: "Stopwatch", description: "All the abilities of the hero are ready at once. Every 40 seconds",
-            icon: "item_stopwatch", color: {220, 220, 230, 255}, action: Ability{name: "Stopwatch", icon: "item_stopwatch", sound: "ability.rewind", cooldown: 40,
+            icon: "item_stopwatch", color: {220, 220, 230, 255}, action: Ability{name: "Stopwatch", icon: "item_stopwatch", sound: "item.stopwatch", cooldown: 40,
             cast: castStopwatch, bot: .none}};
         case .snowGlobe => ItemDefinition{name: "Snow Globe", description: "Shakes the snow globe: every car but the ambulances stops dead, and every enemy is frozen in time, for 1.5 seconds. Once",
-            icon: "item_snow_globe", color: {170, 220, 255, 255}, action: Ability{name: "Snow Globe", icon: "item_snow_globe", sound: "ability.freeze", cooldown: 1,
+            icon: "item_snow_globe", color: {170, 220, 255, 255}, action: Ability{name: "Snow Globe", icon: "item_snow_globe", sound: "item.snow_globe", cooldown: 1,
             cast: castSnowGlobe, bot: .stopCars, duration: 1.5}, charges: 1};
         case .portalGun => ItemDefinition{name: "Portal Gun", description: "Opens a portal where the hero stands and another at the cursor, up to 25 away, for 6 seconds. Anyone who walks into one comes out of the other. Every 22 seconds",
-            icon: "item_portal_gun", color: {90, 200, 255, 255}, action: Ability{name: "Portal Gun", icon: "item_portal_gun", sound: "ability.blink", cooldown: 22,
+            icon: "item_portal_gun", color: {90, 200, 255, 255}, action: Ability{name: "Portal Gun", icon: "item_portal_gun", sound: "item.portal_gun", cooldown: 22,
             targeting: .point, cast: castPortalGun, bot: .escape, range: 25, duration: 6}};
     };
 }

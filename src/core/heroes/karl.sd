@@ -12,7 +12,7 @@ defineKarl :: () -> HeroDefinition {
         range: 14, duration: LiftTime,
     });
     hero.abilities.add(Ability{
-        name: "Oil change", icon: "oil_change", sound: "ability.oil", cooldown: 8, targeting: .point, cast: castOilChange, bot: .dropTrap,
+        name: "Oil change", icon: "oil_change", sound: "ability.oil_change", cooldown: 8, targeting: .point, cast: castOilChange, bot: .dropTrap,
         description: "Pours a puddle of oil at the cursor, up to 12 away. A hero on it can't turn",
         range: 12, radius: 2.6,
     });

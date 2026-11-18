@@ -95,6 +95,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
         hero.cooldowns[slot] = ability.cooldown * hero.stats.cooldown;
     }
     if ability.sound.len > 0 { game.sounds.playAt(ability.sound, hero.position); }
+    game.say(index, .cast);
 }
 
 KnockbackSpeed   :: 30.0;

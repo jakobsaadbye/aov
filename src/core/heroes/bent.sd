@@ -14,7 +14,7 @@ defineBent :: () -> HeroDefinition {
         range: 5, duration: 2.5,
     });
     hero.abilities.add(Ability{
-        name: "Night bus", icon: "night_bus", sound: "ability.honk", cooldown: 16, targeting: .point, cast: castNightBus, bot: .none,
+        name: "Night bus", icon: "night_bus", sound: "ability.night_bus", cooldown: 16, targeting: .point, cast: castNightBus, bot: .none,
         description: "Sends his bus down the lane at the cursor, from the far end of the road. It is slow, and the cars behind it can't get past, so the lane behind it is empty. In front of it, it is a bus",
         range: 200, power: 5,
     });

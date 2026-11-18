@@ -14,7 +14,7 @@ defineHilda :: () -> HeroDefinition {
         count: 2, duration: 3,
     });
     hero.abilities.add(Ability{
-        name: "Wave through", icon: "wave_through", sound: "ability.honk", cooldown: 10, targeting: .point, cast: castWaveThrough,
+        name: "Wave through", icon: "wave_through", sound: "ability.wave_through", cooldown: 10, targeting: .point, cast: castWaveThrough,
         description: "Waves the cars of the three lanes at the cursor, up to 16 away, on: they drive two and a half times as fast for 2.5 seconds. What is in their way has less time to get out of it, and the lane is soon empty behind them",
         range: 16, count: 1, power: 2.5, duration: 2.5,
     });

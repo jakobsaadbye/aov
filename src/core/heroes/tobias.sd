@@ -9,7 +9,7 @@ use raylib;
 defineTobias :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Tobias", title: "the Tourist", color: {240, 120, 150, 255}, width: 2.5, height: 4.2, moveSpeed: 8, hitRadius: 0.75, maxHealth: 30};
     hero.abilities.add(Ability{
-        name: "Flash photo", icon: "flash_photo", sound: "ability.flash", cooldown: 10, targeting: .point, cast: castFlash, bot: .stopCarsAhead,
+        name: "Flash photo", icon: "flash_photo", sound: "ability.flash_photo", cooldown: 10, targeting: .point, cast: castFlash, bot: .stopCarsAhead,
         description: "A photo towards the cursor: the cars in a cone 16 long brake for 1.5 seconds, and the enemies in it are blinded for 2",
         range: 16, duration: 1.5, power: 2,
     });
