@@ -183,6 +183,8 @@ Hero :: struct {
     harmedBy:     int = -1;             // The player that last hooked, bashed or locked it, who gets the kill if a car
     harmedAt:     f32;                  // gets it soon after: at this time of the game
     displacement: ?Displacement;
+    attracting:   int = -1;         // The enemy Magnus pulled in last, and when, for the field drawn between them
+    attractedAt:  f32 = -100;
 
     // The way back for a rewind: a ring of samples, the newest at trailNext - 1
     trail:      [RewindSamples]RewindSample;
