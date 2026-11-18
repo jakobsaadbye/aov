@@ -46,6 +46,8 @@ main :: () {
     testBotCrosses();
     testRecording();
     testGenomes();
+    fmt.print("testCmaes");
+    testCmaes();
     testKills();
     testConsole();
     testItems();
@@ -702,6 +704,33 @@ testGenomes :: () {
     }
     expert := core.Difficulty.expert.handicap().apply(best);
     for gene in bots.Gene.values { assert(near(expert.get(gene), best.get(gene))); }
+}
+
+// CMA-ES finds the top of a hill: every gene 70% of the way through its range is the best, and it gets near there
+testCmaes :: () {
+    rng := random.newRandom(8);
+    es := bots.newCmaes(bots.defaultGenome(), 12, 0.2);
+    for 0..120 {
+        drawn := es.draw(&rng);
+        defer drawn.free();
+        fitness: [..]f32;
+        defer fitness.free();
+        for genome in drawn {
+            value: f32 = 0;
+            for gene in bots.Gene.values {
+                range := bots.GeneRanges[gene];
+                off := (genome.get(gene) - range.low) / (range.high - range.low) - 0.7;
+                value -= off * off;
+            }
+            fitness.add(value);
+        }
+        es.learn(fitness);
+    }
+    best := es.best();
+    for gene in bots.Gene.values {
+        range := bots.GeneRanges[gene];
+        assert(math.fabsf((best.get(gene) - range.low) / (range.high - range.low) - 0.7) < 0.05);
+    }
 }
 
 // A car that gets an enemy just after a bash is a kill of the basher

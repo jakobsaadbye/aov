@@ -7,6 +7,7 @@
 //     saad run bot_arena.sd -- --peaceful                      they don't cast on each other: how well they cross
 //     saad run bot_arena.sd -- --difficulty normal             bots of a difficulty (expert when not given)
 //     saad run bot_arena.sd -- --default                       with the hand tuned genes instead of the trained ones
+//     saad run bot_arena.sd -- --genome other.json             with the genome of another file, e.g of bot_train.sd --out
 //     saad run bot_arena.sd -- --gene leadTime=0.2             with a gene changed, after --default when that is given
 //     saad run bot_arena.sd -- --level 5                       the traffic starts at level 5 (6 crossings in)
 //     saad run bot_arena.sd -- --bots 1 --trace > trace.txt    what a bot does each frame; tools/plot_bot.py draws it
@@ -57,6 +58,11 @@ main :: () {
             case "--nododge"  { bots.noDodge = true; }
             case "--trace"    { bots.debugTrace = true; bots.debugHits = true; }
             case "--default"  { bots.useGenome(bots.defaultGenome()); }     // The hand tuned genes, not the trained ones
+            case "--genome" {
+                genome := bots.readGenome(next);
+                if genome.hasValue() { bots.useGenome(genome.value()); } else { fmt.print("No genome in '%'", next); }
+                i += 1;
+            }
             case "--gene" {
                 // e.g --gene leadTime=0.2: one gene of the genome they play with, changed
                 genome := bots.trainedGenome();

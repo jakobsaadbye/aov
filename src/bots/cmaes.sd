@@ -1,0 +1,223 @@
+namespace bots;
+
+// CMA-ES (Covariance Matrix Adaptation Evolution Strategy, Hansen 2001): the training of bot_train.sd --method cmaes.
+//
+// Instead of a population of genomes that have children, it keeps a cloud that genomes are drawn from: a normal
+// distribution with a middle (the best guess), a size (sigma) and a shape (the covariance C). Each generation it draws
+// lambda genomes, they play, and from the order they came in it
+//
+//   * moves the middle towards the better half, the best weighing the most
+//   * stretches the shape in the directions that the steps that worked took, so it learns which genes go together, e.g
+//     that more survive is only better with less leadTime
+//   * makes the cloud bigger while it keeps going the same way, and smaller when it goes back and forth, near the best
+//
+// It only uses the order of the genomes, not how far apart their fitness is, so a lucky game counts for less. The genes
+// are scaled to 0..1 by their ranges, and kept in them.
+
+import math;
+import random;
+
+GeneCount :: Gene.count;
+
+Cmaes :: struct {
+    n:       int;
+    lambda:  int;                       // Genomes drawn each generation
+    mu:      int;                       // The better ones that move it
+    weights: [64]f64;                   // Of the mu best, the best first
+    muEff:   f64;
+    cc, cs, c1, cmu, damps, chiN: f64;
+
+    mean:    [GeneCount]f64;            // 0..1 for each gene
+    sigma:   f64;
+    C:       [GeneCount][GeneCount]f64;
+    B:       [GeneCount][GeneCount]f64; // The eigenvectors of C, in its columns
+    D:       [GeneCount]f64;            // and the square roots of its eigenvalues
+    pc:      [GeneCount]f64;            // The ways it has gone lately: for the shape
+    ps:      [GeneCount]f64;            // and for the size
+    generation: int;
+
+    drawn:   [64][GeneCount]f64;        // The genomes of this generation, scaled
+}
+
+newCmaes :: (start: Genome, lambda: int, sigma: f64) -> Cmaes {
+    es: Cmaes;
+    es.n = GeneCount as int;
+    n := es.n;
+    es.lambda = math.min(lambda, 64);
+    es.mu = es.lambda / 2;
+    sum: f64 = 0;
+    for i in 0..es.mu {
+        es.weights[i] = math.log(es.mu as f64 + 0.5) - math.log(i as f64 + 1);
+        sum += es.weights[i];
+    }
+    squares: f64 = 0;
+    for i in 0..es.mu {
+        es.weights[i] /= sum;
+        squares += es.weights[i] * es.weights[i];
+    }
+    es.muEff = 1 / squares;
+    nf := n as f64;
+    es.cc = (4 + es.muEff / nf) / (nf + 4 + 2 * es.muEff / nf);
+    es.cs = (es.muEff + 2) / (nf + es.muEff + 5);
+    es.c1 = 2 / ((nf + 1.3) * (nf + 1.3) + es.muEff);
+    es.cmu = math.min(1 - es.c1, 2 * (es.muEff - 2 + 1 / es.muEff) / ((nf + 2) * (nf + 2) + es.muEff));
+    es.damps = 1 + 2 * math.max(0, math.sqrt((es.muEff - 1) / (nf + 1)) - 1) + es.cs;
+    es.chiN = math.sqrt(nf) * (1 - 1 / (4 * nf) + 1 / (21 * nf * nf));
+
+    scaleInto(start, es.mean);
+    es.sigma = sigma;
+    for i in 0..n {
+        es.C[i][i] = 1;
+        es.B[i][i] = 1;
+        es.D[i] = 1;
+    }
+    return es;
+}
+
+// A genome scaled to 0..1 by the ranges of its genes, and back
+scaleInto :: (genome: Genome, out: []f64) {
+    for gene in Gene.values {
+        range := GeneRanges[gene];
+        out[gene] = ((genome.get(gene) - range.low) / (range.high - range.low)) as f64;
+    }
+}
+
+unscaled :: (x: []f64) -> Genome {
+    genome: Genome;
+    for gene in Gene.values {
+        range := GeneRanges[gene];
+        genome.set(gene, range.low + (x[gene] as f32) * (range.high - range.low));
+    }
+    return genome;
+}
+
+// The genomes of the next generation: lambda of them, drawn from the cloud, in the ranges of the genes
+draw :: method (es: *Cmaes, rng: *random.Random) -> [..]Genome {
+    genomes: [..]Genome;
+    for k in 0..es.lambda {
+        z: [GeneCount]f64;
+        for i in 0..es.n { z[i] = rng.gauss(0, 1) * es.D[i]; }
+        for i in 0..es.n {
+            step: f64 = 0;
+            for j in 0..es.n { step += es.B[i][j] * z[j]; }
+            es.drawn[k][i] = math.clamp(es.mean[i] + es.sigma * step, 0, 1);
+        }
+        genomes.add(unscaled(es.drawn[k]));
+    }
+    return genomes;
+}
+
+// Learns from how the genomes of draw did: fitness[k] of genome k, the higher the better
+learn :: method (es: *Cmaes, fitness: []f32) {
+    n := es.n;
+    order: [..]int;
+    defer order.free();
+    for k in 0..es.lambda { order.add(k as int); }
+    // The fittest first
+    for a in 1..order.count {
+        at := a;
+        while at > 0 && fitness[order[at]] > fitness[order[at - 1]] {
+            order.swap(at, at - 1);
+            at -= 1;
+        }
+    }
+
+    old := es.mean;
+    for i in 0..n {
+        es.mean[i] = 0;
+        for k in 0..es.mu { es.mean[i] += es.weights[k] * es.drawn[order[k]][i]; }
+    }
+    // The step the middle took, in units of sigma, and the same with the shape taken out (C^-1/2)
+    step: [GeneCount]f64;
+    for i in 0..n { step[i] = (es.mean[i] - old[i]) / es.sigma; }
+    whitened: [GeneCount]f64;
+    for j in 0..n {
+        dot: f64 = 0;
+        for i in 0..n { dot += es.B[i][j] * step[i]; }
+        dot /= math.max(es.D[j], 0.000000000001);
+        for i in 0..n { whitened[i] += es.B[i][j] * dot; }
+    }
+
+    psNorm: f64 = 0;
+    for i in 0..n {
+        es.ps[i] = (1 - es.cs) * es.ps[i] + math.sqrt(es.cs * (2 - es.cs) * es.muEff) * whitened[i];
+        psNorm += es.ps[i] * es.ps[i];
+    }
+    psNorm = math.sqrt(psNorm);
+    es.generation += 1;
+    keep := psNorm / math.sqrt(1 - math.pow(1 - es.cs, 2 * es.generation as f64)) / es.chiN < 1.4 + 2 / (n as f64 + 1);
+    hsig: f64 = 0;
+    if keep { hsig = 1; }
+    for i in 0..n {
+        es.pc[i] = (1 - es.cc) * es.pc[i] + hsig * math.sqrt(es.cc * (2 - es.cc) * es.muEff) * step[i];
+    }
+
+    // The shape: what it was, the way it has gone lately, and the steps of the better half
+    for i in 0..n {
+        for j in 0..i + 1 {
+            ranked: f64 = 0;
+            for k in 0..es.mu {
+                x := es.drawn[order[k]];
+                ranked += es.weights[k] * (x[i] - old[i]) * (x[j] - old[j]) / (es.sigma * es.sigma);
+            }
+            value := (1 - es.c1 - es.cmu) * es.C[i][j]
+                + es.c1 * (es.pc[i] * es.pc[j] + (1 - hsig) * es.cc * (2 - es.cc) * es.C[i][j])
+                + es.cmu * ranked;
+            es.C[i][j] = value;
+            es.C[j][i] = value;
+        }
+    }
+    es.sigma *= math.exp((es.cs / es.damps) * (psNorm / es.chiN - 1));
+    es.sigma = math.clamp(es.sigma, 0.005, 0.5);
+    es.decompose();
+}
+
+// The middle of the cloud: the best guess, which is what training keeps
+best :: method (es: *Cmaes) -> Genome {
+    return unscaled(es.mean);
+}
+
+// B and D from C, by Jacobi rotations: C is small (a row for each gene) and symmetric
+@private
+decompose :: method (es: *Cmaes) {
+    n := es.n;
+    a := es.C;
+    v: [GeneCount][GeneCount]f64;
+    for i in 0..n { v[i][i] = 1; }
+    for 0..60 {
+        off: f64 = 0;
+        for i in 0..n { for j in i + 1..n { off += a[i][j] * a[i][j]; } }
+        if off < 0.000000000000000001 { break; }
+        for p in 0..n {
+            for q in p + 1..n {
+                if math.fabs(a[p][q]) < 0.000000000000001 { continue; }
+                theta := (a[q][q] - a[p][p]) / (2 * a[p][q]);
+                sign: f64 = 1;
+                if theta < 0 { sign = -1; }
+                t := sign / (math.fabs(theta) + math.sqrt(theta * theta + 1));
+                c := 1 / math.sqrt(t * t + 1);
+                s := t * c;
+                for k in 0..n {
+                    akp := a[k][p];
+                    akq := a[k][q];
+                    a[k][p] = c * akp - s * akq;
+                    a[k][q] = s * akp + c * akq;
+                }
+                for k in 0..n {
+                    apk := a[p][k];
+                    aqk := a[q][k];
+                    a[p][k] = c * apk - s * aqk;
+                    a[q][k] = s * apk + c * aqk;
+                }
+                for k in 0..n {
+                    vkp := v[k][p];
+                    vkq := v[k][q];
+                    v[k][p] = c * vkp - s * vkq;
+                    v[k][q] = s * vkp + c * vkq;
+                }
+            }
+        }
+    }
+    es.B = v;
+    for i in 0..n { es.D[i] = math.sqrt(math.max(a[i][i], 0.00000000000000000001)); }
+}

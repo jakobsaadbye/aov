@@ -41,6 +41,8 @@ Config :: struct {
     fromDefault: bool;
     playoff:     int = 32;          // Games each finalist plays at the end
     levels:      int = 6;           // The traffic starts at a level up to this, at random each round
+    method:      string = "cmaes";  // cmaes, or ga for the genetic algorithm
+    sigma:       f64 = 0.15;        // How big the cloud of CMA-ES is at first, in the range of a gene
     out:         string;
 }
 
@@ -145,6 +147,8 @@ readConfig :: () -> Config {
             case "--from-default" { config.fromDefault = true; }
             case "--playoff"      { config.playoff = (next.toInt() ?? 32) as int; i += 1; }
             case "--levels"       { config.levels = (next.toInt() ?? 6) as int; i += 1; }
+            case "--method"       { config.method = next; i += 1; }
+            case "--sigma"        { config.sigma = next.toFloat() ?? 0.15; i += 1; }
             case "--out"          { config.out = next; i += 1; }
             else                  { fmt.print("Unknown option '%'", args[i]); }
         }
@@ -176,69 +180,55 @@ main :: () {
     hallOfFame: [..]bots.Genome;
     hallOfFame.add(start);
 
-    fmt.print("Training % generations of %, % games of % s each, traffic from level 0 to %, on % threads", config.generations, config.population, config.games, config.seconds, config.levels, config.threads);
+    cmaes := config.method == "cmaes";
+    es: bots.Cmaes;
+    if cmaes { es = bots.newCmaes(start, population.count as int, config.sigma); }
+
+    fmt.print("Training % generations of %, % games of % s each, traffic from level 0 to %, on % threads, with %", config.generations, config.population, config.games, config.seconds, config.levels, config.threads, config.method);
     best: Candidate;
     for generation in 0..config.generations {
         started := time.clock();
-        for *candidate in population { *candidate = Candidate{genome: candidate.genome}; }
-
-        // Each round, the candidates in a new order, three to a game, with one of the hall of fame
-        jobs: [..]GameJob;
-        defer jobs.free();
-        order: [..]int;
-        defer order.free();
-        for i in 0..population.count { order.add(i as int); }
-        for round in 0..config.games {
-            rng.shuffle(order);
-            seed := config.seed * 1000003 + (generation * 1000 + round) as u64;     // The same for every game of the round
-            level := rng.between(0, config.levels);
-            for g in 0..population.count / Candidates {
-                job := GameJob{seed: seed, seconds: config.seconds, level: level};
-                for k in 0..Candidates {
-                    index := order[g * Candidates + k];
-                    job.genomes[k] = population[index].genome;
-                    job.candidates[k] = index;
-                }
-                job.genomes[Candidates] = rng.choice(hallOfFame);
-                job.candidates[Candidates] = -1;
-                jobs.add(job);
-            }
+        if cmaes {
+            drawn := es.draw(&rng);
+            defer drawn.free();
+            for genome, i in drawn { population[i] = Candidate{genome: genome}; }
         }
-        playAll(jobs, config.threads);
-
-        for job in jobs {
-            for k in 0..PerGame {
-                index := job.candidates[k];
-                if index < 0 { continue; }
-                candidate := &population[index];
-                candidate.fitness += job.fitness[k];
-                candidate.games += 1;
-                candidate.crossings += job.crossings[k];
-                candidate.deaths += job.deaths[k];
-                candidate.kills += job.kills[k];
-            }
+        evaluate(&population, generation, config, hallOfFame, &rng);
+        if cmaes {
+            fitness: [..]f32;
+            defer fitness.free();
+            for candidate in population { fitness.add(candidate.fitness); }
+            es.learn(fitness);
         }
-        for *candidate in population { candidate.fitness /= math.max(candidate.games, 1) as f32; }
-        population.sort();        // The fittest first, see operator < below
+        ranked := population.copy();
+        defer ranked.free();
+        ranked.sort();        // The fittest first, see operator < below
 
-        best = population[0];
+        best = ranked[0];
         average: f32 = 0;
-        for candidate in population { average += candidate.fitness; }
-        average /= population.count as f32;
-        fmt.print("Generation %: best % (each game % across, % run over, % kills), average %, % s",
+        for candidate in ranked { average += candidate.fitness; }
+        average /= ranked.count as f32;
+        spread := "";
+        if cmaes { spread = fmt.sprint(", sigma %", fmt.fixed(es.sigma as f32, 3)); }
+        fmt.print("Generation %: best % (each game % across, % run over, % kills), average %%, % s",
             generation + 1, fmt.fixed(best.fitness, 2),
             fmt.fixed(best.crossings as f32 / best.games as f32, 2), fmt.fixed(best.deaths as f32 / best.games as f32, 2),
-            fmt.fixed(best.kills as f32 / best.games as f32, 2), fmt.fixed(average, 2), fmt.fixed((time.clock() - started) as f32, 1));
-        save(config.out, best, generation + 1);
-        if (generation + 1) % 5 == 0 { hallOfFame.add(best.genome); }
+            fmt.fixed(best.kills as f32 / best.games as f32, 2), fmt.fixed(average, 2), spread, fmt.fixed((time.clock() - started) as f32, 1));
 
+        // CMA-ES keeps the middle of its cloud, which is the best guess: the best of a generation is mostly the luckiest
+        kept := best;
+        if cmaes { kept = Candidate{genome: es.best(), fitness: average}; }
+        save(config.out, kept, generation + 1);
+        if (generation + 1) % 5 == 0 { hallOfFame.add(kept.genome); }
+
+        if cmaes { continue; }
         // The next generation: the elite as they are, and children of parents picked by tournaments
         next: [..]Candidate;
-        for i in 0..config.elite { next.add(Candidate{genome: population[i].genome}); }
+        for i in 0..config.elite { next.add(Candidate{genome: ranked[i].genome}); }
         strength := math.lerp(0.15, 0.04, generation as f32 / math.max(config.generations - 1, 1) as f32);
         while next.count < population.count {
-            a := tournament(population, config.tournament, &rng);
-            b := tournament(population, config.tournament, &rng);
+            a := tournament(ranked, config.tournament, &rng);
+            b := tournament(ranked, config.tournament, &rng);
             child := bots.crossover(a, b, &rng);
             child = bots.mutate(child, &rng, 0.25, strength);
             next.add(Candidate{genome: child});
@@ -247,13 +237,19 @@ main :: () {
         population = next;
     }
 
+    if config.playoff <= 0 {
+        fmt.print("Done, without a playoff. The genome of the last generation is in %", config.out);
+        return;
+    }
+
     // The playoff: the best of each generation is the one that was luckiest in a few games, so the hall of fame, the
     // elite and the hand tuned genes play many games against each other, and the best of those is the one that is kept
     finalists: [..]bots.Genome;
     defer finalists.free();
     finalists.add(bots.defaultGenome());
     for genome in hallOfFame { finalists.add(genome); }
-    for i in 0..config.elite { finalists.add(population[i].genome); }
+    if cmaes { finalists.add(es.best()); }
+    else     { for i in 0..config.elite { finalists.add(population[i].genome); } }
     results := playoff(finalists, config.playoff, config, &rng);
     defer results.free();
     fmt.print("Playoff of % genomes, % games each:", finalists.count, config.playoff);
@@ -266,6 +262,49 @@ main :: () {
     }
     save(config.out, results[0], config.generations);
     fmt.print("Done. The best genome is in %", config.out);
+}
+
+// The games of a generation: each round, the candidates in a new order, three to a game, with one of the hall of fame.
+// Every game of a round has the same seed, and the level of its traffic comes from the seed, so two ways of training
+// play the same games. Each candidate's fitness is the mean of its games
+evaluate :: (population: *[..]Candidate, generation: int, config: Config, hallOfFame: []bots.Genome, rng: *random.Random) {
+    for *candidate in *population { *candidate = Candidate{genome: candidate.genome}; }
+    jobs: [..]GameJob;
+    defer jobs.free();
+    order: [..]int;
+    defer order.free();
+    for i in 0..population.count { order.add(i as int); }
+    for round in 0..config.games {
+        rng.shuffle(order);
+        seed := config.seed * 1000003 + (generation * 1000 + round) as u64;
+        level := ((seed * 2654435761) >> 7) % (config.levels as u64 + 1);
+        for g in 0..population.count / Candidates {
+            job := GameJob{seed: seed, seconds: config.seconds, level: level as int};
+            for k in 0..Candidates {
+                index := order[g * Candidates + k];
+                job.genomes[k] = (*population)[index].genome;
+                job.candidates[k] = index;
+            }
+            job.genomes[Candidates] = rng.choice(hallOfFame);
+            job.candidates[Candidates] = -1;
+            jobs.add(job);
+        }
+    }
+    playAll(jobs, config.threads);
+
+    for job in jobs {
+        for k in 0..PerGame {
+            index := job.candidates[k];
+            if index < 0 { continue; }
+            candidate := &(*population)[index];
+            candidate.fitness += job.fitness[k];
+            candidate.games += 1;
+            candidate.crossings += job.crossings[k];
+            candidate.deaths += job.deaths[k];
+            candidate.kills += job.kills[k];
+        }
+    }
+    for *candidate in *population { candidate.fitness /= math.max(candidate.games, 1) as f32; }
 }
 
 // Each finalist plays games against three others, picked at random, and their fitness is the mean of their games

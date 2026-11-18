@@ -58,18 +58,22 @@ bestGenome: ?Genome;
 // The best genome there is: the trained one, read once, or the hand tuned genes
 trainedGenome :: () -> Genome {
     if bestGenome.hasValue() { return bestGenome.value(); }
-    genome := defaultGenome();
-    path := tprint("%%", dataFolder(), TrainedGenomesFile);
-    if os.fileExists(path) {
-        text, err := os.readFile(path);
-        if err == null {
-            trained, decodeErr := json.decode<TrainedGenomes>(text);
-            if decodeErr == null { genome = fromJson(trained.best); }
-            else { fmt.print("WARNING: % isn't a file of genomes: %", path, decodeErr.message); }
-        }
-    }
+    genome := readGenome(tprint("%%", dataFolder(), TrainedGenomesFile)) ?? defaultGenome();
     bestGenome = genome;
     return genome;
+}
+
+// The best genome of a file of trained genomes, e.g one that bot_train.sd --out wrote
+readGenome :: (path: string) -> ?Genome {
+    if !os.fileExists(path) { return null; }
+    text, err := os.readFile(path);
+    if err != null { return null; }
+    trained, decodeErr := json.decode<TrainedGenomes>(text);
+    if decodeErr != null {
+        fmt.print("WARNING: % isn't a file of genomes: %", path, decodeErr.message);
+        return null;
+    }
+    return fromJson(trained.best);
 }
 
 // Uses this genome as the best one, e.g one that is being trained
