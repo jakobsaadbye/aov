@@ -1065,38 +1065,227 @@ def make_chain_link():
     print(f"models/chain_link.obj  {tris} triangles")
 
 
+def frosty_clips():
+    """Frosty: he sways and bobs on the spot, waddles when he walks, claps his mittens over his head and flings them
+    out for his cold snap, and crouches and hugs himself as his igloo goes up round him. The face of each, and the
+    swing of his pompom and his scarf"""
+    from rig import clip, layered
+    from anatomy import once
+    stand = {"upper_r": (0, 0, 12), "upper_l": (0, 0, -12), "fore_r": (-20, 0, 0), "fore_l": (-20, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0, 0)}}
+    sway_r = {"upper_r": (-6, 0, 16), "upper_l": (6, 0, -8), "fore_r": (-26, 0, 0), "fore_l": (-14, 0, 0), "spine": (0, 0, -4), "chest": (0, 0, -3),
+              "head": (4, 0, 8), "hips": {"rot": (0, 0, -2), "pos": (0.03, 0.04, 0)}}
+    sway_l = {"upper_r": (6, 0, 8), "upper_l": (-6, 0, -16), "fore_r": (-14, 0, 0), "fore_l": (-26, 0, 0), "spine": (0, 0, 4), "chest": (0, 0, 3),
+              "head": (4, 0, -8), "hips": {"rot": (0, 0, 2), "pos": (-0.03, 0.0, 0)}}
+
+    def step(s):
+        return {"thigh_r": (-30 * s, 0, 0), "thigh_l": (30 * s, 0, 0), "shin_r": (10, 0, 0), "shin_l": (10, 0, 0),
+                "upper_r": (28 * s, 0, 18), "upper_l": (-28 * s, 0, -18), "fore_r": (-30, 0, 0), "fore_l": (-30, 0, 0),
+                "spine": (6, 0, 6 * s), "chest": (2, 0, 4 * s), "head": (-4, 0, -8 * s), "hips": {"rot": (0, -6 * s, 8 * s), "pos": (0.06 * s, -0.04, 0)}}
+
+    def lift(s):
+        return {"thigh_r": (-35 if s > 0 else 5, 0, 0), "thigh_l": (5 if s > 0 else -35, 0, 0), "shin_r": (30 if s > 0 else 5, 0, 0),
+                "shin_l": (5 if s > 0 else 30, 0, 0), "upper_r": (0, 0, 22), "upper_l": (0, 0, -22), "fore_r": (-30, 0, 0), "fore_l": (-30, 0, 0),
+                "spine": (6, 0, 0), "chest": (2, 0, 0), "head": (-4, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0.1, 0)}}
+    # Cold snap: up on his toes, mittens clapped over his head, then flung out wide as the cold goes out
+    clap = {"upper_r": (-160, 0, -42), "upper_l": (-160, 0, 42), "fore_r": (-25, 0, -20), "fore_l": (-25, 0, 20), "spine": (-6, 0, 0), "chest": (-8, 0, 0),
+            "head": (-14, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0.14, 0)}}
+    fling = {"upper_r": (-30, 0, 85), "upper_l": (-30, 0, -85), "fore_r": (-5, 0, 0), "fore_l": (-5, 0, 0), "spine": (8, 0, 0), "chest": (6, 0, 0),
+             "head": (6, 0, 0), "thigh_r": (-10, 0, 8), "thigh_l": (-10, 0, -8), "shin_r": (14, 0, 0), "shin_l": (14, 0, 0),
+             "hips": {"rot": (0, 0, 0), "pos": (0, -0.12, 0)}}
+    # Igloo: down on his haunches, his arms round himself
+    hug = {"upper_r": (-60, 0, -35), "upper_l": (-60, 0, 35), "fore_r": (-80, 0, 0), "fore_l": (-80, 0, 0), "spine": (14, 0, 0), "chest": (8, 0, 0),
+           "head": (-10, 0, 0), "thigh_r": (-40, 0, 0), "thigh_l": (-40, 0, 0), "shin_r": (50, 0, 0), "shin_l": (50, 0, 0),
+           "hips": {"rot": (8, 0, 0), "pos": (0, -0.25, 0)}}
+    body = {
+        "idle": clip(2.4, (0.0, stand), (0.6, sway_r), (1.2, stand), (1.8, sway_l)),
+        "walk": clip(0.8, (0.0, step(1)), (0.2, lift(-1)), (0.4, step(-1)), (0.6, lift(1))),
+        "freeze": once(0.8, (0.0, stand), (0.18, clap), (0.26, clap), (0.4, fling), (0.62, fling), (0.8, stand)),
+        "igloo": once(0.5, (0.0, stand), (0.25, hug), (0.5, hug)),
+    }
+    calm, blink = face_pose(jaw=0, brow=0, lid=-25), face_pose(jaw=0, brow=0, lid=100)
+    happy = face_pose(jaw=8, brow=-12, lid=-20, lift=0.03)
+    puff, blow = face_pose(jaw=0, brow=10, lid=40), face_pose(jaw=18, brow=-6, lid=-25, lift=0.03)
+    cosy = face_pose(jaw=4, brow=-10, lid=90, lift=0.02)
+    face = {
+        "idle": clip(2.4, (0.0, calm), (0.9, calm), (0.95, blink), (1.02, calm), (1.6, happy), (2.0, happy), (2.3, calm)),
+        "walk": clip(0.8, (0.0, happy), (0.4, face_pose(jaw=5, brow=-8, lid=-20, lift=0.02))),
+        "freeze": once(0.8, (0.0, calm), (0.18, puff), (0.4, blow), (0.62, blow), (0.8, happy)),
+        "igloo": once(0.5, (0.0, calm), (0.25, cosy), (0.5, cosy)),
+    }
+    # The pompom and the scarf lag behind him
+    flap = {
+        "idle": clip(2.4, (0.0, {"pompom": (0, 0, 0), "scarf_1": (0, 0, 0)}), (0.7, {"pompom": (0, 0, -12), "scarf_1": (4, 0, -6), "scarf_2": (0, 0, -8)}),
+                     (1.3, {"pompom": (0, 0, 0), "scarf_1": (0, 0, 0)}), (1.9, {"pompom": (0, 0, 12), "scarf_1": (4, 0, 6), "scarf_2": (0, 0, 8)})),
+        "walk": clip(0.8, (0.0, {"pompom": (10, 0, -16), "scarf_1": (-10, 0, -10), "scarf_2": (-14, 0, -6)}), (0.2, {"pompom": (-12, 0, 0), "scarf_1": (-20, 0, 0), "scarf_2": (-8, 0, 0)}),
+                     (0.4, {"pompom": (10, 0, 16), "scarf_1": (-10, 0, 10), "scarf_2": (-14, 0, 6)}), (0.6, {"pompom": (-12, 0, 0), "scarf_1": (-20, 0, 0), "scarf_2": (-8, 0, 0)})),
+        "freeze": once(0.8, (0.0, {"pompom": (0, 0, 0)}), (0.18, {"pompom": (20, 0, 0), "scarf_1": (10, 0, 0)}), (0.4, {"pompom": (-25, 0, 0), "scarf_1": (-30, 0, 0), "scarf_2": (-20, 0, 0)}),
+                       (0.8, {"pompom": (0, 0, 0), "scarf_1": (0, 0, 0), "scarf_2": (0, 0, 0)})),
+        "igloo": once(0.5, (0.0, {"pompom": (0, 0, 0)}), (0.25, {"pompom": (-20, 0, 0), "scarf_1": (15, 0, 0)}), (0.5, {"pompom": (-10, 0, 0), "scarf_1": (10, 0, 0)})),
+    }
+    clips_ = {name: layered(body[name], face[name], flap[name]) for name in body}
+    for name in body:
+        still = clip(body[name]["duration"], (0.0, stand))
+        still["once"] = body[name].get("once", False)
+        clips_[name + "_face"] = layered(still, face[name], flap["idle"])
+    return clips_
+
+
 def make_frosty():
-    """A snowman with a temper: lumpy snowballs, a coal scowl, a crooked carrot nose, a battered top hat, a long knitted
-    scarf, mittens on his stick arms"""
-    m = Model("frosty", size=1024, light=0.38, ao=1.0, detail=0.1)
-    s = snow()
-    m.add(blob((0, 1.0, 0), (1.05, 0.95, 1.0), (0.85, 0.9), nu=26, nv=14), s)
-    m.add(blob((0, 2.35, 0), (0.8, 0.75, 0.76), (0.85, 0.9), nu=24, nv=12), s)
-    m.add(sphere((0, 3.42, 0.02), 0.6, nu=24, nv=14), s, weight=2.5)
-    coal = color((0.1, 0.1, 0.11))
+    """Frosty, a little snow golem: a big round belly of packed snow on two stubby snowball feet, a big round head with
+    shiny coal eyes, rosy cheeks, a short carrot nose, twig brows and a smile of coal pebbles, chunky snow arms in green
+    mittens, a red bobble hat with a pompom that bounces, a long knitted scarf whose tail swings, and shards of blue ice
+    growing out of his back, where his cold comes from. Rigged, with clips for standing, waddling, his cold snap and
+    his igloo, written as models/frosty.glb too"""
+    from anatomy import joints, make_rig
+    from rig import write_glb
+    m = Model("frosty", size=1024, light=0.5, ao=1.2, detail=0.07)
+    J = joints(hips=(0, 1.0, 0), spine=(0, 1.45, 0.02), chest=(0, 1.95, 0.02), neck=(0, 2.25, 0.02), head=(0, 2.4, 0.03),
+               shoulder_r=(0.86, 1.85, 0.05), elbow_r=(1.25, 1.5, 0.18), wrist_r=(1.42, 1.12, 0.34), hand_end_r=(1.48, 0.88, 0.44),
+               hip_r=(0.42, 0.62, 0.0), knee_r=(0.45, 0.42, 0.05), ankle_r=(0.46, 0.22, 0.04), toe_r=(0.48, 0.06, 0.5))
+    m.rig = make_rig(J)
+    s_ = snow()
+    lump = lumps(0.025, 2.0, 11)
+    # The belly, the feet and the legs that hide in it
+    m.add(blob((0, 1.28, 0), (1.05, 0.98, 1.0), (0.85, 0.88), nu=28, nv=16).deform(lump), s_, bones=["hips", "spine", "chest"])
+    for side in (1, -1):
+        hp = J["hip_r"] * np.array([side, 1, 1])
+        m.add(loft([hp + [0, 0.15, 0], hp + [0, -0.3, 0.02]], [(0.26, 0.26, 2.2), (0.24, 0.24, 2.2)], nu=12), s_, bones=["thigh_" + ("r" if side > 0 else "l"), "shin_" + ("r" if side > 0 else "l")])
+    foot = m.add(blob(J["ankle_r"] + [0, -0.04, 0.16], (0.3, 0.2, 0.38), (0.75, 0.75)).deform(lumps(0.02, 3, 4)), s_, bones=["foot_r"])
+    m.mirror(foot)
+    # Coal buttons down his belly
+    coal = color((0.09, 0.09, 0.11)) + edges(0.2, 0.3)
+    for y in (1.75, 1.4, 1.05):
+        z = math.sqrt(max(1.0 - ((y - 1.28) / 0.98) ** 2, 0)) * 1.0
+        m.add(sphere((0, y, z - 0.02), 0.085, nu=10, nv=8), coal, bones="spine" if y > 1.3 else "hips")
+    # Arms: chunky snow, in green mittens with a thumb
+    sh, e, w = J["shoulder_r"], J["elbow_r"], J["wrist_r"]
+    arm = m.add(loft([sh + [-0.15, 0.05, 0], sh, e, w], [(0.26, 0.26, 2.2), (0.25, 0.25, 2.2), (0.22, 0.22, 2.2), (0.19, 0.19, 2.2)], nu=14, nv=18).deform(lumps(0.02, 3, 8)),
+                s_, bones=["upper_r", "fore_r"])
+    m.mirror(arm)
+    mitt = knit((0.14, 0.5, 0.24)) + stripes((0.92, 0.92, 0.88), 2, 0.25, axis="v")
+    d = (J["hand_end_r"] - w) / np.linalg.norm(J["hand_end_r"] - w)
+    palm = w + d * 0.18
+    m.mirror(m.add(blob(palm, (0.22, 0.26, 0.22), (0.7, 0.7)), mitt, bones=["hand_r"]))
+    m.mirror(m.add(blob(palm + [-0.17, 0.08, 0.12], (0.08, 0.12, 0.08), (0.75, 0.75), rot=(0, 0, -25)), mitt, bones=["hand_r"]))
+    m.mirror(m.add(torus(w + d * 0.02, 0.2, 0.06, rot=(0, 0, 20)), knit((0.92, 0.92, 0.88)), bones=["hand_r", "fore_r"]))
+    # Shards of blue ice out of his upper back and shoulder
+    ice = color((0.62, 0.86, 1.0)) + edges(0.5, 0.15) + stripes((0.85, 0.97, 1.0), 3, 0.2, axis="v")
+    for base, d_, l_ in (((0.3, 2.0, -0.75), (0.3, 0.8, -0.5), 0.75), ((-0.1, 2.05, -0.85), (-0.15, 0.9, -0.4), 0.95), ((-0.5, 1.85, -0.65), (-0.6, 0.7, -0.4), 0.6),
+                         ((0.72, 2.0, -0.2), (0.7, 0.8, -0.2), 0.45)):
+        b_ = np.array(base, float)
+        for k, (off, scale) in enumerate((((0, 0, 0), 1.0), ((0.12, -0.08, 0.05), 0.6), ((-0.1, -0.1, 0.06), 0.5))):
+            m.add(horn(b_ + off, np.array(d_) + np.array(off) * 3, l_ * scale, 0.17 * scale, curl=(0, 0, 0), e=1.3, segments=3, tip=0.015), ice, bones="chest")
+    # The head: big and round, with its face
+    hd = np.array([0, 2.95, 0.06])
+    R_ = 0.82
+    rig_ = m.rig
+    eye = hd + np.array([0.26, 0.08, 0.7])
+    rig_.bone("jaw", hd + [0, -0.15, 0.2], hd + [0, -0.45, 0.7], "head")
+    rig_.bone("brow_r", hd + [0.14, 0.3, 0.72], hd + [0.42, 0.32, 0.6], "head")
+    rig_.bone("lid_r", eye, eye + [0, 0, 0.12], "head")
+    rig_.mirror()
+
+    def cheeks(ctx, base):
+        out = base
+        for sx in (1, -1):
+            dd = np.linalg.norm(ctx.p - (hd + np.array([sx * 0.45, -0.18, 0.6])), axis=-1)
+            out = _over(out, (1.0, 0.62, 0.66), np.exp(-(dd / 0.16) ** 2) * 0.8)
+        return out
+    detail = m.detail
+    m.detail = 0.03
+    m.add(sphere(hd, R_, nu=28, nv=18).deform(lumps(0.015, 2.5, 21)), s_ + cheeks, bones="head", weight=3)
+    # Eyes: big, round and shiny black, with a glint; snow lids that blink
+    for sx in (1, -1):
+        c = eye * np.array([sx, 1, 1])
+        m.add(ellipsoid(c, (0.145, 0.185, 0.08), nu=18, nv=12), eyeball(c, look=(0, 0.05, 1), iris=(0.06, 0.06, 0.1), sclera=(0.08, 0.08, 0.12),
+                                                                  iris_size=70, pupil_size=0), bones="head", weight=3)
+        m.add(sphere(c + np.array([-0.05, 0.08, 0.065]), 0.035, nu=8, nv=6), color((1, 1, 1)), bones="head")
+        m.add(sphere(c + np.array([0.04, -0.06, 0.07]), 0.016, nu=6, nv=4), color((1, 1, 1)), bones="head")
+    lid = m.add(ellipsoid(eye, (0.16, 0.2, 0.1), vrange=(0.78, 1.0), nu=18, nv=6), s_, bones="lid_r", weight=3)
+    m.mirror(lid)
+    # Twig brows
+    twig = wood((0.4, 0.26, 0.14), 4) + edges(0.3, 0.1, dark=True)
+    m.mirror(m.add(loft([hd + [0.13, 0.31, 0.73], hd + [0.27, 0.34, 0.69], hd + [0.4, 0.31, 0.6]], [(0.025, 0.025, 2), (0.03, 0.03, 2), (0.02, 0.02, 2)], nu=8, nv=10),
+                   twig, bones="brow_r"))
+    # A short carrot nose
+    m.add(horn(hd + [0, -0.04, 0.8], (0.05, -0.08, 1), 0.3, 0.085, curl=(0.0, -0.06, 0), tip=0.02, facing=(0, 1, 0)),
+          color((0.98, 0.5, 0.1)) + stripes((0.78, 0.36, 0.06), 5, 0.12, axis="v"), bones="head")
+    # The mouth: dark inside, a chin of snow that drops open, with a smile of coal pebbles on it
+    m.add(ellipsoid(hd + [0, -0.33, 0.68], (0.15, 0.06, 0.1)), color((0.16, 0.08, 0.1)), bones="head")
+    m.add(blob(hd + [0, -0.37, 0.57], (0.25, 0.1, 0.23), (0.8, 0.8)), s_ + cheeks, bones="jaw", weight=3)
     for k in range(5):
         t = (k - 2) / 2
-        m.add(sphere((t * 0.25, 3.12 - 0.07 * (1 - t * t) * -1, 0.52 - 0.04 * abs(t)), 0.045), coal)
-    for k, y in enumerate((2.6, 2.32, 2.04, 1.3, 0.95)):
-        r = 0.76 if y > 1.8 else 1.0
-        m.add(sphere((0, y, math.sqrt(max(r * r - (y - (2.35 if y > 1.8 else 1.0)) ** 2, 0)) * 0.95), 0.07), coal)
-    # Coal eyes, set at a scowl
-    for side in (1, -1):
-        m.add(ellipsoid((side * 0.19, 3.53, 0.53), (0.1, 0.06, 0.06), rot=(0, side * 18, side * 22)), coal)
-    m.add(tube([(0, 3.38, 0.5), (0.05, 3.33, 0.85), (0.12, 3.3, 1.1)], [0.11, 0.07, 0.02]), color((0.95, 0.48, 0.1)) + stripes((0.75, 0.35, 0.05), 6, 0.15, axis="v"))
-    scarf = knit((0.75, 0.12, 0.12)) + stripes((0.12, 0.45, 0.22), 6, 0.4, axis="u")
-    m.add(torus((0, 2.98, 0.0), 0.52, 0.14, sz=0.95), scarf)
-    m.add(tube([(0.35, 2.95, 0.42), (0.5, 2.5, 0.62), (0.55, 2.0, 0.6), (0.6, 1.7, 0.55)], [0.15, 0.14, 0.13, 0.12], flat=0.45), scarf + stripes((0.95, 0.9, 0.85), 1, 0.08, axis="v"))
-    b = Body()
-    b.head, b.top, b.hs = (0, 3.42, 0.02), 4.0, 1.0
-    top_hat(m, b, color((0.12, 0.11, 0.13)) + stains((0.3, 0.28, 0.26), 0.2, 3), band=(0.6, 0.1, 0.1), height=0.75, tilt=-8)
-    stick = wood((0.38, 0.25, 0.14), 4)
-    for side in (1, -1):
-        m.add(tube([(side * 0.6, 2.45, 0), (side * 1.15, 2.6, 0.15), (side * 1.6, 2.5, 0.45)], [0.07, 0.06, 0.05]), stick)
-        m.add(tube([(side * 1.3, 2.58, 0.25), (side * 1.45, 2.85, 0.35)], [0.035, 0.02]), stick)
-        m.add(ellipsoid((side * 1.7, 2.48, 0.52), (0.18, 0.2, 0.2)), knit((0.12, 0.4, 0.2)))
-        m.add(ellipsoid((side * 1.62, 2.58, 0.66), (0.07, 0.1, 0.07)), knit((0.12, 0.4, 0.2)))
+        y = -0.25 + 0.07 * t * t
+        p_ = hd + np.array([t * 0.2, y, math.sqrt(R_ * R_ - y * y - (t * 0.2) ** 2) + 0.01])
+        m.add(sphere(p_, 0.04, nu=8, nv=6), coal, bones="head")
+    m.detail = detail
+    # A red bobble hat with a white band, and a pompom on a bone of its own
+    hat = knit((0.82, 0.14, 0.14)) + stripes((0.95, 0.93, 0.9), 2, 0.3, axis="v")
+    m.add(ellipsoid(hd + [0, 0.28, -0.05], (0.75, 0.62, 0.74), vrange=(0.5, 1.0), rot=(-10, 0, 0), nu=24, nv=10), hat, bones="head")
+    m.add(torus(hd + [0, 0.33, -0.03], 0.75, 0.11, rot=(-10, 0, 0), nu=28), knit((0.95, 0.93, 0.9)), bones="head")
+    top = hd + np.array([0, 0.98, -0.18])
+    rig_.bone("pompom", top + [0, -0.2, 0], top + [0, 0.2, 0], "head")
+    m.add(sphere(top + [0, 0.08, 0], 0.22, nu=14, nv=10).deform(lumps(0.03, 8, 2)), fur((0.95, 0.94, 0.9)), bones="pompom")
+    # The scarf: round his neck, and a tail on two bones that hangs over his front and swings
+    scarf = knit((0.12, 0.45, 0.22)) + stripes((0.82, 0.14, 0.14), 6, 0.4, axis="u")
+    m.add(torus(np.array([0, 2.22, 0.02]), 0.72, 0.17, sz=0.95, nu=30), scarf, bones=["chest", "head"])
+    s0 = np.array([0.35, 2.15, 0.72])
+    s1 = s0 + np.array([0.08, -0.5, 0.2])
+    s2 = s1 + np.array([0.02, -0.45, 0.05])
+    rig_.bone("scarf_1", s0, s1, "chest")
+    rig_.bone("scarf_2", s1, s2, "scarf_1")
+    m.add(loft([s0, s1, s2], [(0.17, 0.05, 3), (0.16, 0.05, 3), (0.15, 0.05, 3)], facing=(0, 0, 1), nu=12, nv=14, caps="flat"),
+          scarf + stripes((0.95, 0.93, 0.9), 1, 0.06, axis="v"), bones=["scarf_1", "scarf_2"])
+    for k in range(4):
+        m.add(tube([s2 + [(k - 1.5) * 0.08, 0, 0], s2 + [(k - 1.5) * 0.09, -0.14, 0.01]], 0.022), knit((0.12, 0.45, 0.22)), bones="scarf_2")
+    m.clips = frosty_clips()
     finish(m, "frosty")
+    print(write_glb(m, fps=30))
+    return m
+
+
+def make_igloo():
+    """Frosty's igloo: a dome of packed snow blocks, rows of them laid round and staggered, a low tunnel out of it with
+    a dark doorway towards +x (the game turns it to the side he is going), and icicles along its edge. As wide as
+    IglooRadius (2.4), and as tall as he is crouched"""
+    m = Model("igloo", size=1024, ground_ao=True, light=0.45, ao=1.0, detail=0.08)
+    R, H = 2.45, 2.9
+
+    def blocks(ctx):
+        base = snow()(ctx)
+        p = ctx.p
+        el = np.clip(p[..., 1] / H, 0, 1)
+        row = el * 6.5
+        r_i = np.floor(row)
+        az = (np.arctan2(p[..., 2], p[..., 0]) / (2 * np.pi) + 0.5) * (14 - r_i * 1.5) + r_i * 0.5
+        seam_h = smoothstep(0.08, 0.0, np.abs(row - np.round(row)))
+        seam_v = smoothstep(0.06, 0.0, np.abs(az - np.round(az)))
+        groove = np.maximum(seam_h, seam_v * (el < 0.93))
+        out = base * (1 - 0.28 * groove)[..., None] + groove[..., None] * np.array([-0.06, -0.02, 0.04])
+        face = 0.94 + 0.08 * fbm(np.stack([np.round(row), np.round(az), np.zeros_like(az)], -1), 3, 1, 9)
+        return out * face[..., None]
+    paint = Paint(blocks)
+    m.add(ellipsoid((0, 0, 0), (R, H, R), vrange=(0.5, 1.0), nu=40, nv=16).deform(lumps(0.03, 1.5, 4)), paint, weight=2)
+    # The tunnel to the door: half a tube of blocks, with a dark doorway at its end
+    m.add(loft([(R * 0.7, 0, 0), (R + 0.75, 0, 0)], [dict(w=0.85, d=1.35, e=2.2), dict(w=0.82, d=1.3, e=2.2)], facing=(0, 1, 0), nu=24, caps=None,
+               urange=(0.25, 0.75)).deform(lumps(0.03, 2, 6)), paint)
+    m.add(loft([(R + 0.7, 0, 0), (R + 0.76, 0, 0)], [dict(w=0.6, d=1.0, e=2.2), dict(w=0.6, d=1.0, e=2.2)], facing=(0, 1, 0), nu=20, caps="flat", urange=(0.25, 0.75)),
+          color((0.12, 0.16, 0.26)) + patch((0.3, 0.4, 0.6), 0.5, 0.3, 0.2, 0.3))
+    # Icicles hanging from the edge of the tunnel and round the bottom of the dome
+    ice = color((0.7, 0.9, 1.0)) + edges(0.5, 0.2)
+    for k in range(5):
+        z = (k - 2) * 0.32
+        top = (R + 0.78, math.sqrt(max(1 - (z / 0.85) ** 2, 0)) * 1.3, z)
+        m.add(horn(top, (0, -1, 0), 0.25 + 0.12 * (k % 2), 0.05, curl=(0, 0, 0), tip=0.005), ice)
+    for k in range(16):
+        a = k / 16 * 2 * math.pi + 0.2
+        if math.cos(a) > 0.8:
+            continue
+        y = 0.9 + 0.25 * (k % 3)
+        rr = R * math.sqrt(max(1 - (y / H) ** 2, 0)) + 0.02
+        m.add(horn((rr * math.cos(a), y, rr * math.sin(a)), (0, -1, 0), 0.18 + 0.08 * (k % 2), 0.04, curl=(0, 0, 0), tip=0.005), ice)
+    tris = m.write()
+    print(f"models/igloo.obj  {tris} triangles")
 
 
 def make_bjorn():
