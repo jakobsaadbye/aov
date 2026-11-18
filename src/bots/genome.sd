@@ -22,8 +22,14 @@ Gene :: enum {
     leadTime,               // Seconds a cell must be free before a car comes
     trailTime,              // and after one has gone
     dodgeTime,              // How soon before a car hits it the reflex steps away
-    waitOnRoad,             // Seconds a place on the road must stay free for a plan to stop there
+    survive,                // Seconds a plan that doesn't get across must be able to live on from where it ends
+    stay,                   // and how long it must be able to stand there
+    trust,                  // Seconds more it counts on living where only a car that isn't spawned yet can come
+    laneWeight,             // How much more a meter across the road is worth than one along it, where a plan ends
+    safety,                 // Meters across a second more of living is worth, where a plan ends
     planSlack,              // How much a plan may be off in a new forecast before it plans again
+    heroMargin,             // Room it keeps to the other heroes, so they don't shove each other in front of a car
+    heroPredict,            // Seconds it counts on another hero walking on the way it walks
 
     // Tactics: when to cast. A score of each ability is compared with castBar
     castBar,
@@ -52,12 +58,18 @@ GeneRange :: struct {
 GeneRanges :: [
     GeneRange{0.1, 0.8, 0.3},       // replanEvery
     GeneRange{0.05, 0.6, 0.2},      // reactionTime
-    GeneRange{0, 0.8, 0.1},         // margin
-    GeneRange{0.1, 1.2, 0.5},       // leadTime
-    GeneRange{0, 0.5, 0.1},         // trailTime
-    GeneRange{0.3, 2.0, 1.0},       // dodgeTime
-    GeneRange{1, 8, 5},             // waitOnRoad
+    GeneRange{0, 0.8, 0},           // margin
+    GeneRange{0, 1.2, 0.1},         // leadTime
+    GeneRange{0, 0.5, 0},           // trailTime
+    GeneRange{0, 2.0, 0.6},         // dodgeTime
+    GeneRange{0.5, 10, 5},          // survive
+    GeneRange{0.1, 3, 0.5},         // stay
+    GeneRange{0, 3, 0},             // trust
+    GeneRange{0, 4, 1.0},           // laneWeight
+    GeneRange{0, 8, 2.0},           // safety
     GeneRange{0.02, 0.4, 0.15},     // planSlack
+    GeneRange{0, 2, 0.5},           // heroMargin
+    GeneRange{0, 3, 1.2},           // heroPredict
     GeneRange{0.1, 1.0, 0.51},      // castBar
     GeneRange{0.2, 1.5, 0.6},       // dangerTime
     GeneRange{0, 1, 1.0},           // escape
@@ -141,12 +153,13 @@ fromJson :: (values: GenomeJson) -> Genome {
 }
 
 // How well a player did in a game, for training: crossings, few deaths, enemies it got run over, how far across its
-// hero is at the end, and how fast its best crossing was. The weights are what training aims for
+// heroes got, and how fast its best crossing was. The weights are what training aims for. How far each hero got counts
+// for a lot, as on a road this wide a crossing is rare in a game: without it, keeping off the road (and alive) wins
 FitnessWeights :: struct {
     crossing: f32 = 10;
-    death:    f32 = 7;
+    death:    f32 = 4;
     kill:     f32 = 4;
-    progress: f32 = 3;      // For the hero it has at the end, from 0 at its start to 1 across
+    progress: f32 = 8;      // For each hero, from 0 at its start to 1 across, as far as it got
     fastest:  f32 = 2;      // For a best crossing of 20 seconds, less for a slower one
 }
 
@@ -154,7 +167,16 @@ fitnessOf :: (game: *Game, index: int, weights: FitnessWeights = FitnessWeights{
     player := &game.players[index];
     stats := player.stats;
     fitness := weights.crossing * stats.crossings as f32 - weights.death * stats.deaths as f32 + weights.kill * stats.kills as f32;
-    if player.isPlaying() { fitness += weights.progress * progressOf(player.hero.ground(), player.startSide); }
+    // A bot keeps how far each of its heroes got (the bots of the games of training are all Bots); of a human, only the
+    // hero it has now counts
+    progress: f32 = 0;
+    if player.isBot() {
+        profile := (player.brain as *Bot).stats;
+        progress = profile.progress + profile.lifeProgress;
+    } else if player.isPlaying() {
+        progress = progressOf(player.hero.ground(), player.startSide);
+    }
+    fitness += weights.progress * progress;
     if stats.bestTime.hasValue() { fitness += weights.fastest * math.min(1, 20 / stats.bestTime.value()); }
     return fitness;
 }

@@ -21,7 +21,7 @@ CellSize        :: 1.5;
 GridColumns     :: 171;         // MapHalfWidth * 2 / CellSize, rounded up
 GridRows        :: 86;          // MapHalfLength * 2 / CellSize, rounded up
 GridCells       :: GridColumns * GridRows;
-ForecastHorizon :: 12.0;        // Seconds ahead. After it, a car is taken to be gone
+ForecastHorizon :: 24.0;        // Seconds ahead: about as long as a car on the road stays on it
 
 Forever :: 1000000.0;
 
@@ -86,13 +86,24 @@ ForecastOptions :: struct {
                                 // hero never runs just in front of a car, with no time left to step aside
     trailTime:    f32 = 0.1;    // Seconds after a car has left a cell that it is safe again: right behind a car is safe
 
-    // A cell isn't safe from when a car that hasn't been spawned yet could get to it at the earliest. Very careful: in
-    // heavy traffic there is then seldom a way all the way across. Without it, a new car is seen more than 2 seconds
-    // before it can get onto the field, which a bot that plans a few times a second has time for
-    fearUnknownCars: bool;
+    // A cell isn't safe from when a car that hasn't been spawned yet could get to it at the earliest: that is where what
+    // is known ends. Without it, the road looks empty once the cars of now have gone, and a plan waits for that
+    fearUnknownCars: bool = true;
+
+    me:          int = -1;      // The player it is made for: the other heroes are in the way too, so it doesn't walk into
+    heroMargin:  f32 = 0.5;     // them, or they into it, and shove each other in front of a car
+    heroPredict: f32 = 1.5;     // Seconds it counts on another hero walking on the way it walks
 
     oilProof:       bool;       // The oil doesn't make the hero slide (Karl)
     ambulanceProof: bool;       // The ambulances drive round the hero (Ditte)
+}
+
+// Another hero: where it is, and where it walks to at a speed, as far as the forecast counts on it
+OtherHero :: struct {
+    from:     Vector2;
+    velocity: Vector2;
+    stopsAt:  f32;          // When it gets to where it walks to, and stands
+    radius:   f32;
 }
 
 // A footbridge over the road: the cells under it are safe while it is up, from start to end
@@ -107,8 +118,11 @@ Forecast :: struct {
     blocked:    []bool;                 // For each cell: a wall, or the edge of the field. Never safe. Shared (blockedCells)
     slicks:     [..]Slick;              // The oil slicks, where a hero can't turn. Never safe either
     safeZones:  [..]SafeZone;           // Footbridges
+    others:     [..]OtherHero;
     firstSafe:  [..]int;                // For each cell: where its safe intervals start in safe, -1 until asked for
     safeCount:  [..]int;
+    known:      [..]f32;                // For each cell: when what is known of its cars ends (a car that isn't spawned yet
+                                        // could come then), Forever off the road. Worked out with its intervals
     safe:       [..]TimeInterval;
     lanes:      [LaneCount][..]Trajectory;
     slowSpawns:  [..]Trajectory;
@@ -120,6 +134,13 @@ Forecast :: struct {
     intervalsOf :: method * (cell: int) -> int, int {
         if self.firstSafe[cell] < 0 { self.work(cell); }
         return self.firstSafe[cell], self.safeCount[cell];
+    }
+
+    // If a safe interval of a cell lasts until what is known of the cell ends: no car that is known can come on it
+    // after the hero gets there, only one that isn't spawned yet, which is seen seconds before it can
+    lastsAsLongAsKnown :: method * (cell: int, interval: int) -> bool {
+        if self.firstSafe[cell] < 0 { self.work(cell); }
+        return self.safe[interval].end >= self.known[cell] - 0.001;
     }
 
     // The safe interval of a cell at a time, or -1 when a car is on it then (or it is blocked)
@@ -168,6 +189,7 @@ Forecast :: struct {
     @private
     work :: method * (cell: int) {
         self.firstSafe[cell] = self.safe.count as int;
+        self.known[cell] = Forever;
         center := cellCenter(cell);
         for slick in self.slicks {
             if self.options.oilProof { break; }
@@ -191,6 +213,7 @@ Forecast :: struct {
                 // A car that isn't known yet could be on the cell from when it could get there at the earliest
                 unknown := self.unknownFrom[lane] + math.max(0, center.y - reachZ + RoadEnd) / self.fastest[lane];
                 if self.options.fearUnknownCars && unknown < ForecastHorizon && count < MaxHitsPerCell {
+                    self.known[cell] = math.min(self.known[cell], unknown);
                     hits[count] = TimeInterval{unknown, Forever};
                     count += 1;
                     at := count - 1;
@@ -206,12 +229,15 @@ Forecast :: struct {
                     if enter >= ForecastHorizon { continue; }
                     leave: f32 = 0;
                     if trajectory.leaveWith >= 0 {
-                        // A car that isn't spawned yet: what is past the horizon isn't known, so not blocked for ever
+                        // A car that isn't spawned yet: what is past the horizon isn't known, so not blocked for ever.
+                        // How fast it will drive isn't known either, so what is known of the cell ends when it could come
+                        self.known[cell] = math.min(self.known[cell], math.max(enter - self.options.leadTime, 0));
                         leave = math.min(self.slowSpawns[trajectory.leaveWith].timeAt(center.y + reach, enter), ForecastHorizon);
                     } else {
                         leave = trajectory.timeAt(center.y + reach, enter);
                         if leave >= ForecastHorizon { leave = Forever; }     // Still there when the horizon ends
                     }
+                    if leave <= 0 { continue; }        // Gone past already
                     if count == MaxHitsPerCell { break; }
                     hit := TimeInterval{math.max(enter - self.options.leadTime, 0), leave + self.options.trailTime};
                     at := count;
@@ -223,6 +249,21 @@ Forecast :: struct {
                     count += 1;
                 }
             }
+        }
+
+        // The other heroes, while it counts on knowing where they are
+        for other in self.others {
+            if count >= MaxHitsPerCell { break; }
+            room := other.radius + self.options.radius + self.options.heroMargin + CellSize * 0.5;
+            hit := heroOn(other, center, room, self.options.heroPredict);
+            if hit.start >= hit.end { continue; }
+            at := count;
+            while at > 0 && hit.start < hits[at - 1].start {
+                hits[at] = hits[at - 1];
+                at -= 1;
+            }
+            hits[at] = hit;
+            count += 1;
         }
 
         free: f32 = 0;          // Safe from here
@@ -277,6 +318,43 @@ Forecast :: struct {
     }
 }
 
+// When another hero is within room of a point, from now until horizon: it walks on its way until it stops, then stands.
+// Empty (start >= end) when it isn't
+heroOn :: (other: OtherHero, point: Vector2, room: f32, horizon: f32) -> TimeInterval {
+    // Walking: |from + velocity t - point| < room, a quadratic in t
+    walkEnd := math.min(other.stopsAt, horizon);
+    d := other.from - point;
+    a := other.velocity.dot(other.velocity);
+    b := 2 * d.dot(other.velocity);
+    c := d.dot(d) - room * room;
+    start := Forever;
+    end: f32 = -1;
+    if a < 0.0001 {
+        if c < 0 { start = 0; end = walkEnd; }
+    } else {
+        disc := b * b - 4 * a * c;
+        if disc > 0 {
+            root := math.sqrtf(disc);
+            t0 := (-b - root) / (2 * a);
+            t1 := (-b + root) / (2 * a);
+            if t1 > 0 && t0 < walkEnd {
+                start = math.max(t0, 0);
+                end = math.min(t1, walkEnd);
+            }
+        }
+    }
+    // Standing where it stopped, until the horizon
+    if other.stopsAt < horizon {
+        stop := other.from + other.velocity * other.stopsAt;
+        if stop.distance(point) < room {
+            start = math.min(start, other.stopsAt);
+            end = horizon;
+        }
+    }
+    if end < 0 { return TimeInterval{1, 0}; }
+    return TimeInterval{start, end};
+}
+
 // The cell a point of the ground is in, or -1 outside of the field
 cellAt :: (point: Vector2) -> int {
     column := math.floorf((point.x + MapHalfWidth) / CellSize) as int;
@@ -303,6 +381,8 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
     mem.set(forecast.safeCount.data, 0, GridCells * sizeof(int));
     forecast.firstSafe.count = GridCells;
     forecast.safeCount.count = GridCells;
+    forecast.known.reserve(GridCells);
+    forecast.known.count = GridCells;
     forecast.safe.reserve(4096);
 
     for car in game.traffic.cars {
@@ -316,6 +396,20 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
             forecast.lanes[car.fromLane].add(trajectory);
             if sweep.hasValue() { forecast.lanes[car.fromLane].add(sweep.value()); }
         }
+    }
+    for player, i in game.players {
+        if i as int == options.me || !player.isPlaying() || player.hero.isAirborne() { continue; }
+        hero := &player.hero;
+        other := OtherHero{from: hero.ground(), stopsAt: Forever, radius: hero.info().hitRadius};
+        if hero.isMoving && hero.canAct() {
+            toTarget := hero.target.xz() - hero.ground();
+            distance := toTarget.length();
+            if distance > 0.01 {
+                other.velocity = toTarget / distance * hero.speed();
+                other.stopsAt = distance / hero.speed();
+            }
+        }
+        forecast.others.add(other);
     }
     for bridge in game.bridges {
         // Safe a little after it starts to go up, and a little before it is gone
@@ -337,13 +431,14 @@ newForecast :: (game: *Game, options: ForecastOptions) -> Forecast {
     for lane, i in game.traffic.lanes {
         // The next car of the lane, from when it is spawned. It gets to the cells as soon as a truck as fast as a car of
         // the lane gets would
+        // A rush hour that is coming makes it come sooner
+        soonest := lane.spawnTimer;
+        if game.traffic.rush == .coming { soonest *= RushGap; }
         next := Car{isActive: true, kind: .truck, lane: i as int, z: -RoadEnd - TruckLength * 0.5, speed: lane.speed * MaxSpawnSpeed};
-        fast := trajectoryOf(game, next, lane.spawnTimer);
-        // Leaving: a car at the speed of the lane. A slower one, or a truck, is seen when it is spawned, seconds before it
-        // can get onto the field
-        next.speed = lane.speed;
-        next.kind = .car;
-        next.z = -RoadEnd - CarLength * 0.5;
+        fast := trajectoryOf(game, next, soonest);
+        // Leaving: the slowest it can be, a truck. Else a plan that goes right behind it, before anything more is known
+        // of the lane, can find the way blocked when the car is spawned
+        next.speed = lane.speed * MinSpawnSpeed;
         slow := trajectoryOf(game, next, lane.spawnTimer);
         fast.leaveWith = forecast.slowSpawns.count as int;
         forecast.slowSpawns.add(slow);

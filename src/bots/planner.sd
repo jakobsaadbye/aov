@@ -27,10 +27,13 @@ PlanResult :: struct {
     waypoints: [..]Waypoint;
     reachesGoal: bool;      // Else it ends at the place nearest the goal that it can wait at safely
     expanded:    int;       // States looked at, for the debug overlay and the tests
+    lives:       f32;       // How long from the forecast the way it ends with keeps it alive, as far as is known
+    cornered:    bool;      // No way that lives as long as the request wants: the one that lives the longest
 }
 
 PlanRequest :: struct {
     start:       Vector2;
+    startAt:     f32;               // Seconds from the forecast when it is at the start, e.g a point it is walking to
     goalSide:    Side;              // Done when past GoalX on this side
     goalPoint:   ?Vector2;          // Or, when given, done at this point, e.g an item on the road
     speed:       f32;               // Normal walking speed
@@ -38,8 +41,14 @@ PlanRequest :: struct {
     sprintLeft:  f32;
     now:         f32;               // The time of the game when the forecast was made
     maxExpanded: int = 6000;
-    waitOnRoad:  f32 = 5;                    // How long a place on the road must stay free for a plan that doesn't get
-                                            // across to end there
+    survive:     f32 = 3;                   // How long from now a plan that doesn't get across must keep it alive: by
+                                            // getting to where it ends then, or a way on from there that does
+    stay:        f32 = 0.5;                 // and how long it can stand there, until it plans again
+    trust:       f32 = 2;                   // Seconds more it counts on living where no car that is known can come, only
+                                            // one that isn't spawned yet
+    safety:      f32 = 1;                   // Meters across that a second more that the way on lives is worth
+    laneWeight:  f32 = 1;                   // How much more a meter across the road is worth than a meter along it, for
+                                            // where a plan that doesn't get across ends: lanes are what is hard
 }
 
 @private
@@ -47,6 +56,7 @@ SearchState :: struct {
     cell:     int;
     interval: int;          // In forecast.safe
     arrive:   f32;          // Seconds from the forecast
+    until:    f32;          // When it has to have left, for how long it can live on from here
     parent:   int;          // In the list of states, -1 for the start
 }
 
@@ -62,10 +72,9 @@ operator < :: (a: OpenEntry, b: OpenEntry) -> bool {
     return a.arrive > b.arrive;
 }
 
-// When there is no way across yet, the plan goes as far as it safely can, to a cell it can then wait in at least this
-// long, so there is time to plan again before it has to move. More is known about the cars by then
-FallbackWait       :: 2.0;
-FallbackWaitOnRoad :: 5.0;      // On the road, where what the forecast doesn't know of yet can come
+
+EdgeRoom    :: 14.0;     // How near the top or the bottom of the field it starts to count against where a plan ends
+EdgePenalty :: 4.0;      // and how much, for each meter nearer
 
 // The eight neighbors of a cell: the offsets of the column and the row
 @private
@@ -89,21 +98,19 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
     best: [..]f32;                  // The earliest arrival found in each safe interval, as the forecast works them out
 
     // The start: in the safe interval it is in. When a car is about to be on it, it may still leave at once
-    startInterval := forecast.intervalAt(start, 0);
+    startInterval := forecast.intervalAt(start, request.startAt);
     leaveStartBy: f32 = 0;
     if startInterval >= 0 {
         leaveStartBy = forecast.safe[startInterval].end;
     } else {
         // Too close to a car for the margins of the forecast: it may still leave until the car really gets there
-        leaveStartBy = math.max(0.15, forecast.hitTime(request.start, 0) - 0.05);
+        leaveStartBy = math.max(request.startAt + 0.15, forecast.hitTime(request.start, request.startAt) - 0.05);
     }
     while best.count < forecast.safe.count { best.add(Forever); }
-    states.add(SearchState{cell: start, interval: startInterval, arrive: 0, parent: -1});
+    states.add(SearchState{cell: start, interval: startInterval, arrive: request.startAt, until: leaveStartBy, parent: -1});
     open.push(OpenEntry{field.distances[start] / request.sprintSpeed, 0, 0});
 
     goalState := -1;
-    fallback := -1;                 // The state nearest the goal that can be waited in for a while
-    fallbackDistance := Forever;
     safest := -1;                   // Without such a state: the one it can stay in the longest, the furthest across of those
     safestUntil: f32 = -1;
     safestDistance := Forever;
@@ -129,12 +136,6 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
         if state.interval >= 0 {
             leaveBy = forecast.safe[state.interval].end;
             toGoal := field.distances[state.cell];
-            wait: f32 = FallbackWait;
-            if math.fabsf(center.x) < RoadHalfWidth + CellSize { wait = request.waitOnRoad; }
-            if leaveBy - state.arrive >= wait && toGoal < fallbackDistance {
-                fallback = entry.state;
-                fallbackDistance = toGoal;
-            }
             // Staying safe longer wins, and of two that are about as safe, the one further across
             later := math.min(leaveBy, ForecastHorizon);
             if later > safestUntil + 0.25 || (later > safestUntil - 0.25 && toGoal < safestDistance) {
@@ -176,7 +177,9 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
                 if arrive > latest || arrive > interval.end { continue; }
                 if arrive >= best[i] { continue; }
                 best[i] = arrive;
-                states.add(SearchState{cell: next, interval: i as int, arrive: arrive, parent: entry.state});
+                until := interval.end;
+                if forecast.lastsAsLongAsKnown(next, i as int) { until += request.trust; }
+                states.add(SearchState{cell: next, interval: i as int, arrive: arrive, until: until, parent: entry.state});
                 open.push(OpenEntry{arrive + field.distances[next] / request.sprintSpeed, arrive, states.count as int - 1});
             }
         }
@@ -184,7 +187,7 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
 
     end := goalState;
     result.reachesGoal = goalState >= 0;
-    if end < 0 { end = fallback; }
+    if end < 0 { end = bestPartial(forecast, states, field, request, &result); }
     if end < 0 { end = safest; }
     if end < 0 { return result; }
 
@@ -205,6 +208,68 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
     }
     result.waypoints.reverse();
     return result;
+}
+
+// Where a plan that doesn't get across goes: to the state furthest across (lanes weigh more than the way along the road)
+// from which it can stay alive long enough from now, by waiting there or by a way on from there, so it isn't walked into a
+// corner, e.g in front of a car at the end of the field; and on along that way, when it can't wait there. How long the
+// ways on from a state live is found from the tree of the search, back from its leaves. -1 when there is none
+@private
+bestPartial :: (forecast: *Forecast, states: []SearchState, field: *DistanceField, request: PlanRequest, result: *PlanResult) -> int {
+    // How long the best way on from each state lives, and the state at the end of that way
+    lives: [..]f32;
+    defer lives.free();
+    leaf: [..]int;
+    defer leaf.free();
+    for state, i in states {
+        lives.add(state.until);
+        leaf.add(i as int);
+    }
+    k := states.count as int - 1;
+    while k > 0 {
+        parent := states[k].parent;
+        if parent >= 0 && lives[k] > lives[parent] {
+            lives[parent] = lives[k];
+            leaf[parent] = leaf[k];
+        }
+        k -= 1;
+    }
+
+    best := -1;
+    bestScore := Forever;
+    longest := -1;          // Without such a state: the way that lives the longest, the furthest across of those
+    longestLives: f32 = -1;
+    longestScore := Forever;
+    for state, i in states {
+        center := cellCenter(state.cell);
+        left := math.clamp(RoadHalfWidth - center.x * request.goalSide.sign(), 0, RoadHalfWidth * 2);
+        // Near the top or the bottom of the field, the cars that come behind it corner it at the end of the road
+        edge := math.max(0, math.fabsf(center.y) - (MapHalfLength - EdgeRoom));
+        // and a way on that lives longer is worth some way across, so it doesn't go to the edge of what it can live through
+        lived := math.min(lives[i], ForecastHorizon);
+        score := field.distances[state.cell] + request.laneWeight * left + EdgePenalty * edge - request.safety * lived + state.arrive * 0.01;
+        if lived > longestLives + 0.25 || (lived > longestLives - 0.25 && score < longestScore) {
+            longest = i as int;
+            longestLives = lived;
+            longestScore = score;
+        }
+        // It got there without a car on the way, and can wait there until `until`, or live on by a way from there
+        if lives[i] < request.survive { continue; }
+        if score < bestScore {
+            best = i as int;
+            bestScore = score;
+        }
+    }
+    if best < 0 {
+        result.cornered = true;
+        if longest < 0 { return -1; }
+        result.lives = lives[longest];
+        return leaf[longest];
+    }
+    result.lives = lives[best];
+    // It stops there when it can wait there long enough. Else it goes on, the way that keeps it alive
+    if states[best].until >= request.survive { return best; }
+    return leaf[best];
 }
 
 // How far each cell is from the goal around the walls, without the cars: the heuristic of the search, which is then
@@ -245,7 +310,7 @@ distanceField :: (forecast: *Forecast, goalSide: Side) -> *DistanceField {
 
 pointDistanceField :: (forecast: *Forecast, goalCell: int) -> *DistanceField {
     options := forecast.options;
-    key := goalCell * 100000 + (options.throughWalls as int) * 10000 + (options.radius * 100) as int;
+    key := (goalCell * 2 + options.throughWalls as int) * 1000 + (options.radius * 100) as int;
     if pointField != null && pointKey == key { return pointField; }
     if pointField == null { pointField = new(DistanceField, mem.heap()); }
     pointKey = key;
