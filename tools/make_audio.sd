@@ -6,6 +6,7 @@
 //     make_audio                          what isn't there yet, or has changed
 //     make_audio --force                  all of it again
 //     make_audio sfx                      only the sounds (or: voices, music)
+//     make_audio music.quiet              only the pieces of one soundtrack
 //     make_audio ability.hex voice.hugo_cast_1        only these
 //     make_audio --list                   what it would make, with the prompts and the lines
 //     make_audio --adopt                  takes the files that are there as made from the prompts of now, without making
@@ -20,8 +21,9 @@
 // backwards), and every hero has a voice, with its lines for when it comes onto the field, casts, gets across, is run
 // over, gets an enemy run over, and is told to move. The sounds are trimmed and made as loud as each other, and the voices are pitched and
 // put in a room for their hero, e.g a deeper ogre or a ghost in an echo. A hero that doesn't talk, Frosty the snow golem,
-// makes noises instead, with the sound effects API: its lines say what each noise is. The four pieces of the soundtrack share a
-// style, so they go together like the movements of one piece: the game plays them one at a time, with silence between.
+// makes noises instead, with the sound effects API: its lines say what each noise is. There are a few soundtracks to choose
+// from, each a style of its own whose pieces share a little band, so they go together like the movements of one piece: the
+// game plays the pieces of one at a time, with silence between. What all of them keep to is written down at MusicBrief.
 
 import net.http;
 import crypto;
@@ -504,24 +506,71 @@ Lines :: [
 // Music
 //
 
-// What every piece has, so they sound like one soundtrack: the same little band, keys that are close, and the same tempo
-MusicStyle :: "Cheerful, bright instrumental music for a playful video game, upbeat and light on its feet. A bouncy piano leads the melody, with pizzicato strings, a marimba and a lightly strummed acoustic guitar. Light percussion: a shaker, hand claps and a soft kick, never heavy. Around 112 BPM, with a skipping, playful rhythm. Major keys, sunny and optimistic, but still background music: no vocals, no big build-ups or drops. It starts right away and ends with a short, clean fade";
+// What the music of the game is for, and so what every soundtrack keeps to (it is in every prompt, after the style of its
+// soundtrack):
+//
+//   - The game comes first. The music plays quietly under the hum of the traffic, the horns and brakes, the spells and
+//     the lines of the heroes, so it leaves them room: no vocals, a light low end, and few instruments at a time.
+//   - Even. Heroes are run over and get across all the time, at random, so the music doesn't comment on any of it: no
+//     build-ups, drops, climaxes or stingers, and the same level from start to end.
+//   - Light-hearted. Being run over is the joke of the game, so the music is never tense, sad or dark.
+//   - One small band for each soundtrack, in keys and tempos close to each other, so its pieces sound like one whole.
+//   - About a minute and a half a piece. The game mixes the pieces of all the soundtracks, shuffled anew every game, with
+//     silence between, so the pieces of one have to sit well next to those of another: the brief is what they share.
+MusicBrief :: "Background music for a light-hearted party video game, played quietly under the constant noise of traffic, sound effects and spoken character lines. Instrumental only, no vocals, no choir. A light low end and an uncluttered arrangement that stays out of the way. Even dynamics from start to end: no build-ups, drops, climaxes or sudden stops. Never tense, sad or dark. It starts right away and ends with a short, clean fade";
+
+// A soundtrack: the style its pieces share, the same little band in it. Its pieces are written to data/music/<name>/,
+// and the game plays one soundtrack at a time (core/sound.sd, Soundtracks)
+SoundtrackStyle :: struct {
+    name:  string;
+    style: string;
+}
+
+Soundtracks :: [
+    // Cheerful and melodic, a little band of piano, pizzicato, marimba and guitar
+    SoundtrackStyle{"band", "Cheerful, bright instrumental music for a playful video game, upbeat and light on its feet. A bouncy piano leads the melody, with pizzicato strings, a marimba and a lightly strummed acoustic guitar. Light percussion: a shaker, hand claps and a soft kick, never heavy. Around 112 BPM, with a skipping, playful rhythm. Major keys, sunny and optimistic"},
+    // Calm and sparse, with room between the notes, a quiet counterweight to the chaos on the road (like Minecraft)
+    SoundtrackStyle{"quiet", "Calm, sparse ambient piano music with a lot of space between the notes, like a quiet summer evening in a Nordic town. A soft felt piano plays slow, simple, slightly wistful phrases that drift and repeat, with a faint warm synth pad high up and a long, soft reverb. Around 70 BPM, unhurried and free, no drums. Gentle, peaceful, nostalgic and a little dreamy"},
+    // A loop you stop noticing, like the music of a party board game (Mario Party): a short motif and a steady groove
+    SoundtrackStyle{"board", "A light, loopable background groove for a party board game, friendly and unobtrusive, like menu music you soon stop noticing. A short, catchy motif repeats with small variations on marimba and vibraphone, over pizzicato strings, a soft plucked upright bass, light brushed drums and a shaker. Around 104 BPM with a relaxed swing. Simple, steady and tidy: it supports the play and never takes the lead"},
+    // Toy instruments and slapstick, for the comedy of being run over
+    SoundtrackStyle{"toybox", "Quirky, comedic cartoon music played on toy instruments, like a tiny orchestra in a toy box. A toy piano and a glockenspiel play a silly, bouncy tune, with a ukulele, a bassoon playing light staccato bass notes, playful clarinet accents, a few slide whistle swoops, woodblocks and a triangle. Around 116 BPM. Goofy, charming slapstick like a funny cartoon short, but kept gentle so it can play under a game"},
+];
 
 Piece :: struct {
-    name:    string;    // music.<name>, written to data/music/<name>.ogg. Not ending in _<number>
+    soundtrack: string;    // Of Soundtracks
+    name:    string;    // music.<soundtrack>.<name>, written to data/music/<soundtrack>/<name>.ogg. Not ending in
+                        // _<number>, and no other piece of any soundtrack has the same name: the game finds it by it
     feel:    string;
     seconds: int;
 }
 
-Soundtrack :: [
-    Piece{"first_light", "Sunny and eager, like the city waking up on a bright morning. In D major: a hopping piano melody over plucked strings, with the marimba answering each phrase", 80},
-    Piece{"puddles", "Playful and mischievous, like jumping in puddles after the rain. In A major: staccato piano and pizzicato, a little melody that skips up and down, and claps on the off-beats", 90},
-    Piece{"lanterns", "Festive and warm, like a busy evening market strung with lanterns. In G major: strummed guitar and piano chords, a light flute melody, and a bouncing bass", 100},
-    Piece{"far_side", "Triumphant and joyful, like making it across against the odds. In D major: a bright theme that comes back twice and grows each time, with strings and the whole little band joining in the middle", 110},
+Pieces :: [
+    Piece{"band", "first_light", "Sunny and eager, like the city waking up on a bright morning. In D major: a hopping piano melody over plucked strings, with the marimba answering each phrase", 80},
+    Piece{"band", "puddles", "Playful and mischievous, like jumping in puddles after the rain. In A major: staccato piano and pizzicato, a little melody that skips up and down, and claps on the off-beats", 90},
+    Piece{"band", "lanterns", "Festive and warm, like a busy evening market strung with lanterns. In G major: strummed guitar and piano chords, a light flute melody, and a bouncing bass", 100},
+    Piece{"band", "far_side", "Triumphant and joyful, like making it across against the odds. In D major: a bright theme that comes back twice and grows each time, with strings and the whole little band joining in the middle", 110},
+
+    Piece{"quiet", "dew", "Early morning, dew on the grass beside the road. In C major: a few slow piano notes, then a simple melody that rises, rests and comes back", 90},
+    Piece{"quiet", "drizzle", "Light rain on the asphalt, cosy and calm. In G major: soft repeated piano notes like falling drops, and a slow melody that wanders in the middle", 90},
+    Piece{"quiet", "long_light", "The long, golden light of a Nordic summer evening. In F major with a lydian colour: warm piano chords that rock gently, and a high melody that comes and goes", 90},
+
+    Piece{"board", "dice_roll", "Breezy and curious, like waiting for your turn. In F major: a marimba motif in thirds, with the vibraphone answering softly", 80},
+    Piece{"board", "town_square", "Pleasantly busy, like a sunny town square full of people. In B flat major: vibraphone chords on the off-beats and a marimba melody that hops between a few notes", 85},
+    Piece{"board", "shortcut", "Sneaky and playful, like tiptoeing past the others, funny rather than dark. In D dorian: staccato pizzicato and muted plucks, with a woodblock ticking along", 80},
+
+    Piece{"toybox", "wind_up", "A wind-up toy marching along, steady and silly. In C major: a toy piano melody over bassoon staccato, and a woodblock going tick-tock", 75},
+    Piece{"toybox", "toy_parade", "A tiny parade of toy soldiers, proud and silly. In G major: a glockenspiel melody, woodblock rolls like a little snare, and bassoon oom-pahs", 75},
+    Piece{"toybox", "pratfall", "Clumsy and cheerful, like slipping on a banana peel and getting right back up. In F major: glockenspiel and ukulele, with little slide whistle swoops between the phrases", 75},
 ];
 
+styleOf :: (soundtrack: string) -> string {
+    for track in Soundtracks { if track.name == soundtrack { return track.style; } }
+    return "";
+}
+
 musicPrompt :: (piece: Piece) -> string {
-    return fmt.sprint("%. %", piece.feel, MusicStyle);
+    return fmt.sprint("%. %. %", piece.feel, styleOf(piece.soundtrack), MusicBrief);
 }
 
 //
@@ -533,7 +582,7 @@ Job :: struct {
     name:   string;         // e.g ability.hex, voice.hugo_cast_1
     effect: int = -1;       // In Effects, or
     line:   int = -1;       // in Lines, or
-    piece:  int = -1;       // in Soundtrack
+    piece:  int = -1;       // in Pieces
 }
 
 MusicRequest :: struct {
@@ -606,7 +655,7 @@ lineName :: (index: int) -> string {
 // What a file is made from: when it changes, the file is made again
 recipe :: (job: Job) -> string {
     if job.piece >= 0 {
-        piece := Soundtrack[job.piece];
+        piece := Pieces[job.piece];
         return fmt.sprint("% | % | %", musicPrompt(piece), piece.seconds, MusicModel);
     }
     if job.effect >= 0 {
@@ -644,7 +693,7 @@ post :: (path: string, body: string) -> string, string {
 
 makeAudio :: (job: Job) -> string, string {
     if job.piece >= 0 {
-        piece := Soundtrack[job.piece];
+        piece := Pieces[job.piece];
         body := json.encode(MusicRequest{musicPrompt(piece), piece.seconds * 1000, MusicModel, true}, json.SnakeCase);
         return post("/music?output_format=mp3_44100_128", body);
     }
@@ -664,15 +713,19 @@ makeAudio :: (job: Job) -> string, string {
     return post(fmt.sprint("/text-to-speech/%?output_format=mp3_44100_128", voice.id), body);
 }
 
-// Where the game finds a file: data/sounds/<group>/<name>.ogg, and data/music/<name>.ogg for music
+// Where the game finds a file: data/sounds/<group>/<name>.ogg, and data/music/<soundtrack>/<name>.ogg for music
 folderOf :: (name: string) -> string {
     group := name.slice(0, name.indexOf("."));
-    if group == "music" { return MusicFolder; }
+    if group == "music" { return fmt.sprint("%/%", MusicFolder, name.slice(name.indexOf(".") + 1, name.lastIndexOf("."))); }
     return fmt.sprint("%/%", Sounds, group);
 }
 
+baseOf :: (name: string) -> string {
+    return name.slice(name.lastIndexOf(".") + 1);
+}
+
 pathOf :: (name: string) -> string {
-    return fmt.sprint("%/%.ogg", folderOf(name), name.slice(name.indexOf(".") + 1));
+    return fmt.sprint("%/%.ogg", folderOf(name), baseOf(name));
 }
 
 // The mp3 from ElevenLabs as the .ogg of the game, with ffmpeg: trimmed, as loud as the others, and pitched and put in a
@@ -680,7 +733,7 @@ pathOf :: (name: string) -> string {
 // name goes
 finish :: (audio: string, job: Job) -> bool {
     folder := folderOf(job.name);
-    base := job.name.slice(job.name.indexOf(".") + 1);
+    base := baseOf(job.name);
     _ := os.makeDir(folder);
     out := pathOf(job.name);
     source := fmt.sprint("%.mp3", out);
@@ -715,7 +768,7 @@ finish :: (audio: string, job: Job) -> bool {
     return true;
 }
 
-// The jobs the arguments ask for: all, sfx, voices, music, or names
+// The jobs the arguments ask for: all, sfx, voices, music, or names, or the start of names, e.g music.quiet
 jobsFor :: (args: []string) -> [..]Job {
     jobs: [..]Job;
     names := 0;
@@ -725,7 +778,7 @@ jobsFor :: (args: []string) -> [..]Job {
         for arg in args {
             if arg.startsWith("--") { continue; }
             all = false;
-            if arg == group || arg == name { return true; }
+            if arg == group || arg == name || name.startsWith(fmt.sprint("%.", arg)) { return true; }
         }
         return all;
     };
@@ -736,8 +789,8 @@ jobsFor :: (args: []string) -> [..]Job {
         name := lineName(i as int);
         if wants(args, name, "voices", names) { jobs.add(Job{name: name, line: i as int}); }
     }
-    for piece, i in Soundtrack {
-        name := fmt.sprint("music.%", piece.name);
+    for piece, i in Pieces {
+        name := fmt.sprint("music.%.%", piece.soundtrack, piece.name);
         if wants(args, name, "music", names) { jobs.add(Job{name: name, piece: i as int}); }
     }
     return jobs;
@@ -746,7 +799,7 @@ jobsFor :: (args: []string) -> [..]Job {
 // What a file is, for --list and the output
 describe :: (job: Job) -> string {
     if job.effect >= 0 { return prompt(Effects[job.effect]); }
-    if job.piece >= 0  { return fmt.sprint("% s, %", Soundtrack[job.piece].seconds, musicPrompt(Soundtrack[job.piece])); }
+    if job.piece >= 0  { return fmt.sprint("% s, %", Pieces[job.piece].seconds, musicPrompt(Pieces[job.piece])); }
     return Lines[job.line].text;
 }
 

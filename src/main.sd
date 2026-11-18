@@ -107,7 +107,7 @@ loadSounds :: method (session: *Session) {
     session.hasSounds = true;
     game := currentGame();
     game.sounds.load(core.dataFolder());
-    game.sounds.playSoundtrack(core.Soundtrack, 0.55);
+    _ := game.sounds.playSoundtrack(core.Soundtrack, 0.45);
     game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
 }
 

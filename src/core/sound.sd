@@ -3,6 +3,7 @@ namespace core;
 import fmt;
 import math;
 import random;
+import time;
 use raylib;
 
 // The sounds and the music of the game, played by name through a SoundPlayer:
@@ -10,7 +11,7 @@ use raylib;
 //     sounds.play("hero.crossed");                 // data/sounds/hero/crossed.wav, or one of crossed_1.wav, ...
 //     sounds.playAt("ability.blink", position);    // quieter the further it is from the listener, and panned
 //     sounds.playMusic("traffic", 0.3);            // data/music/traffic.ogg, streamed and looped
-//     sounds.playSoundtrack(Soundtrack, 0.5);      // the pieces of data/music, one at a time, with silence between
+//     sounds.playSoundtrack("band", 0.5);          // the pieces of data/music/band, one at a time, with silence between
 //
 // Every .wav, .ogg and .mp3 in data/sounds/<group>/ is a sound named "<group>.<name>": a new sound is a file dropped in
 // there, without changing the game. Files that end in _<number> are variants of the same sound, and one is picked at
@@ -21,12 +22,41 @@ HearingDistance :: 70.0;    // How far away a sound played at a position can be 
 PausedVolume    :: 0.12;    // Of the music while the game is paused. The sounds of the world stop
 DuckSpeed       :: 4.0;     // How fast the volume follows a pause, per second
 
-// The soundtrack (tools/make_audio.sd): cheerful pieces for a little band that go together, played in a random order, each once,
-// with a breath of silence between them, so the music changes instead of looping one tune all game
-Soundtrack      :: ["first_light", "puddles", "lanterns", "far_side"];
-FirstPieceAfter :: 2.0;     // Seconds of silence before the first piece
-SilenceLeast    :: 3.0;     // and between two pieces, from this
-SilenceMost     :: 6.0;     // to this
+// The soundtracks (tools/make_audio.sd, data/music/<name>/): each a few pieces for a little band that go together. The
+// game plays the mix of all of them, or one, picked with the soundtrack command: its pieces shuffled anew every game,
+// each once before any comes again, with a pause between them, and fading in and out under the game, so the music
+// changes and never runs in the same order instead of looping one tune all game
+SoundtrackInfo :: struct {
+    name:  string;
+    about: string;
+}
+
+Soundtracks :: [
+    SoundtrackInfo{"mix", "all of them, shuffled together"},
+    SoundtrackInfo{"band", "cheerful and melodic: piano, pizzicato, marimba and guitar"},
+    SoundtrackInfo{"quiet", "calm, sparse ambient piano with room between the notes"},
+    SoundtrackInfo{"board", "a light party-game groove that stays in the background"},
+    SoundtrackInfo{"toybox", "comedic cartoon music on toy instruments"},
+];
+
+// The pieces of each, by the soundtrack they are in, e.g data/music/band/puddles.ogg
+SoundtrackPiece :: struct {
+    soundtrack: string;
+    name:       string;
+}
+
+SoundtrackPieces :: [
+    SoundtrackPiece{"band", "first_light"}, SoundtrackPiece{"band", "puddles"}, SoundtrackPiece{"band", "lanterns"}, SoundtrackPiece{"band", "far_side"},
+    SoundtrackPiece{"quiet", "dew"}, SoundtrackPiece{"quiet", "drizzle"}, SoundtrackPiece{"quiet", "long_light"},
+    SoundtrackPiece{"board", "dice_roll"}, SoundtrackPiece{"board", "town_square"}, SoundtrackPiece{"board", "shortcut"},
+    SoundtrackPiece{"toybox", "wind_up"}, SoundtrackPiece{"toybox", "toy_parade"}, SoundtrackPiece{"toybox", "pratfall"},
+];
+Soundtrack      :: "mix";       // The one played from the start
+FirstPieceAfter :: 3.0;     // Seconds of silence before the first piece
+SilenceLeast    :: 6.0;     // and between two pieces, from this
+SilenceMost     :: 14.0;    // to this
+PieceFadeIn     :: 4.0;     // Seconds a piece takes to come up from nothing, so it slips in under the game
+PieceFadeOut    :: 6.0;     // and to go back to nothing at its end
 
 // One file of a sound, with copies of it that share its samples, so it can play over itself
 SoundVariant :: struct {
@@ -44,6 +74,7 @@ MusicTrack :: struct {
     isPlaying:   bool;
     isMuted:     bool;
     pausesWithGame: bool;           // Stops while the game is paused, e.g the hum of the traffic, which has stopped too
+    fades:       bool;              // In at its start and out at its end, as the pieces of the soundtrack do
 }
 
 SoundPlayer :: struct {
@@ -56,7 +87,10 @@ SoundPlayer :: struct {
     isPaused: bool;
     duck:     f32 = 1;              // 1 while playing, PausedVolume while paused, and in between while it fades
 
+    soundtrackName:  string;        // Of Soundtracks
     soundtrack:      [..]string;    // The names of its pieces, which are tracks
+    order:           [..]int;       // The pieces still to come before they are shuffled again
+    musicRng:        random.Random; // Seeded from the clock, so every game plays them in an order of its own
     piece:           int = -1;      // The one playing, or -1 in the silence between two
     lastPiece:       int = -1;
     silence:         f32;           // Seconds until the next one
@@ -73,6 +107,7 @@ load :: method (player: *SoundPlayer, dataFolder: string) {
     }
     player.isReady = true;
     player.rng = random.newRandom(1234);
+    player.musicRng = random.newRandom(time.now().unix() as u64 ^ (time.clock() * 1000000000.0) as u64);
 
     for file in soundFiles(tprint("%sounds", dataFolder)) {
         source := LoadSound(tempCString(file.path));
@@ -202,18 +237,32 @@ toggleMute :: method (player: *SoundPlayer, name: string) {
     player.applyVolume(track);
 }
 
-// Plays the pieces of a soundtrack one after the other in a random order, with silence between, from now on. The names
-// that aren't in data/music are left out
-playSoundtrack :: method (player: *SoundPlayer, names: []string, volume: f32 = 1) {
-    if !player.isReady { return; }
+// Plays the pieces of a soundtrack of Soundtracks one after the other in a random order, with silence between, from now
+// on, instead of the one before. Pieces that aren't in data/music are left out. False when there is no soundtrack by the name
+playSoundtrack :: method (player: *SoundPlayer, soundtrack: string, volume: f32 = 1) -> bool {
+    found := false;
+    for info in Soundtracks { if info.name == soundtrack { found = true; } }
+    if !found { return false; }
+    if !player.isReady { return true; }
+    if player.piece >= 0 {
+        track := &player.tracks[player.soundtrack[player.piece]];
+        StopMusicStream(track.music);
+        track.isPlaying = false;
+    }
     player.soundtrack.clear();
-    for name in names {
+    player.order.clear();
+    player.soundtrackName = soundtrack;
+    for piece in SoundtrackPieces {
+        if piece.soundtrack != soundtrack && soundtrack != "mix" { continue; }
+        name := piece.name;
         if player.tracks.has(name) { player.soundtrack.add(name); }
         else { fmt.print("WARNING: SOUND: no music named % in data/music", name); }
     }
     player.soundtrackVolume = volume;
     player.piece = -1;
+    player.lastPiece = -1;
     player.silence = FirstPieceAfter;
+    return true;
 }
 
 // Turns the soundtrack off and on again, e.g with the M key. A piece that plays goes on, unheard
@@ -236,19 +285,33 @@ updateSoundtrack :: method (player: *SoundPlayer, dt: f32) {
         track.isPlaying = false;
         player.lastPiece = player.piece;
         player.piece = -1;
-        player.silence = player.rng.uniform(SilenceLeast, SilenceMost) as f32;
+        player.silence = player.musicRng.uniform(SilenceLeast, SilenceMost) as f32;
         return;
     }
     player.silence -= dt;
     if player.silence > 0 { return; }
 
-    // Any but the one before, so none comes twice in a row
+    // The next of a shuffled order of all of them, shuffled again once each has played, and never the one before
     count := player.soundtrack.count as int;
-    next := player.rng.between(0, count - 1);
-    if next == player.lastPiece && count > 1 { next = (next + player.rng.between(1, count - 1)) % count; }
+    if player.order.count == 0 {
+        for i in 0..count { player.order.add(i as int); }
+        for i in 0..count - 1 {
+            j := player.musicRng.between(i as int, count - 1);
+            swap := player.order[i];
+            player.order[i] = player.order[j];
+            player.order[j] = swap;
+        }
+        if count > 1 && player.order[count - 1] == player.lastPiece {
+            swap := player.order[0];
+            player.order[0] = player.order[count - 1];
+            player.order[count - 1] = swap;
+        }
+    }
+    next := player.order.removeLast();
     player.piece = next;
     track := &player.tracks[player.soundtrack[next]];
     track.music.looping = false;
+    track.fades = true;
     track.isMuted = player.soundtrackMuted;
     player.playMusic(player.soundtrack[next], player.soundtrackVolume);
 }
@@ -275,6 +338,11 @@ setPaused :: method (player: *SoundPlayer, isPaused: bool) {
 @private
 applyVolume :: method (player: *SoundPlayer, track: *MusicTrack) {
     volume := track.volume * player.duck;
+    if track.fades {
+        played := GetMusicTimePlayed(track.music);
+        left := GetMusicTimeLength(track.music) - played;
+        volume *= math.clamp(math.min(played / PieceFadeIn, left / PieceFadeOut), 0, 1);
+    }
     if track.isMuted { volume = 0; }
     SetMusicVolume(track.music, volume);
 }
