@@ -1,6 +1,6 @@
 namespace core;
 
-// What is on a hero right now, as a row of small round badges over the hero card: its statuses, its passives and perks, and
+// What is on a hero right now, as a row of small round badges over the hero card: its statuses, its passives, and
 // what else holds it or helps it for a while. A green ring is good for it, a red one bad, and it runs down with the time
 // left. The mouse on one says what it is
 
@@ -44,7 +44,7 @@ buffsOf :: (game: *Game, index: int) -> [..]Buff {
         buffs.add(Buff{"item_garlic", "Stench", tprint("The garlic of an enemy near: %% slower", (hero.slowedBy * 100) as int, "%"), false});
     }
 
-    // What it always has: the passives of the hero, and the perks of its player
+    // What it always has: the passives of the hero (its talents are in its tree, next to the portrait)
     for ability in hero.abilities() {
         if !ability.isPassive() { continue; }
         buff := Buff{ability.icon, ability.name, ability.description, true};
@@ -56,10 +56,6 @@ buffsOf :: (game: *Game, index: int) -> [..]Buff {
         }
         if kind == .staticCharge { buff.count = hero.castCount % 3; }
         buffs.add(buff);
-    }
-    for perk in player.perks {
-        definition := perk.perkDefinition();
-        buffs.add(Buff{definition.icon, definition.name, definition.description, true});
     }
     return buffs;
 }

@@ -173,9 +173,9 @@ profile :: method (bot: *Bot) -> BotProfile {
 
 think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     player := &game.players[me];
-    // A perk to pick: one of them, at random, after a moment to think
-    if player.perkOffer.hasValue() && player.perkOffer.value().timeLeft < PerkPickTime - 1 {
-        player.order(Command{choosePerk: bot.rng.between(0, PerkChoices - 1)});
+    // A talent to pick: one of them, at random, after a moment to think
+    if player.talentOffer.hasValue() && player.talentOffer.value().timeLeft < TalentPickTime - 1 {
+        player.order(Command{chooseTalent: bot.rng.between(0, TalentChoices - 1)});
     }
     if player.isPlaying() {
         bot.stats.lifeProgress = math.max(bot.stats.lifeProgress, progressOf(player.hero.ground(), player.startSide));

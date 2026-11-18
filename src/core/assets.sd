@@ -112,8 +112,8 @@ loadAssets :: () -> Assets {
         icon := kind.itemDefinition().icon;
         assets.icons[icon] = loadTexture(tprint("icons/%.png", icon));
     }
-    for kind in PerkKind.values {
-        icon := kind.perkDefinition().icon;
+    for kind in TalentKind.values {
+        icon := kind.talentDefinition().icon;
         assets.icons[icon] = loadTexture(tprint("icons/%.png", icon));
     }
     for kind in StatusKind.values {

@@ -195,22 +195,22 @@ useItemNow :: (game: *Game, slot: int, x: ?f32, z: ?f32, player: ?int) {
     game.players[index].order(Command{useItem: {slot: slot, target: target}});
 }
 
-@console.command("Offers every player three perks to pick one of, as after a crossing")
-offerPerksNow :: (game: *Game) {
-    game.offerPerks();
+@console.command("Offers every player three talents to pick one of, as after a crossing")
+offerTalentsNow :: (game: *Game) {
+    game.offerTalents();
 }
 
-@console.command("The perks there are, and the ones each player has")
-perks :: (game: *Game) {
-    for kind in PerkKind.values {
-        definition := kind.perkDefinition();
-        console.print("    %  -  %: %", PerkKind.names[kind], definition.name, definition.description);
+@console.command("The talents there are, and the ones each player has")
+talents :: (game: *Game) {
+    for kind in TalentKind.values {
+        definition := kind.talentDefinition();
+        console.print("    %  -  %: %", TalentKind.names[kind], definition.name, definition.description);
     }
     for player, i in game.players {
         names := "none";
-        for perk, k in player.perks {
-            if k == 0 { names = perk.perkDefinition().name; }
-            else      { names = tprint("%, %", names, perk.perkDefinition().name); }
+        for pick, k in player.talents {
+            if k == 0 { names = pick.taken().talentDefinition().name; }
+            else      { names = tprint("%, %", names, pick.taken().talentDefinition().name); }
         }
         console.print("    %. %: %", i, player.name, names);
     }

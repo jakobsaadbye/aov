@@ -1,0 +1,248 @@
+namespace core;
+
+// Talents: after each crossing, every player picks one of two, at random, for the rest of the game, as in the talent tree
+// of Dota: each crossing is a tier of the tree, with the talent taken and the one left. Like the items, each is a trait
+// (traits.sd) of all the heroes of its player, so two players with the same hero still play it differently. They are
+// shown in the tree next to the portrait, not with the statuses. A new talent is a value of TalentKind and its
+// definition.
+
+import math;
+use raylib;
+
+TalentKind :: enum {
+    thickSoles,
+    thickSkin,
+    scavenger,
+    revenge,
+    hitAndRun,
+    pocket,
+    nimble,
+    coldBlooded,
+    hotPotato,
+    scrapper,
+    focus,
+    longArms,
+}
+
+TalentDefinition :: struct {
+    name:        string;
+    description: string;
+    icon:        string;        // data/icons/<icon>.png
+    trait:       Trait;
+}
+
+talentDefinition :: method (kind: TalentKind) -> TalentDefinition {
+    return switch kind {
+        case .thickSoles  => TalentDefinition{"Thick Soles", "Doesn't slip on banana peels, nor slide on oil", "talent_thick_soles", .slipProof};
+        case .thickSkin   => TalentDefinition{"Thick Skin", "20% more health", "talent_thick_skin", Trait{maxHealth: 1.2}};
+        case .scavenger   => TalentDefinition{"Scavenger", "Picks items up from 3 further away", "talent_scavenger", Trait{itemReach: 3}};
+        case .revenge     => TalentDefinition{"Revenge", "Whoever got it run over has 3 seconds more on all cooldowns", "talent_revenge", Trait{revenge: 3}};
+        case .hitAndRun   => TalentDefinition{"Hit and Run", "Getting an enemy run over makes all the abilities ready again", "talent_hit_and_run", .hitAndRun};
+        case .pocket      => TalentDefinition{"Deep Pockets", "One more slot in the backpack", "talent_pocket", .pocket};
+        case .nimble      => TalentDefinition{"Nimble", "Steps aside by itself when a car is about to hit it. Every 20 seconds", "talent_nimble", .nimble};
+        case .coldBlooded => TalentDefinition{"Cold Blooded", "Cars it freezes, stops or slows stay so 1 second longer", "talent_cold_blooded", Trait{coldBlooded: 1}};
+        case .hotPotato   => TalentDefinition{"Hot Potato", "Shoving an enemy swaps an item with it", "talent_hot_potato", .hotPotato};
+        case .scrapper    => TalentDefinition{"Scrapper", "Shoves enemies twice as far", "talent_scrapper", Trait{shoveTaken: 2}};
+        case .focus       => TalentDefinition{"Focus", "The abilities cool down 12% faster", "talent_focus", Trait{cooldown: 0.88}};
+        case .longArms    => TalentDefinition{"Long Arms", "The abilities reach 15% further", "talent_long_arms", Trait{reach: 1.15}};
+    };
+}
+
+TalentChoices  :: 2;
+TalentPickTime :: 12.0;      // Seconds to pick, before one is taken at random
+
+// Two talents to pick one of
+TalentOffer :: struct {
+    talents:  [TalentChoices]TalentKind;
+    timeLeft: f32;
+}
+
+// A tier of the tree: the two that were offered, and the one taken
+TalentPick :: struct {
+    options: [TalentChoices]TalentKind;
+    chosen:  int;
+
+    taken :: method () -> TalentKind {
+        return self.options[self.chosen];
+    }
+}
+
+// After a crossing: every player is offered talents, two it doesn't have, at random
+offerTalents :: method (game: *Game) {
+    for i in 0..game.players.count { game.offerTalentsTo(i as int); }
+}
+
+@private
+offerTalentsTo :: method (game: *Game, index: int) {
+    player := &game.players[index];
+    offer := TalentOffer{timeLeft: TalentPickTime};
+    count := 0;
+    attempts := 0;
+    while count < TalentChoices && attempts < 60 {
+        attempts += 1;
+        kind := game.rng.between(0, TalentKind.count as int - 1) as TalentKind;
+        if hasTalent(player, kind) || isOffered(&offer, count, kind) { continue; }
+        offer.talents[count] = kind;
+        count += 1;
+    }
+    if count == TalentChoices { player.talentOffer = offer; }
+}
+
+hasTalent :: (player: *Player, kind: TalentKind) -> bool {
+    for pick in player.talents {
+        if pick.taken() == kind { return true; }
+    }
+    return false;
+}
+
+@private
+isOffered :: (offer: *TalentOffer, count: int, kind: TalentKind) -> bool {
+    for k in 0..count {
+        if offer.talents[k] == kind { return true; }
+    }
+    return false;
+}
+
+chooseTalent :: method (game: *Game, index: int, choice: int) {
+    player := &game.players[index];
+    if !player.talentOffer.hasValue() || choice < 0 || choice >= TalentChoices { return; }
+    offer := player.talentOffer.value();
+    player.talentOffer = null;
+    player.talents.add(TalentPick{options: offer.talents, chosen: choice});
+    player.refreshStats();
+    kind := offer.talents[choice];
+    if index == game.watched { game.showBanner(UiGold, "Talent: %", kind.talentDefinition().name); }
+    else                      { game.announce(index, player.color, "% picked %", player.name, kind.talentDefinition().name); }
+}
+
+// Picks a talent at random for whoever didn't pick in time
+updateTalentOffers :: method (game: *Game, dt: f32) {
+    for *player, i in game.players {
+        if !player.talentOffer.hasValue() { continue; }
+        offer := player.talentOffer.value();
+        offer.timeLeft -= dt;
+        player.talentOffer = offer;
+        if offer.timeLeft <= 0 { game.chooseTalent(i as int, game.rng.between(0, TalentChoices - 1)); }
+    }
+}
+
+// How many tiers the tree of a game has: a crossing that doesn't win offers one, as long as there are talents to offer
+talentTiers :: (game: *Game) -> int {
+    return math.min(game.length.crossingsToWin() - 1, TalentKind.count as int / TalentChoices + 1);
+}
+
+//
+// Drawing: the offer, two cards in the middle of the screen, and the tree next to the portrait
+//
+
+TalentCardWidth  :: 250;
+TalentCardHeight :: 150;
+
+// The offer of the player at the keyboard: a click on a card, or 1 or 2, picks it
+drawTalentOffer :: (game: *Game, assets: *Assets) {
+    game.hoveredTalent = -1;
+    if !game.hasLocal() || game.watched != game.local { return; }
+    player := &game.players[game.local];
+    if !player.talentOffer.hasValue() { return; }
+    offer := player.talentOffer.value();
+    gap := 28;
+    total := TalentChoices * TalentCardWidth + (TalentChoices - 1) * gap;
+    x := (GetScreenWidth() - total) / 2;
+    y := 215;
+    uiPlaque(tprint("Pick a talent  ·  % s", math.ceilf(offer.timeLeft) as int), GetScreenWidth() / 2, y - 48, 22);
+    mouse := GetMousePosition();
+    for k in 0..TalentChoices {
+        definition := offer.talents[k].talentDefinition();
+        card := Rectangle{(x + k as int * (TalentCardWidth + gap)) as f32, y as f32, TalentCardWidth, TalentCardHeight};
+        hovered := CheckCollisionPointRec(mouse, card);
+        if hovered { game.hoveredTalent = k as int; }
+        uiPanel(card, 0.6);
+        icon := assets.icons[definition.icon];
+        iconBox := Rectangle{card.x + 16, card.y + 16, 48, 48};
+        DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, iconBox, {0, 0}, 0, White);
+        highlight: ?Color = null;
+        if hovered { highlight = UiGold; }
+        uiIconFrame(iconBox, highlight);
+        drawTitle(definition.name, card.x as int + 76, card.y as int + 20, 18, UiGold);
+        drawText(tprint("%", k + 1), card.x as int + TalentCardWidth - 28, card.y as int + 16, 16, UiGoldDim);
+        lines := wrapText(definition.description, 15, TalentCardWidth - 32);
+        for line, n in lines { drawText(line, card.x as int + 16, card.y as int + 76 + n as int * 19, 15, Parchment); }
+        lines.free();
+    }
+}
+
+TalentTreeWidth :: 46;
+
+// The tree, in a slot next to the portrait: a trunk up its middle, and a tier for each crossing from the bottom up, a
+// pip on each side of the trunk for the two talents of it. The one taken is gold and lit, the one left dark, and the tiers
+// to come empty; while a pick waits, its tier glows. True when the mouse is on it: then drawTalentTreeTip shows the whole
+// tree, with the names, once the rest of the card is drawn
+drawTalentTree :: (game: *Game, assets: *Assets, player: *Player, rect: Rectangle) -> bool {
+    uiSlot(rect);
+    inner := Rectangle{rect.x + 6, rect.y + 6, rect.width - 12, rect.height - 12};
+    tiers := math.max(talentTiers(game), 1);
+    middle := inner.x + inner.width * 0.5;
+    DrawRectangleGradientV((middle - 1.5) as int, inner.y as int, 3, inner.height as int, ColorAlpha(UiGoldDim, 0.2), ColorAlpha(UiGoldDim, 0.8));
+    rowHeight := inner.height / tiers as f32;
+    pipWidth := inner.width * 0.5 - 5;
+    pulse := 0.5 + 0.5 * math.sinf(GetTime() as f32 * 6);
+    for tier in 0..tiers {
+        y := inner.y + inner.height - rowHeight * (tier + 1) as f32 + 1.5;
+        h := math.max(rowHeight - 3, 2);
+        for side in 0..TalentChoices {
+            pip := Rectangle{inner.x + side as f32 * (pipWidth + 10), y, pipWidth, h};
+            if tier < player.talents.count {
+                pick := player.talents[tier];
+                if pick.chosen == side as int {
+                    DrawRectangleGradientV(pip.x as int, pip.y as int, pip.width as int, pip.height as int, {255, 222, 130, 255}, {200, 140, 40, 255});
+                    DrawRectangleLinesEx(pip, 1, {255, 240, 190, 255});
+                } else {
+                    DrawRectangleRec(pip, {30, 28, 26, 255});
+                    DrawRectangleLinesEx(pip, 1, ColorAlpha(UiGoldDim, 0.5));
+                }
+            } else if tier == player.talents.count && player.talentOffer.hasValue() {
+                DrawRectangleRec(pip, ColorAlpha(UiGold, 0.25 + 0.35 * pulse));
+                DrawRectangleLinesEx(pip, 1, UiGold);
+            } else {
+                DrawRectangleRec(pip, {14, 14, 16, 255});
+                DrawRectangleLinesEx(pip, 1, ColorAlpha(UiGoldDim, 0.25));
+            }
+        }
+    }
+    // The knot of the trunk at the foot
+    DrawCircleV({middle, inner.y + inner.height}, 4, UiGoldDim);
+    return CheckCollisionPointRec(GetMousePosition(), rect);
+}
+
+// The whole tree, beside it: each tier with its two talents, the one taken in gold, the one left greyed, from the top down
+drawTalentTreeTip :: (game: *Game, player: *Player, anchor: Rectangle) {
+    tiers := math.max(talentTiers(game), 1);
+    Row :: 26;
+    width := 470;
+    height := 56 + tiers * Row;
+    box := Rectangle{anchor.x, anchor.y - height as f32 - 12, width as f32, height as f32};
+    uiPanel(box, 0.95);
+    drawTitle("Talents", box.x as int + 18, box.y as int + 14, 20, UiGold);
+    picked := tprint("% of %", player.talents.count, tiers);
+    drawText(picked, (box.x + box.width) as int - 18 - textWidth(picked, 14), box.y as int + 18, 14, UiGoldDim);
+    column := (width - 36) / 2;
+    for tier in 0..tiers {
+        k := tiers - 1 - tier;          // The top tier first, as the tree grows up
+        y := box.y as int + 46 + tier * Row;
+        drawText(tprint("%", k + 1), box.x as int + 18, y + 3, 14, UiGoldDim);
+        if k < player.talents.count {
+            pick := player.talents[k];
+            for side in 0..TalentChoices {
+                name := pick.options[side].talentDefinition().name;
+                color := ColorAlpha(Parchment, 0.35);
+                if pick.chosen == side as int { color = UiGold; }
+                x := box.x as int + 40 + side as int * column;
+                drawText(name, x, y, 16, color);
+            }
+        } else if k == player.talents.count && player.talentOffer.hasValue() {
+            drawText("Pick one now", box.x as int + 40, y, 16, UiGold);
+        } else {
+            drawText("After a crossing", box.x as int + 40, y, 16, ColorAlpha(Parchment, 0.25));
+        }
+    }
+}
