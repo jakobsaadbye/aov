@@ -23,6 +23,7 @@ Trait :: union {
     bounce;                     // A car that hits it bounces it over the car, now and then (Spring Shoes)
     throughWalls;               // Walks through the walls
     oilProof;                   // Doesn't slide on oil
+    greaseMonkey: f32;          // Doesn't slide on oil, and runs this many times as fast on it (Karl)
     unshovable;                 // Isn't pushed by heroes that walk into it, or by abilities that knock it away
     ambulanceProof;             // The ambulances drive round it
     stunTaken:    f32;          // Times how long stuns and the like hold it
@@ -72,6 +73,7 @@ HeroStats :: struct {
     bounces:     bool;
     throughWalls: bool;
     oilProof:    bool;
+    oilSpeed:    f32 = 1;       // Times the speed while it is on oil
     unshovable:  bool;
     scrapArmor:  int;
     ambulanceProof: bool;
@@ -124,6 +126,7 @@ addTrait :: method (stats: *HeroStats, trait: Trait) {
         case .bounce       { stats.bounces = true; }
         case .throughWalls { stats.throughWalls = true; }
         case .oilProof     { stats.oilProof = true; }
+        case .greaseMonkey { stats.oilProof = true; stats.oilSpeed = math.max(stats.oilSpeed, v); }
         case .unshovable   { stats.unshovable = true; }
         case .scrapArmor   { stats.scrapArmor = math.max(stats.scrapArmor, v); }
         case .ambulanceProof { stats.ambulanceProof = true; }

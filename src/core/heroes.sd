@@ -176,6 +176,7 @@ Hero :: struct {
     nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
     shrugged:         int = -1;     // The car it threw aside last, berserk (Ivar), which doesn't hit it while it slides over
     shruggedLeft:     f32;
+    onOil:            bool;         // On a slick of oil, as of this frame
     scrap:            int;          // Scraps of metal stuck to it (the trait scrapArmor, Magnus)
     scrapLeft:        f32;          // Seconds until a car that rushes past leaves another
     scrapCar:         int = -1;     // The car that knocked one off last, which doesn't hit it while it is flung aside
@@ -212,6 +213,7 @@ Hero :: struct {
         speed := self.info().moveSpeed * self.stats.speed * self.statusSpeed() * (1 - self.slowedBy);
         stats := self.stats;
         if stats.momentum { speed *= 1 + MomentumBonus * self.momentum; }
+        if self.onOil { speed *= stats.oilSpeed; }
         return speed;
     }
 

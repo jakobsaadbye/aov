@@ -1068,6 +1068,14 @@ testHazards :: () {
     assert(game.slicks.list.count == 1 && !game.slicks.list[0].hasLanded() && !game.slickAt({-30, 20}));
     for 0..40 { game.simulate(Dt); }
     assert(game.slicks.list[0].hasLanded() && game.slickAt({-30, 20}) && game.slickAt({-30 + 4.2, 20}));
+    // Karl himself runs on it, 60% faster, and turns as he likes
+    you.hero.position = Vector3{-33, 0, 20};
+    you.hero.moveTo(Vector3{-30, 0, 20 + 30});
+    game.simulate(Dt);
+    start := you.hero.position;
+    for 0..15 { game.simulate(Dt); }
+    ran := Vector3Distance(start, you.hero.position);
+    assert(you.hero.slideLeft <= 0 && near(ran, you.hero.info().moveSpeed * core.GreaseSpeed * 15 * Dt, 0.05));
     game.spawnHero(game.local, .allan);
     you.hero.position = Vector3{-30 - 6, 0, 20};
     you.hero.moveTo(Vector3{-30 + 20, 0, 20});
