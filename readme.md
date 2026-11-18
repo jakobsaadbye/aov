@@ -132,12 +132,13 @@ saad run tools/make_audio.sd -- music --force         the soundtrack again
 On Linux, build it with `saad build tools/make_audio.sd --elf` and link `tools/build/out.o` with `tools/linux/link.sh` of
 the Saad repository, which links OpenSSL for https.
 
-The music is a soundtrack of four calm pieces for piano, made with the music API of ElevenLabs by the same tool:
-`first_light` (hopeful, D major), `puddles` (rain on empty streets, B minor), `lanterns` (dusk, G major) and `far_side`
-(getting home, D major), from 72 to 112 seconds each. They share one style in their prompts (soft felt piano with long
-pauses, a distant pad, a slow tempo, no drums), so they go together. The game plays them one at a time in a random order,
-never the same one twice in a row, with 25 to 70 seconds of silence between them (`core.Soundtrack` in
-`core/sound.sd`), so the music comes and goes instead of one tune looping all game. M turns it off and on.
+The music is a soundtrack of four cheerful pieces for a little band, made with the music API of ElevenLabs by the same
+tool: `first_light` (a sunny morning, D major), `puddles` (jumping in puddles, A major), `lanterns` (an evening market,
+G major) and `far_side` (making it across, D major), from 76 to 107 seconds each. They share one style in their prompts
+(a bouncy piano with pizzicato strings, a marimba, a strummed guitar and light percussion, about 112 BPM, major keys), so
+they go together. The game plays them one at a time in a random order, never the same one twice in a row, with 25 to
+70 seconds of silence between them (`core.Soundtrack` in `core/sound.sd`), so the music comes and goes instead of one
+tune looping all game. M turns it off and on.
 Any of the files can be replaced by a recording.
 
 ## Fonts

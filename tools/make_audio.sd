@@ -436,8 +436,8 @@ Lines :: [
 // Music
 //
 
-// What every piece has, so they sound like one soundtrack: the same instruments, keys that are close, and a slow tempo
-MusicStyle :: "Calm, gentle instrumental music for a peaceful video game, made to play quietly in the background. Soft felt piano, unhurried and sparse, with long pauses between phrases and notes left to ring. A warm, distant synth pad underneath, a little tape warmth, and a large soft reverb. Around 70 BPM. No drums, no percussion, no vocals, no build-ups or drops. It starts softly and ends by fading away";
+// What every piece has, so they sound like one soundtrack: the same little band, keys that are close, and the same tempo
+MusicStyle :: "Cheerful, bright instrumental music for a playful video game, upbeat and light on its feet. A bouncy piano leads the melody, with pizzicato strings, a marimba and a lightly strummed acoustic guitar. Light percussion: a shaker, hand claps and a soft kick, never heavy. Around 112 BPM, with a skipping, playful rhythm. Major keys, sunny and optimistic, but still background music: no vocals, no big build-ups or drops. It starts right away and ends with a short, clean fade";
 
 Piece :: struct {
     name:    string;    // music.<name>, written to data/music/<name>.ogg. Not ending in _<number>
@@ -446,10 +446,10 @@ Piece :: struct {
 }
 
 Soundtrack :: [
-    Piece{"first_light", "Hopeful and bright, like early morning before the city wakes. In D major: a simple rising melody in the right hand over slow, open chords in the left", 80},
-    Piece{"puddles", "Tender and a little melancholic, like rain on empty streets. In B minor: falling phrases, low notes left ringing, and a soft cello note now and then", 95},
-    Piece{"lanterns", "Dreamy and floating, like streetlights coming on at dusk. In G major: a slow repeating figure in the high notes, with a celesta doubling the melody", 105},
-    Piece{"far_side", "Wistful and warm, like getting home after a long journey. In D major: a slow theme that comes back twice, with soft strings swelling gently under the piano in the middle", 115},
+    Piece{"first_light", "Sunny and eager, like the city waking up on a bright morning. In D major: a hopping piano melody over plucked strings, with the marimba answering each phrase", 80},
+    Piece{"puddles", "Playful and mischievous, like jumping in puddles after the rain. In A major: staccato piano and pizzicato, a little melody that skips up and down, and claps on the off-beats", 90},
+    Piece{"lanterns", "Festive and warm, like a busy evening market strung with lanterns. In G major: strummed guitar and piano chords, a light flute melody, and a bouncing bass", 100},
+    Piece{"far_side", "Triumphant and joyful, like making it across against the odds. In D major: a bright theme that comes back twice and grows each time, with strings and the whole little band joining in the middle", 110},
 ];
 
 musicPrompt :: (piece: Piece) -> string {
