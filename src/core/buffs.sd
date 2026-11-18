@@ -20,6 +20,7 @@ Buff :: struct {
 
 BuffSize :: 38;
 BuffGap  :: 6;
+BuffMiddleGap :: 16;        // Between the good ones and the bad ones
 GoodBuffColor :: Color{80, 220, 90, 255};
 BadBuffColor  :: Color{230, 60, 50, 255};
 
@@ -65,13 +66,19 @@ buffsOf :: (game: *Game, index: int) -> [..]Buff {
 
 
 
-// Over the hero card: the good ones from its left, the bad ones from its right
+// Over the middle of the hero card, as in Dota: the good ones to the left of the middle, the bad ones to the right of it,
+// each side growing outwards from the middle
 drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
     buffs := buffsOf(game, game.watched);
     defer buffs.free();
     y := panel.y as int - BuffSize - 12;
-    left := panel.x as int + 16;
-    right := (panel.x + panel.width) as int - 16 - BuffSize;
+    middle := (panel.x + panel.width * 0.5) as int;
+    goods := 0;
+    for buff in buffs { if buff.good { goods += 1; } }
+    left := middle - BuffMiddleGap / 2 - BuffSize;          // The good ones, from the middle leftwards
+    right := middle + BuffMiddleGap / 2;                    // and the bad ones rightwards
+    if goods == buffs.count { left = middle - BuffSize / 2 + (goods - 1) * (BuffSize + BuffGap) / 2; }
+    else if goods == 0     { right = middle - BuffSize / 2 - (buffs.count as int - 1) * (BuffSize + BuffGap) / 2; }
     mouse := GetMousePosition();
     hovered := -1;
     hoveredBox: Rectangle;
@@ -79,9 +86,9 @@ drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
         x := right;
         if buff.good {
             x = left;
-            left += BuffSize + BuffGap;
+            left -= BuffSize + BuffGap;
         } else {
-            right -= BuffSize + BuffGap;
+            right += BuffSize + BuffGap;
         }
         box := Rectangle{x as f32, y as f32, BuffSize, BuffSize};
         drawBuff(assets, buff, box);
@@ -137,27 +144,29 @@ drawBuff :: (assets: *Assets, buff: Buff, box: Rectangle) {
     }
 }
 
-// A texture in a circle: a fan of triangles from its middle, each with its part of the texture
+// A texture in a circle: wedges from its middle, each with its part of the texture. Drawn as quads (a wedge is the middle
+// and three points on the edge), as raylib draws its textures: rlgl starts a new draw with no texture when the mode
+// changes, so in triangles the texture was lost and the icon came out white
 drawRoundTexture :: (texture: Texture, center: Vector2, radius: f32) {
-    Segments :: 36;
+    Segments :: 18;
     rlSetTexture(texture.id);
-    rlBegin(RlTriangles);
+    rlBegin(RlQuads);
     rlColor4ub(255, 255, 255, 255);
     for k in 0..Segments {
         a := Pi * 2 * k as f32 / Segments;
         b := Pi * 2 * (k + 1) as f32 / Segments;
+        m := (a + b) * 0.5;
         rlTexCoord2f(0.5, 0.5);
         rlVertex2f(center.x, center.y);
-        rlTexCoord2f(0.5 + math.cosf(b) * 0.5, 0.5 + math.sinf(b) * 0.5);
-        rlVertex2f(center.x + math.cosf(b) * radius, center.y + math.sinf(b) * radius);
-        rlTexCoord2f(0.5 + math.cosf(a) * 0.5, 0.5 + math.sinf(a) * 0.5);
-        rlVertex2f(center.x + math.cosf(a) * radius, center.y + math.sinf(a) * radius);
+        for angle in [b, m, a] {
+            rlTexCoord2f(0.5 + math.cosf(angle) * 0.5, 0.5 + math.sinf(angle) * 0.5);
+            rlVertex2f(center.x + math.cosf(angle) * radius, center.y + math.sinf(angle) * radius);
+        }
     }
     rlEnd();
     rlSetTexture(0);
 }
 
-RlTriangles :: 4;           // RL_TRIANGLES of rlgl
 
 extern "raylib.dll" {
     rlVertex2f :: (x: f32, y: f32) -> void;
