@@ -62,7 +62,7 @@ bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its
 walk, and one for each ability, named by its icon. The game plays a hero's
 GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
 hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
-else idle. The Butcher, Birgit, Frosty and Mira have one so far; the others are still OBJ.
+else idle. The Butcher, Birgit, Frosty, Mira and Magnus have one so far; the others are still OBJ.
 
 The Butcher's face has bones of its own: a jaw, two brows and two eyelids, over sculpted eyeballs, lips, teeth and
 tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks, chews and sneers while he stands,
@@ -91,6 +91,12 @@ and a scarf whose pompom and tail are on bones of their own, so they bounce and 
 waddles, claps his mittens over his head and flings them out for his cold snap, blowing, and crouches and hugs himself
 as his igloo goes up round him. The igloo is a model too (`models/igloo.obj`): rows of snow blocks, a tunnel to a dark
 door on the side he is going, icicles. It grows up out of the snow round him, crouching in it, and slumps as it melts.
+
+Magnus is a circus strongman on the brute's body: a striped singlet with straps, black tights, laced boots, iron bracers,
+a belt with a gold buckle, slicked hair, a handlebar moustache and a cleft chin, and a giant red horseshoe magnet in his
+right fist. He stands with his chest out and now and then flexes his free arm, holds the magnet up over his head and
+turns it round to repel the cars, and thrusts it at an enemy and heaves back to pull it in. While he pulls, blue lines
+of his field ripple from the magnet in his hand to the enemy (`drawMagnetPull`).
 
 Mira is a tall, slender person on the same skeleton, in a long robe of deep violet scattered with gold stars: its skirt
 is bound to her hips and legs, so it follows her steps and swings out when she turns. She has wide bell sleeves, long

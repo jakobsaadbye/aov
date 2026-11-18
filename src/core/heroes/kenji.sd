@@ -15,8 +15,8 @@ defineKenji :: () -> HeroDefinition {
     });
     hero.abilities.add(Ability{
         name: "Shadow step", icon: "shadow_step", sound: "ability.shadow_step", cooldown: 9, targeting: .point, cast: castShadowStep, bot: .escape,
-        description: "Steps into the shadow right behind the car nearest the cursor, up to 12 away",
-        range: 12,
+        description: "Steps into the shadow right behind the car nearest the cursor, up to 24 away",
+        range: 24,
     });
     hero.abilities.add(passive("Shadowed", "shadowed", "Enemies can't target him while he is right next to a car", .shadowed));
     return hero;

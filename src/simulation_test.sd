@@ -597,6 +597,15 @@ testEnemySpells :: () {
     enemy.hero.position = Vector3{-118 + 25, 0, 0};
     game.cast(0, 0, {-118, 0});
     assert(!enemy.hero.has(.frozen));
+
+    // Magnus pulls the enemy nearest the cursor right up to him, from as far as 32
+    game.spawnHero(0, .magnus);
+    game.you().hero.position = Vector3{-118, 0, 0};
+    enemy.hero.position = Vector3{-118, 0, 23};
+    game.cast(0, 1, {-118, 23});
+    assert(enemy.hero.displacement.hasValue() && game.you().hero.attracting == 1 && enemy.hero.harmedBy == 0);
+    for 0..90 { game.simulate(Dt); }
+    assert(enemy.hero.ground().distance(game.you().hero.ground()) < 3);
 }
 
 // The forecast of the bots says when the cars it knows of will be where: what it says is free, is
@@ -1521,6 +1530,7 @@ testNewItems :: () {
     assert(game.portals.count == 1);
     for 0..90 { game.simulate(Dt); }           // Off the portal it opened under itself
     you.hero.position = Vector3{grass + 3, 0, 0};
+    you.hero.portalLeft = 0;                    // It may have gone through it standing on it: ready again
     walkTo(game, Vector3{grass, 0, 0});
     assert(you.hero.ground().distance({grass, 20}) < 2);
 }

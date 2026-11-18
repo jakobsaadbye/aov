@@ -2157,30 +2157,160 @@ def make_gudrun():
     finish(m, "gudrun")
 
 
+def horseshoe_magnet(m, grip, forward, up, size, bones):
+    """A big horseshoe magnet held by its bend at grip: two arms that reach forward along forward, red, banded, with
+    bright steel poles at their ends. up is across the bend (the arms are side by side along it)"""
+    f = np.asarray(forward, float)
+    f /= np.linalg.norm(f)
+    u = np.asarray(up, float)
+    u = u - f * (u @ f)
+    u /= np.linalg.norm(u)
+    side = np.cross(f, u)
+    r = 0.42 * size
+    path = []
+    for k in range(13):
+        a = math.pi * k / 12
+        path.append(grip + u * (r * math.cos(a)) - f * (r * math.sin(a)) + f * r * 0.15)
+    a0, a1 = path[0], path[-1]
+    path = [a0 + f * 0.9 * size] + path + [a1 + f * 0.9 * size]
+    red = color((0.86, 0.1, 0.08)) + edges(0.35, 0.06, dark=True) + stains((0.4, 0.05, 0.05), 0.1, 4)
+    w = 0.16 * size
+    m.add(loft(path[::-1], [(w, w * 1.1, 5.0)] * len(path), facing=side, nu=12, nv=40, caps="flat"), red, bones=bones)
+    steel = metal((0.86, 0.88, 0.92), 0.65) + edges(0.4, 0.05)
+    for end in (a0, a1):
+        tip = end + f * 0.9 * size
+        m.add(loft([tip - f * 0.02, tip + f * 0.28 * size], [(w * 1.05, w * 1.15, 5.0)] * 2, facing=side, nu=12, caps="flat"), steel, bones=bones)
+        m.add(loft([tip - f * 0.32 * size, tip - f * 0.26 * size], [(w * 1.08, w * 1.18, 5.0)] * 2, facing=side, nu=12, caps="flat"),
+              color((0.95, 0.93, 0.88)) + edges(0.3, 0.1, dark=True), bones=bones)
+    return path
+
+
+def magnus_clips():
+    """Magnus: he stands with his chest out and now and then flexes his free arm, walks heavily, holds his magnet up
+    over his head and turns it round to repel the cars, and thrusts it at an enemy and heaves back to pull him in"""
+    from rig import clip, layered
+    from anatomy import once
+    stand = {"upper_r": (-8, 0, 10), "fore_r": (-30, 0, 0), "upper_l": (0, 0, -12), "fore_l": (-18, 0, 0), "chest": (-4, 0, 0), "head": (2, 0, 0),
+             "hips": {"rot": (0, 0, 0), "pos": (0, 0, 0)}}
+    breathe = {"upper_r": (-10, 0, 12), "fore_r": (-34, 0, 0), "upper_l": (0, 0, -15), "fore_l": (-22, 0, 0), "chest": (-8, 0, 0), "head": (0, 0, 0),
+               "hips": {"rot": (0, 0, 0), "pos": (0, 0.03, 0)}}
+    flex = {"upper_r": (-8, 0, 10), "fore_r": (-30, 0, 0), "upper_l": (-10, 0, -85), "fore_l": (-120, 0, 0), "hand_l": (0, 0, -20), "chest": (-8, 12, 0),
+            "head": (0, 40, 8), "hips": {"rot": (0, 0, 0), "pos": (0, 0.02, 0)}}
+
+    def walk(s):
+        return {"thigh_r": (-24 * s, 0, 0), "thigh_l": (22 * s, 0, 0), "shin_r": (8 if s > 0 else 32, 0, 0), "shin_l": (32 if s > 0 else 8, 0, 0),
+                "upper_r": (16 * s, 0, 10), "upper_l": (-20 * s, 0, -12), "fore_r": (-30, 0, 0), "fore_l": (-24, 0, 0),
+                "spine": (2, 8 * s, 0), "chest": (-2, 6 * s, 0), "hips": {"rot": (0, -8 * s, 4 * s), "pos": (0, -0.06, 0)}, "head": (-2, -8 * s, 0)}
+
+    def passing(s):
+        return {"thigh_r": (-4 if s > 0 else 0, 0, 0), "thigh_l": (0 if s > 0 else -4, 0, 0), "shin_r": (12 if s > 0 else 40, 0, 0),
+                "shin_l": (40 if s > 0 else 12, 0, 0), "upper_r": (0, 0, 10), "upper_l": (0, 0, -12), "fore_r": (-30, 0, 0), "fore_l": (-24, 0, 0),
+                "spine": (2, 0, 0), "chest": (-2, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0.06, 0)}, "head": (-2, 0, 0)}
+    # Repel: the magnet up over his head, then turned round, poles down, with a heave of his chest
+    up = {"upper_r": (-175, 0, -5), "fore_r": (-10, 0, 0), "hand_r": (0, 0, 0), "upper_l": (-10, 0, -80), "fore_l": (-115, 0, 0), "chest": (-10, 0, 0),
+          "spine": (-6, 0, 0), "head": (-22, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0.05, 0)}}
+    turned = dict(up, hand_r=(0, 180, 0), chest=(-4, 0, 0), head=(-14, 0, 0), thigh_r=(-14, 0, 6), thigh_l=(-14, 0, -6), shin_r=(18, 0, 0), shin_l=(18, 0, 0))
+    turned["hips"] = {"rot": (0, 0, 0), "pos": (0, -0.12, 0)}
+    # Attract: the magnet thrust out at the enemy, his other hand on his wrist, then a heave back with his whole weight
+    aim = {"upper_r": (-88, 0, -6), "fore_r": (-4, 0, 0), "hand_r": (70, 0, 0), "upper_l": (-75, 0, 30), "fore_l": (-40, 0, 0), "chest": (10, -10, 0),
+           "spine": (8, -6, 0), "head": (-6, 8, 0), "thigh_r": (-30, 0, 0), "shin_r": (25, 0, 0), "thigh_l": (14, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, -0.12, 0.15)}}
+    heave = {"upper_r": (-70, 0, -4), "fore_r": (-45, 0, 0), "hand_r": (95, 0, 0), "upper_l": (-60, 0, 26), "fore_l": (-70, 0, 0), "chest": (-14, 8, 0), "spine": (-10, 4, 0),
+             "head": (6, -6, 0), "thigh_r": (-10, 0, 0), "thigh_l": (-30, 0, 0), "shin_l": (30, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, -0.08, -0.2)}}
+    body = {
+        "idle": clip(3.2, (0.0, stand), (0.8, breathe), (1.4, stand), (1.8, flex), (2.4, flex), (2.9, stand)),
+        "walk": clip(1.0, (0.0, walk(1)), (0.25, passing(1)), (0.5, walk(-1)), (0.75, passing(-1))),
+        "repel": once(1.0, (0.0, stand), (0.18, up), (0.32, up), (0.5, turned), (0.75, turned), (1.0, stand)),
+        "attract": once(0.9, (0.0, stand), (0.12, aim), (0.3, aim), (0.55, heave), (0.9, stand)),
+    }
+    calm, blink = face_pose(jaw=1, brow=4, lid=6), face_pose(jaw=1, brow=4, lid=85)
+    proud = face_pose(jaw=6, brow=-10, lid=0, lift=0.02)
+    strain, roar = face_pose(jaw=4, brow=24, lid=30, drop=0.01), face_pose(jaw=26, brow=16, lid=0)
+    face = {
+        "idle": clip(3.2, (0.0, calm), (1.0, calm), (1.05, blink), (1.12, calm), (1.8, proud), (2.4, proud), (2.9, calm)),
+        "walk": clip(1.0, (0.0, face_pose(jaw=2, brow=6, lid=8)), (0.5, face_pose(jaw=3, brow=6, lid=8))),
+        "repel": once(1.0, (0.0, calm), (0.18, strain), (0.5, roar), (0.75, roar), (1.0, proud)),
+        "attract": once(0.9, (0.0, calm), (0.12, strain), (0.3, strain), (0.55, roar), (0.9, proud)),
+    }
+    clips_ = {name: layered(body[name], face[name]) for name in body}
+    for name in body:
+        still = clip(body[name]["duration"], (0.0, stand))
+        still["once"] = body[name].get("once", False)
+        clips_[name + "_face"] = layered(still, face[name])
+    return clips_
+
+
 def make_magnus():
-    """A strongman: a barrel chest in a striped wrestling singlet, huge bare arms with iron bracers, a handlebar
-    moustache, slicked hair, a confident stare, and a giant horseshoe magnet held up in both hands"""
-    m = hero_model("magnus")
-    bd = replace(BRUTE, hunch=0.1, leg=1.2, belly=0.2, head=0.88)
-    singlet = cloth((0.15, 0.15, 0.2)) + stripes((0.75, 0.12, 0.12), 6, 0.25) + stitches((0.5, 0.5, 0.55), [0.06, 0.94])
-    b = person(m, bd, singlet, cloth((0.15, 0.15, 0.2)), arms=skin(SKIN_OLIVE), skin_c=SKIN_OLIVE, pecs=False,
-               hair_paint=hair((0.1, 0.09, 0.09)), hair_style="slick", arm_pose="both_up",
-               eyes_kw=dict(iris=(0.3, 0.3, 0.35), lid=0.35, size=0.065, socket=0.45), mouth_kw=dict(kind="line"),
-               brows_kw=dict(c=(0.1, 0.09, 0.09), tilt=0.5, thick=1.0), nose="broad", cuffs=metal((0.6, 0.62, 0.66)))
-    jx, jy, jz = b.jaw_c
-    rx, ry, rz = b.jaw_r
-    for side in (1, -1):
-        m.add(tube([(jx, jy + ry * 0.3, jz + rz), (jx + side * rx * 0.6, jy + ry * 0.25, jz + rz * 0.9), (jx + side * rx * 1.05, jy + ry * 0.6, jz + rz * 0.7)],
-                   [0.07, 0.06, 0.02]), hair((0.1, 0.09, 0.09)))
-    bracers(m, b, metal((0.55, 0.57, 0.62), 0.4) + spots((0.8, 0.8, 0.82), 0.03, 0.3, 3), length=0.55)
-    belt(m, b, leather((0.25, 0.15, 0.1)), buckle=metal((0.85, 0.7, 0.3)) + edges(0.3, 0.03))
-    (rx_, ry_, rz_), (lx, ly, lz) = b.right, b.left
-    red = color((0.82, 0.1, 0.08)) + edges(0.2, 0.05) + stains((0.4, 0.05, 0.05), 0.1, 4)
-    top = ry_ + 1.1
-    m.add(tube([(rx_, ry_ + 0.15, rz_), (rx_, top, rz_), (0, top + 0.4, rz_), (lx, top, lz), (lx, ly + 0.15, lz)], 0.27, nu=12, caps=False), red)
-    for x, y, z in (b.right, b.left):
-        m.add(cylinder((x, y - 0.35, z), 0.28, 0.5), metal((0.85, 0.86, 0.9), 0.6))
+    """Magnus the Magnet, a circus strongman: a barrel chest and huge bare arms, a striped red and black singlet with
+    straps, black tights, laced wrestling boots, iron bracers, a belt with a big gold buckle, slicked black hair with a
+    parting, a curled handlebar moustache, a cleft chin and a confident stare, and a giant red horseshoe magnet with
+    steel poles in his right fist. Rigged like the Butcher, with clips for standing (and flexing), walking, turning his
+    magnet round to repel the cars, and thrusting it at an enemy to pull him in, written as models/magnus.glb too"""
+    from anatomy import joints, make_rig, skin_paint, brute_body, L
+    from rig import write_glb
+    m = Model("magnus", size=1024, light=0.5, ao=1.3, detail=0.08)
+    J = joints(hips=(0, 1.5, 0), spine=(0, 2.05, 0.06), chest=(0, 2.8, 0.12), neck=(0, 3.45, 0.22), head=(0, 3.65, 0.3),
+               shoulder_r=(1.3, 3.2, 0.15), elbow_r=(1.7, 2.35, 0.2), wrist_r=(1.75, 1.55, 0.5), hand_end_r=(1.75, 1.15, 0.7),
+               hip_r=(0.55, 1.42, 0.0), knee_r=(0.66, 0.85, 0.12), ankle_r=(0.72, 0.3, 0.0), toe_r=(0.75, 0.1, 0.6))
+    m.rig = make_rig(J)
+    sk = (0.86, 0.66, 0.5)
+    skin_p = skin_paint(sk)
+    red, black = (0.78, 0.1, 0.1), (0.12, 0.11, 0.13)
+
+    top_y = J["chest"][1] + 0.05
+
+    def singlet(ctx):
+        # Red and black bands up to the middle of his chest, and two black straps over his shoulders
+        base = skin_p(ctx)
+        y, x = ctx.p[..., 1], ctx.p[..., 0]
+        band = np.floor((y - J["hips"][1]) / 0.28) % 2 == 0
+        cloth_c = np.where(band[..., None], rgb(red), rgb(black)) * (0.92 + 0.12 * fbm(ctx.p, 3, 2, 5))[..., None]
+        strap = smoothstep(0.1, 0.07, np.abs(np.abs(x) - 0.55))
+        below = smoothstep(top_y + 0.03, top_y - 0.03, y)
+        cloth_c = np.where((y > top_y)[..., None], rgb(black) * 0.95, cloth_c)
+        covered = np.maximum(below, strap)
+        return base * (1 - covered)[..., None] + cloth_c * covered[..., None]
+    tights = cloth(black, folds=4) + stitches((0.3, 0.3, 0.32), [0.5], axis="u")
+    boots = leather((0.3, 0.2, 0.14)) + stripes((0.85, 0.82, 0.75), 8, 0.12, axis="v") + edges(0.3, 0.06, dark=True)
+    brute_body(m, J, skin_p, tights, boots, gut=0.5, shoulders=0.92, forearm=1.1, legs_thick=1.0, chest_p=Paint(singlet), arms_p=skin_p, hand_p=skin_p)
+    h, c = J["hips"], J["chest"]
+    # The belt with its gold buckle, and iron bracers on his forearms
+    m.add(torus(h + [0, 0.3, 0.1], 0.98, 0.12, sz=0.78, nu=30), leather((0.28, 0.17, 0.1)) + stitches((0.6, 0.45, 0.25), [0.3, 0.7]), bones=["hips", "spine"])
+    m.add(blob(h + [0, 0.3, 0.86], (0.3, 0.2, 0.06), (0.4, 0.4)), metal((0.92, 0.72, 0.25), 0.6) + edges(0.4, 0.1), bones="hips")
+    e, w = J["elbow_r"], J["wrist_r"]
+    iron = metal((0.5, 0.52, 0.56), 0.45) + edges(0.35, 0.08) + stains((0.45, 0.32, 0.2), 0.15, 5)
+    m.mirror(m.add(loft([e + (w - e) * 0.42, e + (w - e) * 0.88], [(0.36, 0.32, 3.0), (0.3, 0.26, 3.0)], facing=(0, 0, 1), nu=14, caps="flat"), iron, bones=["fore_r"]))
+    for k in range(3):
+        p_ = e + (w - e) * (0.5 + 0.15 * k)
+        m.mirror(m.add(sphere(p_ + [0.33, 0, 0], 0.035, nu=6, nv=4), metal((0.75, 0.76, 0.8), 0.6), bones=["fore_r"]))
+    # The head: his face, with a strong jaw and a cleft chin
+    S = 1.4
+    hd = J["head"] + np.array([0, 0.42, 0.22])
+    P = human_face(m, hd, sk, m.rig, S=S, iris=(0.35, 0.42, 0.55), brow_c=(0.1, 0.08, 0.07), lips=(0.75, 0.5, 0.44), freckles=0.0, nose="long")
+    hair_c = (0.08, 0.07, 0.08)
+    hair_p = hair(hair_c) + stripes((0.25, 0.25, 0.3), 16, 0.15, axis="u")
+    # Slicked back hair, shining, with a parting on his left
+    m.add(ellipsoid(P(0, 0.06, -0.04), (0.39 * S, 0.43 * S, 0.4 * S), vrange=(0.45, 1.0), rot=(-12, 0, 0), nu=24, nv=12),
+          hair_p + rect((0.5, 0.5, 0.55), 0.38, 0.4, 0.6, 1.0), bones="head", weight=3)
+    # Thick black brows, over the thin ones of the face
+    m.mirror(m.add(loft([P(0.05, 0.135, 0.37), P(0.15, 0.16, 0.36), P(0.24, 0.13, 0.31)], [(0.025 * S, 0.03 * S, 2.2), (0.03 * S, 0.035 * S, 2.2), (0.018 * S, 0.02 * S, 2.2)],
+                        facing=(0, 0.3, 1), nu=10, nv=10), color(hair_c), bones="brow_r"))
+    # The handlebar moustache: thick under the nose, curled up at the ends
+    tash = hair(hair_c) + stripes((0.2, 0.2, 0.22), 6, 0.2, axis="v")
+    m.mirror(m.add(loft([P(0.0, -0.12, 0.43), P(0.1, -0.135, 0.4), P(0.2, -0.13, 0.32), P(0.26, -0.06, 0.28), P(0.24, 0.0, 0.3)],
+                        [(0.04 * S, 0.035 * S, 2.2), (0.045 * S, 0.04 * S, 2.2), (0.035 * S, 0.03 * S, 2.2), (0.022 * S, 0.02 * S, 2.2), (0.012 * S, 0.012 * S, 2.2)],
+                        facing=(0, 0, 1), nu=10, nv=20),
+                   tash, bones="head"))
+    # A square chin with a cleft
+    m.add(blob(P(0, -0.33, 0.24), (0.2 * S, 0.09 * S, 0.12 * S), (0.6, 0.7)), skin_p + rect(tuple(v * 0.8 for v in sk), 0.495, 0.505, 0.4, 0.9), bones="jaw", weight=3)
+    # The magnet, in his right fist, its poles forward
+    w_, he = J["wrist_r"], J["hand_end_r"]
+    d = (he - w_) / np.linalg.norm(he - w_)
+    grip = w_ + d * 0.3 + np.array([-0.02, 0, 0.05])
+    horseshoe_magnet(m, grip, forward=(0, -0.15, 1), up=d, size=1.5, bones="hand_r")
+    m.clips = magnus_clips()
     finish(m, "magnus")
+    print(write_glb(m, fps=30))
+    return m
 
 
 def make_stormy():

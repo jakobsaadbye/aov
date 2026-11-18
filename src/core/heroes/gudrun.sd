@@ -15,8 +15,8 @@ defineGudrun :: () -> HeroDefinition {
     });
     hero.abilities.add(Ability{
         name: "Yarn leash", icon: "yarn_leash", sound: "ability.yarn_leash", cooldown: 12, targeting: .enemy, cast: castYarnLeash, bot: .disableEnemy,
-        description: "Ties the enemy nearest the cursor, up to 12 away, to her with yarn for 5 seconds: it can't get further from her than it is now. Where she walks, it comes along",
-        range: 12, duration: 5,
+        description: "Ties the enemy nearest the cursor, up to 24 away, to her with yarn for 5 seconds: it can't get further from her than it is now. Where she walks, it comes along",
+        range: 24, duration: 5,
     });
     hero.abilities.add(passive("Mind the cane", "mind_the_cane", "Nobody pushes her: who walks into her trips over her cane, and lies still for a second", .tripsShovers));
     return hero;

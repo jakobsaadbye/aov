@@ -272,6 +272,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
         if hook.car < 0 { head = hand.lerp(hook.point + Vector3{0, 1.2, 0}, hook.flight); }
         drawMeatHook(assets, hand, head, hook.car >= 0);
     }
+    drawMagnetPull(game, assets, index, bob);
 }
 
 // The meat hook on its chain: heavy links from the butcher's hand to the hook, which points on along the chain, with
