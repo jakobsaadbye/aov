@@ -242,11 +242,11 @@ def human_joints(**over):
 
 
 def human_body(m, J, shirt_p, sleeve_p, skin_p, legs_p, glove_p, boot_p, sole_p=None, chest=1.0, hips=1.0, bust=0.0,
-               arm=1.0, leg=1.0, rolled=True, cuff_p=None, knee_p=None):
+               arm=1.0, leg=1.0, rolled=True, cuff_p=None, knee_p=None, left_open=False):
     """A person's body on the joints J, every part bound to its bones: a torso (shirt_p) that narrows at the waist,
     shoulders, arms whose sleeves (sleeve_p) are rolled up to the elbow over bare forearms (skin_p) when rolled, big
-    gloved hands (glove_p) closed round a grip, legs (legs_p) with knee pads (knee_p) and heavy boots (boot_p). Returns
-    the surfaces of the torso, for clothes over it"""
+    gloved hands (glove_p) closed round a grip, legs (legs_p) with knee pads (knee_p) and heavy boots (boot_p). With
+    left_open, the left hand is open (open_hand), e.g for casting. Returns the surfaces of the torso, for clothes over it"""
     lump = lumps(0.008, 3, 5)
     h, s, c, n = J["hips"], J["spine"], J["chest"], J["neck"]
     # The torso: pelvis, waist, chest and shoulders, a little square, up into the neck
@@ -270,7 +270,9 @@ def human_body(m, J, shirt_p, sleeve_p, skin_p, legs_p, glove_p, boot_p, sole_p=
                         facing=(0, 0, 1), nu=14, nv=14).deform(lump), fore_p, bones=["upper_r", "fore_r"]))
     if rolled:
         m.mirror(m.add(torus(e + (sh - e) * 0.1, 0.165 * arm, 0.055, rot=_tilt(sh - e), nu=16, nv=6), cuff_p or sleeve_p, bones=["upper_r", "fore_r"]))
-    glove(m, J, glove_p)
+    glove(m, J, glove_p, both=not left_open)
+    if left_open:
+        open_hand(m, J, glove_p)
     # Legs: the thigh, a knee pad over the knee, the shin, into the boot
     hp, kn, an = J["hip_r"], J["knee_r"], J["ankle_r"]
     path = [hp + [0, 0.12, 0], (hp + kn) / 2, kn, (kn + an) / 2 + [0, 0, -0.02], an + [0, 0.22, 0]]
@@ -316,6 +318,29 @@ def glove(m, J, paint, size=1.0, both=True):
         for p in parts:
             m.mirror(p)
     return parts
+
+
+def open_hand(m, J, paint, size=1.0):
+    """The left hand, open, its fingers together and straight on from the palm, the thumb out to the front: a hand
+    that gestures and casts. On the bone hand_l"""
+    w, he = L(J["wrist_r"]), L(J["hand_end_r"])
+    d = (he - w) / np.linalg.norm(he - w)
+    out = np.array([-1.0, 0, 0])                # The back of the hand, away from the body
+    fwd = np.cross(out, d)
+    fwd = fwd / np.linalg.norm(fwd) * np.sign(fwd[2] or 1)
+    k = size
+    m.add(loft([w - d * 0.1, w + d * 0.02], [(0.1 * k, 0.1 * k, 2.4), (0.11 * k, 0.1 * k, 2.4)], nu=14, caps="flat"), paint, bones=["fore_l", "hand_l"])
+    palm = w + d * 0.15 * k
+    m.add(blob(palm, (0.06 * k, 0.13 * k, 0.12 * k), (0.6, 0.6)), paint, bones=["hand_l"])
+    for f in range(4):
+        base = palm + d * 0.1 * k + fwd * (f - 1.5) * 0.055 * k
+        length = (0.22 - abs(f - 1.4) * 0.03) * k
+        tip = base + d * length - out * 0.02 * k + fwd * (f - 1.5) * 0.015 * k
+        m.add(loft([base, (base + tip) / 2 - out * 0.01 * k, tip], [(0.032 * k, 0.03 * k, 2.2), (0.028 * k, 0.026 * k, 2.2), (0.022 * k, 0.02 * k, 2.2)],
+                   nu=8, nv=8), paint, bones=["hand_l"])
+    thumb = palm + fwd * 0.09 * k - out * 0.02 * k
+    m.add(loft([thumb, thumb + fwd * 0.07 * k + d * 0.08 * k, thumb + fwd * 0.1 * k + d * 0.16 * k],
+               [(0.034 * k, 0.034 * k, 2.2), (0.03 * k, 0.03 * k, 2.2), (0.024 * k, 0.024 * k, 2.2)], nu=8, nv=8), paint, bones=["hand_l"])
 
 
 def grip_point(J):

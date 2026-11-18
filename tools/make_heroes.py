@@ -1366,36 +1366,265 @@ def make_hilda():
     finish(m, "hilda")
 
 
+def mira_clips():
+    """Mira: she stands with her staff planted, breathes, and now and then glances up at the hourglass on it; walks
+    with long, unhurried steps; for Reverse her left hand sweeps a circle backwards through the air and pushes out; for
+    Rewind she twirls once as she comes back; for Time lock she swings the staff back over her shoulder and thrusts the
+    hourglass at her enemy. Her face for each, and the swing of her hair and the tip of her hat"""
+    from rig import clip, layered
+    from anatomy import once
+
+    def staff(upper, fore, tilt=0.0):
+        """The right hand turned so the staff tilts forward by tilt degrees, whatever the arm does: the staff is upright
+        in the rest pose, along the arm"""
+        return {"upper_r": upper, "fore_r": (fore, 0, 0), "hand_r": (tilt - upper[0] - fore, 0, 0)}
+
+    def pose(arm, **rest):
+        p = dict(arm)
+        for k, v in rest.items():
+            p[k] = v
+        return p
+    hold = staff((-12, 0, 8), -42)
+    stand = pose(hold, upper_l=(-4, 0, -6), fore_l=(-34, 0, 0), hand_l=(0, -20, 0), hips={"rot": (0, 0, 0), "pos": (0, 0, 0)})
+    breathe = pose(staff((-14, 0, 9), -44), upper_l=(-6, 0, -8), fore_l=(-38, 0, 0), hand_l=(0, -20, 0), chest=(-3, 0, 0), head=(2, 0, 0),
+                   hips={"rot": (0, 0, 0), "pos": (0, 0.02, 0)})
+    glance = pose(hold, upper_l=(-4, 0, -6), fore_l=(-34, 0, 0), hand_l=(0, -20, 0), head=(-18, -24, 0), chest=(-2, -6, 0),
+                  hips={"rot": (0, 0, 0), "pos": (0, 0.01, 0)})
+
+    def walk(s):
+        return pose(staff((-12 + 10 * s, 0, 8), -42 + 6 * s), thigh_r=(-22 * s, 0, 0), thigh_l=(20 * s, 0, 0), shin_r=(8 if s > 0 else 32, 0, 0),
+                    shin_l=(32 if s > 0 else 8, 0, 0), foot_r=(6 * s, 0, 0), foot_l=(-6 * s, 0, 0), upper_l=(-18 * s, 0, -8), fore_l=(-30, 0, 0),
+                    hand_l=(0, -20, 0), spine=(3, 5 * s, 0), chest=(2, 4 * s, 0), head=(-2, -5 * s, 0), hips={"rot": (0, -6 * s, 3 * s), "pos": (0, -0.04, 0)})
+
+    def passing(s):
+        return pose(staff((-12, 0, 8), -42), thigh_r=(-2 if s > 0 else 2, 0, 0), thigh_l=(2 if s > 0 else -2, 0, 0), shin_r=(8 if s > 0 else 38, 0, 0),
+                    shin_l=(38 if s > 0 else 8, 0, 0), upper_l=(-2, 0, -8), fore_l=(-30, 0, 0), hand_l=(0, -20, 0), spine=(3, 0, 0), chest=(2, 0, 0),
+                    head=(-2, 0, 0), hips={"rot": (0, 0, 0), "pos": (0, 0.04, 0)})
+    # Reverse: the staff up, and the left hand sweeps a circle backwards (up and out to her left, over her head, across to
+    # the right), then pushes out flat towards the lanes
+    up = staff((-55, 0, 10), -30)
+    sweep_out = pose(up, upper_l=(-80, 0, -70), fore_l=(-15, 0, 0), hand_l=(-20, 0, 0), chest=(-4, 16, 0), spine=(0, 6, 0), head=(-8, 14, 0))
+    sweep_top = pose(up, upper_l=(-165, 0, -15), fore_l=(-10, 0, 0), hand_l=(-30, 0, 0), chest=(-8, 6, 0), head=(-14, 4, 0),
+                     hips={"rot": (0, 0, 0), "pos": (0, 0.05, 0)})
+    sweep_in = pose(up, upper_l=(-95, 0, 35), fore_l=(-25, 0, 0), hand_l=(-10, 0, 0), chest=(0, -14, 0), spine=(0, -6, 0), head=(-6, -10, 0))
+    push_ = pose(staff((-50, 0, 10), -30), upper_l=(-82, 0, -6), fore_l=(-4, 0, 0), hand_l=(-70, 0, 0), chest=(8, -4, 0), spine=(4, 0, 0),
+                 head=(-4, 0, 0), thigh_l=(-18, 0, 0), shin_l=(14, 0, 0), thigh_r=(10, 0, 0), hips={"rot": (0, 0, 0), "pos": (0, -0.05, 0.08)})
+    # Rewind: she twirls once on the spot as she comes back, the staff held high, her robe swinging out
+    def twirl(angle, out=1.0):
+        return pose(staff((-130, 0, 14), -20), upper_l=(-10, 0, -75 * out), fore_l=(-10, 0, 0), hand_l=(0, 0, 0), chest=(-6, 0, 0), head=(-8, 0, 0),
+                    thigh_r=(0, 0, 10 * out), thigh_l=(0, 0, -10 * out), hips={"rot": (0, angle, 0), "pos": (0, 0.06 * out, 0)})
+    # Time lock: the staff swung back over her shoulder, then thrust out, the hourglass at the enemy, with a step into it
+    back = pose(staff((-160, 0, 16), -25, tilt=-35), upper_l=(-40, 0, -30), fore_l=(-40, 0, 0), chest=(-10, 18, 0), spine=(-4, 8, 0),
+                head=(-6, -10, 0), thigh_r=(8, 0, 0), thigh_l=(-12, 0, 0), shin_l=(12, 0, 0), hips={"rot": (0, 8, 0), "pos": (0, -0.03, -0.04)})
+    thrust = pose(staff((-84, 0, 4), -8, tilt=55), upper_l=(18, 0, -28), fore_l=(-20, 0, 0), hand_l=(-40, 0, 0), chest=(10, -12, 0), spine=(6, -6, 0),
+                  head=(-6, 8, 0), thigh_r=(-26, 0, 0), shin_r=(20, 0, 0), thigh_l=(14, 0, 0), hips={"rot": (0, -8, 0), "pos": (0, -0.08, 0.14)})
+    body = {
+        "idle": clip(3.6, (0.0, stand), (1.0, breathe), (1.6, stand), (2.0, glance), (2.7, glance), (3.1, stand)),
+        "walk": clip(1.0, (0.0, walk(1)), (0.25, passing(1)), (0.5, walk(-1)), (0.75, passing(-1))),
+        "reverse": once(1.1, (0.0, stand), (0.15, sweep_out), (0.3, sweep_top), (0.45, sweep_in), (0.62, push_), (0.85, push_), (1.1, stand)),
+        "rewind": once(0.8, (0.0, twirl(0, 0.3)), (0.2, twirl(-120)), (0.4, twirl(-240)), (0.58, twirl(-360, 0.5)), (0.8, pose(stand, hips={"rot": (0, -360, 0), "pos": (0, 0, 0)}))),
+        "time_lock": once(0.9, (0.0, stand), (0.14, back), (0.3, thrust), (0.6, thrust), (0.9, stand)),
+    }
+    calm, blink = face_pose(jaw=1, brow=-2, lid=4), face_pose(jaw=1, brow=-2, lid=85)
+    knowing = face_pose(jaw=2, brow=-8, lid=12, lift=0.008)
+    wonder = face_pose(jaw=6, brow=-10, lid=4, lift=0.015)
+    focus, chant = face_pose(jaw=2, brow=14, lid=30), face_pose(jaw=12, brow=8, lid=18)
+    delight = face_pose(jaw=8, brow=-12, lid=10, lift=0.014)
+    stern = face_pose(jaw=0, brow=22, lid=34, drop=0.01)
+    command = face_pose(jaw=16, brow=18, lid=20)
+    face = {
+        "idle": clip(3.6, (0.0, calm), (0.7, calm), (0.75, blink), (0.82, calm), (2.0, wonder), (2.6, knowing), (3.1, calm), (3.3, calm), (3.35, blink), (3.42, calm)),
+        "walk": clip(1.0, (0.0, knowing), (0.5, face_pose(jaw=2, brow=-6, lid=8, lift=0.006))),
+        "reverse": once(1.1, (0.0, calm), (0.15, focus), (0.45, chant), (0.62, face_pose(jaw=14, brow=12, lid=14)), (0.85, focus), (1.1, knowing)),
+        "rewind": once(0.8, (0.0, delight), (0.4, delight), (0.8, knowing)),
+        "time_lock": once(0.9, (0.0, calm), (0.14, stern), (0.3, command), (0.6, stern), (0.9, knowing)),
+    }
+    # Her hair and the tip of her hat swing a moment after her
+    flow = {
+        "idle": clip(3.6, (0.0, {"hair_1": (2, 0, 0), "hair_2": (2, 0, 0), "hat_tip": (0, 0, 0)}),
+                     (1.0, {"hair_1": (4, 0, 2), "hair_2": (3, 0, 2), "hat_tip": (-4, 0, 3)}), (2.0, {"hair_1": (1, 0, -2), "hair_2": (2, 0, -2), "hat_tip": (4, 0, -6)}),
+                     (2.7, {"hair_1": (3, 0, -1), "hair_2": (4, 0, 0), "hat_tip": (2, 0, -4)})),
+        "walk": clip(1.0, (0.0, {"hair_1": (12, 0, 6), "hair_2": (10, 0, 8), "hat_tip": (-10, 0, 6)}), (0.25, {"hair_1": (8, 0, 0), "hair_2": (16, 0, 0), "hat_tip": (-14, 0, 0)}),
+                     (0.5, {"hair_1": (12, 0, -6), "hair_2": (10, 0, -8), "hat_tip": (-10, 0, -6)}), (0.75, {"hair_1": (8, 0, 0), "hair_2": (16, 0, 0), "hat_tip": (-14, 0, 0)})),
+        "reverse": once(1.1, (0.0, {"hair_1": (2, 0, 0)}), (0.3, {"hair_1": (-10, 0, 12), "hair_2": (-6, 0, 16), "hat_tip": (8, 0, -12)}),
+                        (0.62, {"hair_1": (14, 0, -10), "hair_2": (12, 0, -14), "hat_tip": (-12, 0, 10)}), (1.1, {"hair_1": (2, 0, 0), "hair_2": (2, 0, 0), "hat_tip": (0, 0, 0)})),
+        "rewind": once(0.8, (0.0, {"hair_1": (6, 0, 0)}), (0.2, {"hair_1": (30, 0, 40), "hair_2": (20, 0, 30), "hat_tip": (-10, 0, 25)}),
+                       (0.58, {"hair_1": (30, 0, 40), "hair_2": (20, 0, 30), "hat_tip": (-10, 0, 25)}), (0.8, {"hair_1": (2, 0, -6), "hair_2": (2, 0, -8), "hat_tip": (0, 0, -6)})),
+        "time_lock": once(0.9, (0.0, {"hair_1": (2, 0, 0)}), (0.14, {"hair_1": (-14, 0, 0), "hair_2": (-8, 0, 0), "hat_tip": (14, 0, 0)}),
+                          (0.3, {"hair_1": (24, 0, 0), "hair_2": (20, 0, 0), "hat_tip": (-22, 0, 0)}), (0.9, {"hair_1": (2, 0, 0), "hair_2": (2, 0, 0), "hat_tip": (0, 0, 0)})),
+    }
+    clips_ = {name: layered(body[name], face[name], flow[name]) for name in body}
+    # For the portrait: the face of each clip on a body that stands still
+    for name in body:
+        still = clip(body[name]["duration"], (0.0, stand))
+        still["once"] = body[name].get("once", False)
+        clips_[name + "_face"] = layered(still, face[name], flow["idle"])
+    return clips_
+
+
 def make_mira():
-    """A timekeeper: tall and thin in a long starry robe with gold trim and wide sleeves, a pointed hat, long white hair,
-    a calm, knowing look, and a staff with an hourglass on top"""
-    m = hero_model("mira")
-    purple = (0.38, 0.24, 0.62)
-    robe = cloth(purple, folds=7) + spots((0.98, 0.88, 0.45), 0.04, 0.2, 11) + bands((0.85, 0.68, 0.28), [(0.0, 0.05)]) + stitches((0.85, 0.68, 0.28), [0.07])
-    b = person(m, SLIM, robe + rect((0.85, 0.68, 0.28), 0.47, 0.53, 0.0, 1.0), robe, arms=robe, skirt=robe, hair_paint=hair((0.93, 0.93, 0.96)),
-               hair_style="long", skin_c=SKIN_PALE, arm_pose=("forward", "down"),
-               eyes_kw=dict(iris=(0.55, 0.3, 0.8), lid=0.5, size=0.07, tilt=0.2), mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.85, 0.85, 0.9), tilt=0.1, thick=0.4),
-               nose="long")
-    for i, side in enumerate((1, -1)):
-        w, d = b.wrists[i], b.forearm_dir[i]
-        e = b.elbows[i]
-        m.add(lathe([(0, SLIM.fore * 1.2), (0.55, SLIM.fore * 2.8), (0.62, 0.0)], _add(w, tuple(-c * 0.55 for c in d)), rot=_aim(d), nu=16, urange=(0, 1)),
-              robe + bands((0.85, 0.68, 0.28), [(0.82, 0.92)]))
-    pointy_hat(m, b, cloth(purple, folds=3) + spots((0.98, 0.88, 0.45), 0.05, 0.25, 12), brim=1.2, height=1.7, band=metal((0.85, 0.68, 0.28)))
-    collar(m, b, metal((0.85, 0.68, 0.28)), t=0.06)
-    hx, hy, hz = b.right
-    m.add(tube([(hx, 0.05, hz), (hx + 0.03, 2.0, hz), (hx, 3.7, hz)], 0.07), wood((0.42, 0.28, 0.15)) + bands((0.85, 0.68, 0.28), [(0.55, 0.6)]))
-    top = 3.7
-    gold = metal((0.85, 0.68, 0.3), 0.5)
-    m.add(cylinder((hx, top, hz), 0.34, 0.08), gold)
-    m.add(cylinder((hx, top + 0.95, hz), 0.34, 0.08), gold)
-    m.add(lathe([(0, 0.3), (0.4, 0.05), (0.45, 0.05), (0.85, 0.3)], (hx, top + 0.08, hz), smooth=True, nu=16), glass((0.55, 0.7, 0.85)))
-    m.add(lathe([(0, 0.24), (0.25, 0.04), (0.28, 0.0)], (hx, top + 0.08, hz), nu=12), color((0.95, 0.8, 0.45)))
+    """Mira the Timekeeper: tall and slender in a long robe of deep violet, scattered with gold stars, with gold trim at
+    the hem and down the front, and wide bell sleeves. Long silver-white hair down her back, violet eyes, pale, ageless skin, a
+    tall pointed hat with a crescent moon on it whose tip flops back, a clock brooch at her collar and a pocket watch on
+    a chain at her sash. Her staff, in her right hand, carries an hourglass in a gold frame, its sand running. Her left
+    hand is open, for casting. Rigged like the Butcher, with clips for standing, walking, Reverse, Rewind and Time lock,
+    written as models/mira.glb too"""
+    from anatomy import human_joints, human_body, make_rig, grip_point, skin_paint
+    from rig import write_glb
+    m = Model("mira", size=1024, light=0.5, ao=1.3, detail=0.07)
+    J = human_joints(shoulder_r=(0.6, 3.17, 0.0), elbow_r=(0.78, 2.5, -0.06), wrist_r=(0.86, 1.88, 0.1), hand_end_r=(0.89, 1.62, 0.18),
+                     hip_r=(0.27, 1.84, 0.0), knee_r=(0.31, 1.05, 0.06), ankle_r=(0.34, 0.3, -0.02), toe_r=(0.36, 0.08, 0.48))
+    m.rig = make_rig(J)
+    sk = (1.0, 0.88, 0.8)
+    skin_p = skin_paint(sk)
+    gold = (0.9, 0.72, 0.3)
+    violet = (0.34, 0.2, 0.58)
+    star_c = (1.0, 0.9, 0.5)
+    robe_p = cloth(violet, folds=6) + spots(star_c, 0.055, 0.07, 11) + spots((0.8, 0.72, 1.0), 0.02, 0.06, 23) + edges(0.2, 0.05, dark=True)
+    sleeve_p = cloth(violet, folds=4) + spots(star_c, 0.05, 0.07, 12)
+    slipper_p = leather((0.3, 0.16, 0.4)) + edges(0.3, 0.08, dark=True)
+    gold_p = metal(gold, 0.45) + edges(0.4, 0.06)
+    h, s, c, n = J["hips"], J["spine"], J["chest"], J["neck"]
+    human_body(m, J, robe_p + bands(gold, [(0.495, 0.505)], axis="u"), sleeve_p, skin_p, cloth(tuple(v * 0.7 for v in violet), folds=2), skin_p, slipper_p,
+               chest=0.94, hips=0.98, bust=0.55, arm=0.86, leg=0.86, rolled=False, left_open=True)
+    # The skirt of the robe: from the waist to the ground, flaring, with a gold hem. On the hips and the legs, so it
+    # follows her steps
+    skirt_p = robe_p + bands(gold, [(0.93, 0.965)]) + bands(star_c, [(0.97, 0.98)]) + bands(gold, [(0.497, 0.503)], axis="u")
+    path = [h + [0, 0.1, 0.0], h + [0, -0.45, 0.0], (0, 1.0, 0.02), (0, 0.5, 0.03), (0, 0.04, 0.04)]
+    secs = [dict(w=0.54, d=0.38, e=2.4), dict(w=0.6, d=0.46, e=2.3), dict(w=0.72, d=0.6, e=2.2), dict(w=0.86, d=0.74, e=2.2), dict(w=0.98, d=0.86, e=2.2)]
+    m.add(loft(path, secs, facing=(0, 0, 1), nu=32, nv=24, caps=None).deform(lumps(0.012, 2, 4)), skirt_p,
+          bones=["hips", "thigh_r", "thigh_l", "shin_r", "shin_l"])
+    # A sash at the waist, and a pocket watch on a gold chain hanging from it at her left hip
+    m.add(torus(h + [0, 0.12, 0.0], 0.55, 0.06, sz=0.72, nu=28), cloth((0.62, 0.42, 0.85), folds=2) + edges(0.3, 0.08, dark=True), bones="hips")
+    watch = h + [-0.42, -0.32, 0.3]
+    m.add(tube([h + [-0.3, 0.1, 0.38], h + [-0.38, -0.1, 0.38], watch + [0, 0.1, 0.02]], 0.012), gold_p, bones="hips")
+    m.add(cylinder(watch, 0.1, 0.035, rot=(90, 0, 15)), gold_p, bones="hips")
+    m.add(cylinder(watch + [0, 0, 0.034], 0.08, 0.01, rot=(90, 0, 15)), color((0.96, 0.92, 0.82)) + edges(0.5, 0.15, dark=True), bones="hips")
+    # Bell sleeves: wide from the elbow, open past the wrist, gold at the rim
+    sh, e, w = J["shoulder_r"], J["elbow_r"], J["wrist_r"]
+    d = (w - e) / np.linalg.norm(w - e)
+    m.mirror(m.add(lathe([(0, 0.15), (0.35, 0.22), (0.62, 0.34), (0.66, 0.35)], e + d * 0.1, rot=_aim(d), nu=18, urange=(0, 1)),
+                   sleeve_p + bands(gold, [(0.88, 0.96)]), bones=["upper_r", "fore_r"]))
+    # A high collar, and a clock brooch at its front
+    m.add(lathe([(0, 0.2), (0.16, 0.24), (0.24, 0.3)], n + [0, -0.12, -0.02], nu=20), robe_p + bands(gold, [(0.8, 1.0)]), bones=["chest", "neck"])
+    brooch = c + [0, 0.32, 0.34]
+    m.add(cylinder(brooch, 0.1, 0.04, rot=(90, 0, 0)), gold_p, bones="chest")
+    m.add(cylinder(brooch + [0, 0, 0.04], 0.075, 0.01, rot=(90, 0, 0)), color((0.96, 0.92, 0.82)) + edges(0.5, 0.2, dark=True), bones="chest")
+    m.add(tube([brooch + [0, 0, 0.052], brooch + [0, 0.055, 0.052]], 0.008), color((0.2, 0.12, 0.3)), bones="chest")
+    # The head: pale, ageless, big violet eyes, silver brows, rosy lips
+    hd = J["head"] + np.array([0, 0.28, 0.08])
+    P = human_face(m, hd, sk, m.rig, S=0.96, iris=(0.55, 0.3, 0.82), brow_c=(0.86, 0.86, 0.92), lips=(0.82, 0.46, 0.55), nose="button")
+    silver = (0.9, 0.9, 0.95)
+    hair_p = hair(silver) + stripes((0.75, 0.75, 0.84), 16, 0.3, axis="u")
+    m.add(ellipsoid(P(0, 0.05, -0.05), (0.39, 0.39, 0.39), vrange=(0.3, 1.0), nu=20, nv=10), hair_p, bones="head", weight=3)
+    # A parting, with the hair swept down over the sides of her face to her shoulders
+    for side in (1, -1):
+        m.add(loft([P(side * 0.2, 0.2, 0.22), P(side * 0.34, 0.0, 0.18), P(side * 0.36, -0.3, 0.1), P(side * 0.4, -0.6, 0.04)],
+                   [(0.12, 0.06, 2.2), (0.12, 0.07, 2.2), (0.11, 0.06, 2.2), (0.06, 0.03, 2.2)], facing=(side, 0, 0.3), nu=12, nv=14), hair_p, bones="head")
+    # Long hair down her back, on two bones of its own, so it swings
+    top = P(0, -0.02, -0.34)
+    mid = top + np.array([0, -0.6, -0.12])
+    end = mid + np.array([0, -0.65, -0.02])
+    m.rig.bone("hair_1", top, mid, "head")
+    m.rig.bone("hair_2", mid, end, "hair_1")
+    m.add(loft([top + [0, 0.2, 0.06], top, mid, (mid + end) / 2, end], [(0.34, 0.12, 2.4), (0.36, 0.12, 2.4), (0.38, 0.1, 2.4), (0.33, 0.08, 2.4), (0.18, 0.04, 2.4)],
+               facing=(0, 0, -1), nu=16, nv=18).deform(lumps(0.01, 6, 3)), hair_p, bones=["head", "hair_1", "hair_2"])
+    # The hat: a wide brim, a tall cone that bends back, its upper half on a bone of its own (it flops), a gold band, and
+    # a gold crescent moon on the front
+    hat_c = (0.28, 0.16, 0.5)
+    hat_p = cloth(hat_c, folds=3) + spots(star_c, 0.05, 0.08, 31) + edges(0.25, 0.06, dark=True)
+    m.add(lathe([(0, 0.78), (0.02, 0.76), (0.05, 0.4), (0.06, 0.38)], P(0, 0.2, 0.0), nu=32, smooth=True).deform(squash(P(0, 0.2, 0), (0, 1, 0), 0.4)),
+          hat_p, bones="head")
+    base, bend = P(0, 0.24, -0.02), P(0, 0.85, -0.1)
+    tip = P(0, 1.45, -0.42)
+    m.rig.bone("hat_tip", bend, tip, "head")
+    m.add(loft([base, (base + bend) / 2, bend, (bend + tip) / 2 + np.array([0, 0.02, 0.04]), tip],
+               [(0.38, 0.38, 2.2), (0.3, 0.3, 2.2), (0.21, 0.21, 2.2), (0.12, 0.12, 2.2), (0.015, 0.015, 2.2)], facing=(0, 0, 1), nu=20, nv=20),
+          hat_p, bones=["head", "hat_tip"])
+    m.add(torus(P(0, 0.33, -0.02), 0.37, 0.04, nu=28), gold_p + bands((0.5, 0.25, 0.75), [(0.45, 0.55)]), bones="head")
+    # The crescent: an arc of 240 degrees on the front of the cone, thick in its middle and tapering to its tips
+    moon_c, moon_r = P(0, 0.62, 0.27), 0.13
+    arc = [moon_c + np.array([math.cos(a) * moon_r, math.sin(a) * moon_r, 0.02 * math.cos(a)]) for a in np.radians(np.linspace(60, 300, 9))]
+    widths = [0.012, 0.03, 0.045, 0.055, 0.058, 0.055, 0.045, 0.03, 0.012]
+    m.add(loft(arc, [(w_, 0.025, 2.2) for w_ in widths], facing=(0, 0, 1), nu=10, nv=18), gold_p, bones="head")
+    # The staff: a long dark wood shaft through her right fist, wound with gold, and the hourglass on top in a gold
+    # frame: two plates, three posts, two bulbs of glass, the sand running from the top into a heap in the bottom, and
+    # a violet gem over it all
+    g = grip_point(J)
+    up = np.array([0.0, 1.0, 0.0])
+    foot, head_at = g - up * 1.55, g + up * 1.62
+    wood_p = wood((0.32, 0.2, 0.14)) + bands(gold, [(0.58, 0.61), (0.9, 0.93)])
+    m.add(loft([foot, g, head_at], [(0.045, 0.045, 2.2), (0.05, 0.05, 2.2), (0.055, 0.055, 2.2)], nu=10, caps="round"), wood_p, bones="hand_r")
+    m.add(horn(head_at + up * 0.02, (0, 1, 0), 0.06, 0.08, curl=(0, 0, 0), tip=0.07), gold_p, bones="hand_r")
+    hg = head_at + up * 0.08
+    H = 0.7
+    m.add(cylinder(hg, 0.24, 0.06), gold_p, bones="hand_r")
+    m.add(cylinder(hg + up * H, 0.24, 0.06), gold_p, bones="hand_r")
     for k in range(3):
-        a = k * 2 * math.pi / 3
-        m.add(cylinder((hx + math.sin(a) * 0.3, top, hz + math.cos(a) * 0.3), 0.04, 1.0), gold)
-    m.add(sphere((hx, top + 1.12, hz), 0.12), color((0.6, 0.85, 1.0)))
+        a = k * 2 * math.pi / 3 + 0.4
+        post = hg + np.array([math.sin(a) * 0.2, 0, math.cos(a) * 0.2])
+        m.add(tube([post, post + up * (H * 0.5) + np.array([math.sin(a) * 0.02, 0, math.cos(a) * 0.02]), post + up * H], 0.022), gold_p, bones="hand_r")
+    # The glass: the sand is seen through it, a heap at the bottom of the lower bulb and what is left in the neck of the
+    # upper one, and a thread of it running down between
+    sand_c = (0.98, 0.78, 0.38)
+    m.add(lathe([(0.03, 0.03), (0.08, 0.17), (0.3, 0.12), (0.35, 0.03), (0.4, 0.12), (0.62, 0.17), (0.67, 0.03)], hg, smooth=True, nu=18),
+          glass((0.72, 0.84, 1.0)) + bands(sand_c, [(0.0, 0.3), (0.5, 0.62)]) + bands((0.85, 0.62, 0.28), [(0.27, 0.3), (0.5, 0.52)]), bones="hand_r")
+    m.add(tube([hg + up * 0.36, hg + up * 0.12], 0.012), color(sand_c), bones="hand_r")
+    m.add(sphere(hg + up * (H + 0.16), 0.09), color((0.7, 0.45, 1.0)) + edges(0.5, 0.3), bones="hand_r")
+    m.clips = mira_clips()
     finish(m, "mira")
+    print(write_glb(m, fps=30))
+    return m
+
+
+def make_time_lock_clock():
+    """The clock over a hero Mira locks in time: a round face of old ivory with gold hour marks and a ring of smaller
+    ones, a gold bezel, a violet back with gears showing at its edge, and a little bell on a ring at the top. Its face
+    looks towards +z, its middle at the origin, 2.2 across. The hands are a model of their own (clock_hand), which the
+    game turns backwards over it"""
+    m = Model("time_lock_clock", size=512, light=0.45, ao=0.8, detail=0.06)
+    R = 1.1
+    gold_p = metal((0.92, 0.74, 0.32), 0.45) + edges(0.4, 0.08)
+
+    def face(ctx):
+        p = ctx.p
+        r = np.hypot(p[..., 0], p[..., 1]) / R
+        a = np.arctan2(p[..., 0], p[..., 1]) / (2 * np.pi) * 60
+        # Hour marks: bold violet bars, a gold one at twelve; a dot for each minute; a ring inside them
+        arc = r * 2 * np.pi * R / 60                                     # The length of a minute along the circle here
+        minute = smoothstep(0.035, 0.015, np.abs(a - np.round(a)) * arc) * smoothstep(0.012, 0.0, np.abs(r - 0.84))
+        hour_off = np.abs(a / 5 - np.round(a / 5)) * 5 * arc
+        hour = smoothstep(0.05, 0.03, hour_off) * (r > 0.64) * (r < 0.86)
+        twelve = hour * (np.abs(a) < 2.5)
+        ring = smoothstep(0.01, 0.0, np.abs(r - 0.6))
+        base = np.zeros(p.shape[:-1] + (3,)) + np.array([0.95, 0.9, 0.78])
+        base = base * (0.95 + 0.06 * fbm(p, 4, 2, 5))[..., None]
+        base = _over(base, (0.28, 0.16, 0.42), np.clip(minute + ring * 0.7 + hour, 0, 1))
+        base = _over(base, (0.9, 0.7, 0.28), np.clip(twelve, 0, 1))
+        return base * (1 - 0.25 * smoothstep(0.75, 1.0, r))[..., None]
+    m.add(cylinder((0, 0, 0.0), R * 0.92, 0.04, rot=(90, 0, 0)), Paint(face), weight=3)
+    m.add(torus((0, 0, 0.0), R * 0.96, 0.09, rot=(90, 0, 0), nu=40), gold_p)
+    m.add(cylinder((0, 0, -0.18), R * 0.98, 0.16, rot=(90, 0, 0)), color((0.32, 0.2, 0.48)) + edges(0.3, 0.1, dark=True))
+    for k in range(8):
+        a = k * 2 * math.pi / 8
+        m.add(cylinder((math.sin(a) * R * 0.92, math.cos(a) * R * 0.92, -0.22), 0.1, 0.05, rot=(90, 0, 0)), gold_p)
+    m.add(torus((0, R + 0.16, 0), 0.12, 0.03, nu=16), gold_p)
+    m.add(sphere((0, R + 0.32, 0), 0.12), gold_p)
+    tris = m.write()
+    print(f"models/time_lock_clock.obj  {tris} triangles")
+
+
+def make_clock_hand():
+    """A hand of the clock, pointing up +y from its pivot at the origin, 0.9 long, a spade near its tip, a gold cap
+    over the pivot. Lying just in front of the clock's face (+z)"""
+    m = Model("clock_hand", size=256, light=0.45, ao=0.6, detail=0.04)
+    dark = color((0.22, 0.12, 0.32)) + edges(0.4, 0.1)
+    m.add(loft([(0, -0.18, 0.1), (0, 0.6, 0.1)], [(0.05, 0.02, 2.0), (0.025, 0.02, 2.0)], facing=(0, 0, 1), nu=10, caps="flat"), dark)
+    m.add(blob((0, 0.68, 0.1), (0.1, 0.14, 0.02), (0.5, 0.9)), dark)
+    m.add(loft([(0, 0.78, 0.1), (0, 0.92, 0.1)], [(0.03, 0.02, 2.0), (0.004, 0.01, 2.0)], facing=(0, 0, 1), nu=8, caps="flat"), dark)
+    m.add(cylinder((0, 0, 0.12), 0.09, 0.05, rot=(90, 0, 0)), metal((0.92, 0.74, 0.32), 0.45) + edges(0.4, 0.08))
+    tris = m.write()
+    print(f"models/clock_hand.obj  {tris} triangles")
 
 
 def make_karl():
