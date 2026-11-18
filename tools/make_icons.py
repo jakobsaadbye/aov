@@ -242,12 +242,6 @@ def icon_colleague():
 # Gudrun
 
 
-def icon_cane_trip():
-    image, draw = icon_base((200, 160, 200), (90, 60, 90))
-    line(draw, [(60, 40), (60, 60), (100, 60), (180, 210)], (140, 90, 50), 16)
-    star(draw, 190, 80, 24, (255, 230, 90))
-    star(draw, 220, 130, 16, (255, 230, 90))
-    finish(image, "cane_trip")
 
 
 def icon_knitting():
@@ -297,16 +291,6 @@ def icon_steel_frame():
 # Hugo
 
 
-def icon_puppet():
-    image, draw = icon_base((150, 90, 190), (50, 20, 70))
-    draw.rectangle([60, 30, 196, 46], fill=(120, 80, 40), outline=INK, width=4)
-    for x in (80, 128, 176):
-        draw.line([(x, 46), (x, 140)], fill=(240, 240, 240), width=3)
-    circle(draw, 128, 150, 24, (235, 190, 150))
-    poly(draw, [(108, 175), (148, 175), (156, 230), (100, 230)], (200, 60, 60))
-    draw.line([(108, 185), (80, 140)], fill=(200, 60, 60), width=10)
-    draw.line([(148, 185), (176, 140)], fill=(200, 60, 60), width=10)
-    finish(image, "puppet")
 
 
 def icon_sleep():
@@ -384,12 +368,6 @@ def icon_shadow_step():
 # Ivar
 
 
-def icon_battle_cry():
-    image, draw = icon_base((200, 80, 50), (90, 20, 10))
-    poly(draw, [(60, 90), (110, 90), (140, 60), (150, 200), (110, 170), (60, 170)], (230, 230, 230))
-    for r in (40, 70, 100):
-        draw.arc([150 - r, 128 - r, 150 + r, 128 + r], start=-45, end=45, fill=(255, 220, 120), width=10)
-    finish(image, "battle_cry")
 
 
 def icon_axe_throw():
@@ -677,14 +655,6 @@ def icon_mind_the_cane():
     finish(image, "mind_the_cane")
 
 
-def icon_magnetize():
-    image, draw = icon_base((170, 180, 200), (50, 60, 80))
-    car_shape(draw, 128, 220, 150, (60, 120, 200))
-    draw.arc([70, 40, 186, 156], start=180, end=360, fill=INK, width=44)
-    draw.arc([74, 44, 182, 152], start=180, end=360, fill=(220, 40, 40), width=34)
-    draw.rectangle([70, 96, 108, 130], fill=(220, 220, 230), outline=INK, width=5)
-    draw.rectangle([148, 96, 186, 130], fill=(220, 220, 230), outline=INK, width=5)
-    finish(image, "magnetize")
 
 
 def icon_lightning_rod():
@@ -825,6 +795,65 @@ def icon_perk_scrapper():
     image, draw = medallion((220, 150, 90), (100, 50, 20))
     poly(draw, [(85, 140), (85, 100), (150, 100), (150, 85), (185, 120), (150, 155), (150, 140)], (235, 190, 150))
     finish(image, "perk_scrapper")
+
+
+# The survival spells of Hugo, Ivar, Magnus and Gudrun
+
+
+def icon_trance_walk():
+    image, draw = icon_base((170, 110, 230), (50, 20, 90))
+    # A car, see-through, that a hypnotic spiral is in the middle of
+    car_shape(draw, 128, 200, 190, (215, 190, 245))
+    for k in range(4):
+        r = 22 + k * 20
+        draw.arc([128 - r, 110 - r, 128 + r, 110 + r], start=k * 90, end=k * 90 + 270, fill=INK, width=14)
+        draw.arc([128 - r, 110 - r, 128 + r, 110 + r], start=k * 90, end=k * 90 + 270, fill=(250, 220, 255), width=7)
+    circle(draw, 128, 110, 10, (120, 40, 160))
+    finish(image, "trance_walk")
+
+
+def icon_berserk():
+    image, draw = icon_base((240, 90, 50), (90, 10, 10))
+    # A car that is thrown aside, tilted, and the stars of the blow
+    poly(draw, [(120, 200), (226, 150), (236, 180), (130, 232)], (70, 120, 200))
+    poly(draw, [(150, 182), (196, 160), (200, 132), (162, 150)], (70, 120, 200))
+    circle(draw, 145, 222, 13, (40, 40, 44))
+    circle(draw, 210, 190, 13, (40, 40, 44))
+    # A fist
+    poly(draw, [(30, 120), (90, 96), (122, 104), (126, 150), (96, 170), (36, 160)], (235, 190, 150))
+    for y in (110, 128, 146):
+        draw.line([(96, y), (120, y + 4)], fill=INK, width=4)
+    star(draw, 128, 70, 34, (255, 230, 90), points=7, inner=0.5)
+    finish(image, "berserk")
+
+
+def icon_repel():
+    image, draw = icon_base((150, 170, 210), (30, 40, 80))
+    # A horseshoe magnet the wrong way round, and two cars pushed out to the sides
+    draw.arc([78, 30, 178, 130], start=0, end=180, fill=INK, width=40)
+    draw.arc([82, 34, 174, 126], start=0, end=180, fill=(220, 40, 40), width=30)
+    draw.rectangle([78, 52, 112, 82], fill=(220, 220, 230), outline=INK, width=5)
+    draw.rectangle([144, 52, 178, 82], fill=(220, 220, 230), outline=INK, width=5)
+    car_shape(draw, 52, 220, 80, (60, 120, 200))
+    car_shape(draw, 204, 220, 80, (240, 190, 40))
+    line(draw, [(108, 160), (70, 160)], (200, 230, 255), 8)
+    poly(draw, [(56, 160), (76, 146), (76, 174)], (200, 230, 255))
+    line(draw, [(148, 160), (186, 160)], (200, 230, 255), 8)
+    poly(draw, [(200, 160), (180, 146), (180, 174)], (200, 230, 255))
+    finish(image, "repel")
+
+
+def icon_grannys_crossing():
+    image, draw = icon_base((90, 90, 100), (30, 30, 36))
+    # A zebra crossing, her cane on it, and a car that waits before it
+    for x in range(36, 230, 40):
+        draw.rectangle([x, 120, x + 22, 230], fill=(245, 245, 245), outline=INK, width=3)
+    car_shape(draw, 128, 92, 150, (200, 60, 60))
+    draw.rectangle([60, 96, 196, 104], fill=(255, 80, 60))
+    line(draw, [(170, 236), (170, 140)], (140, 90, 50), 14)
+    draw.arc([140, 110, 190, 160], start=180, end=360, fill=INK, width=20)
+    draw.arc([144, 114, 186, 156], start=180, end=360, fill=(140, 90, 50), width=11)
+    finish(image, "grannys_crossing")
 
 
 ICONS = {name[5:]: f for name, f in dict(globals()).items() if name.startswith("icon_") and callable(f) and f.__module__ == __name__ and name != "icon_base"}

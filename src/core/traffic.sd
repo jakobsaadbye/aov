@@ -33,9 +33,6 @@ Car :: struct {
     shift:      f32;        // Across the road, from the middle of its lane: a car that is pushed into another lane
                             // slides over to it (moveToLane)
     fromLane:   int = -1;   // The lane it is sliding over from, while it is still partly in it
-    magnetLeft: f32;        // Seconds it pulls the enemies of magnetOwner near it (Magnus)
-    magnetOwner: int = -1;
-    magnetPull: f32;        // How fast it pulls them
     hauntedBy:  int = -1;   // The player whose ghost is in it (Ghosty)
 
     // The health it takes off a hero it is on, per second
@@ -206,7 +203,6 @@ update :: method (traffic: *Traffic, dt: f32, rng: *random.Random, slowZones: []
         if !car.isActive { continue; }
 
         car.age += dt;
-        car.magnetLeft = math.max(0, car.magnetLeft - dt);
         if car.shift != 0 {
             step := ShiftSpeed * dt;
             if math.fabsf(car.shift) <= step { car.shift = 0; car.fromLane = -1; }
@@ -390,6 +386,19 @@ carHitting :: method (traffic: *Traffic, center: Vector2, radius: f32) -> ?*Car 
         }
     }
     return null;
+}
+
+// If a car will be on a circle on the ground in t seconds, if it drives on as it does now
+carWillHit :: method (traffic: *Traffic, center: Vector2, radius: f32, t: f32) -> bool {
+    for car in traffic.cars {
+        if !car.isActive { continue; }
+        moving := math.max(t - math.max(car.frozenLeft, car.liftedLeft), 0);
+        if car.liftedLeft > t { continue; }
+        rect := car.rect();
+        rect.y += car.speed * moving;
+        if CheckCollisionCircleRec(center, radius, rect) { return true; }
+    }
+    return false;
 }
 
 // The index of the first car that hits a circle on the ground, or -1

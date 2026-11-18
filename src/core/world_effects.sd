@@ -156,12 +156,33 @@ updateDecoy :: method (game: *Game, index: int, dt: f32) {
     if !player.decoy.hasValue() { return; }
     decoy := player.decoy.value();
     decoy.timeLeft -= dt;
-    decoy.position = game.world.resolveCollisions(decoy.position + decoy.velocity * dt, player.hero.info().hitRadius, false);
+    // He minds the cars: on when the way ahead stays free, else he waits, else he steps back out of the way
+    radius := player.hero.info().hitRadius;
+    step := decoy.velocity * dt;
+    if !game.decoyWayIsFree(decoy.position, decoy.velocity, radius) {
+        step = Vector2{0, 0};
+        if !game.decoyWayIsFree(decoy.position, Vector2{0, 0}, radius) {
+            if game.decoyWayIsFree(decoy.position, decoy.velocity * -1, radius) { step = decoy.velocity * -dt; }
+            else { step = decoy.velocity * dt; }
+        }
+    }
+    decoy.position = game.world.resolveCollisions(decoy.position + step, radius, false);
     if decoy.timeLeft <= 0 || !player.isPlaying() || game.traffic.carHitting(decoy.position, player.hero.info().hitRadius).hasValue() {
         game.popDecoy(index);
         return;
     }
     player.decoy = decoy;
+}
+
+DecoyLooksAhead :: 0.6;     // Seconds ahead the other twin looks for the cars
+
+// If walking on at a velocity from a point keeps clear of the cars for a moment
+decoyWayIsFree :: method (game: *Game, from: Vector2, velocity: Vector2, radius: f32) -> bool {
+    for k in 1...4 {
+        t := DecoyLooksAhead * k as f32 / 4;
+        if game.traffic.carWillHit(from + velocity * t, radius + 0.2, t) { return false; }
+    }
+    return true;
 }
 
 popDecoy :: method (game: *Game, index: int) {

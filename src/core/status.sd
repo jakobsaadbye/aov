@@ -19,9 +19,7 @@ StatusKind :: enum {
     slow,           // amount slower, e.g 0.5 is half as fast
     hex,            // A toad: slow, and can't cast (Sigrid)
     blind,          // The screen is white; a bot can't see the cars (Tobias)
-    fear,           // Runs away from point (Ivar)
     taunt,          // Walks towards point (a rubber chicken)
-    puppet,         // Walks to point, which the puppeteer picks (Hugo)
     tangled,        // In yarn: amount slower (Gudrun)
     windedDown,     // After an energy drink: amount slower
     mending,        // Heals amount of its most health a second while it stands still (Ditte)
@@ -29,6 +27,10 @@ StatusKind :: enum {
     igloo,          // In an igloo: stands still, out of reach of cars and spells (Frosty)
     leashed,        // Tied to the hero of source: can't get further from it than amount (Gudrun)
     substitute,     // A log waits at point: a car that would hit the hero hits the log, and the hero is back at point (Kenji)
+    trance,         // Walks slowly in a trance, and the cars go through it as if it weren't there (Hugo)
+    berserk,        // A car that hits it is thrown a lane aside instead, for a little of its health (Ivar)
+    repel,          // The cars that come near are pushed out of its way, into the lanes beside it (Magnus)
+    crossing,       // The cars that come to it stop and wait until it has gone by (Gudrun)
 }
 
 Status :: struct {
@@ -60,9 +62,7 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .slow       => StatusRules{harms: true};
         case .hex        => StatusRules{silences: true, harms: true};
         case .blind      => StatusRules{harms: true};
-        case .fear       => StatusRules{silences: true, steers: true, harms: true};
         case .taunt      => StatusRules{steers: true, harms: true};
-        case .puppet     => StatusRules{silences: true, steers: true, harms: true};
         case .tangled    => StatusRules{harms: true};
         case .windedDown => StatusRules{};
         case .mending    => StatusRules{good: true};
@@ -70,6 +70,10 @@ statusRules :: (kind: StatusKind) -> StatusRules {
         case .igloo      => StatusRules{stops: true, untargetable: true, carsPass: true, good: true};
         case .leashed    => StatusRules{harms: true};
         case .substitute => StatusRules{good: true};
+        case .trance     => StatusRules{carsPass: true, good: true};
+        case .berserk    => StatusRules{good: true};
+        case .repel      => StatusRules{good: true};
+        case .crossing   => StatusRules{good: true};
     };
 }
 
@@ -91,9 +95,7 @@ statusLook :: (kind: StatusKind) -> StatusLook {
         case .slow       => StatusLook{"Slowed", "Walks slower", "status_slow"};
         case .hex        => StatusLook{"Hexed", "A toad: slow, and can't cast", "hex"};
         case .blind      => StatusLook{"Blinded", "Can't see", "flash_photo"};
-        case .fear       => StatusLook{"Afraid", "Runs away, and can't cast", "battle_cry"};
         case .taunt      => StatusLook{"Taunted", "Walks towards what taunts it", "item_rubber_chicken"};
-        case .puppet     => StatusLook{"Puppet", "Walks where the puppeteer says, and can't cast", "puppet"};
         case .tangled    => StatusLook{"Tangled", "Walks slower", "knitting"};
         case .windedDown => StatusLook{"Winded", "Walks slower, after a sugar rush", "status_winded"};
         case .mending    => StatusLook{"Mending", "Heals while standing still", "bandage"};
@@ -101,6 +103,10 @@ statusLook :: (kind: StatusKind) -> StatusLook {
         case .igloo      => StatusLook{"Igloo", "Safe inside: no car or spell gets in", "igloo"};
         case .leashed    => StatusLook{"Leashed", "Tied to an enemy: can't get far from it", "yarn_leash"};
         case .substitute => StatusLook{"Substitute", "A car that would hit takes a log instead, and back to the mark", "substitution"};
+        case .trance     => StatusLook{"Trance", "Walks slowly, and the cars go through", "trance_walk"};
+        case .berserk    => StatusLook{"Berserk", "A car that hits is thrown aside instead", "berserk"};
+        case .repel      => StatusLook{"Repel", "The cars that come near are pushed aside", "repel"};
+        case .crossing   => StatusLook{"Crossing", "The cars stop and wait until she has gone by", "grannys_crossing"};
     };
 }
 
@@ -173,15 +179,9 @@ isSilenced :: method (hero: Hero) -> bool {
     return hero.anyStatus(rules => rules.silences);
 }
 
-// Walking by itself, to a point: away from what scares it, to what taunts it, or where its puppeteer says. Or nothing
+// Walking by itself, to a point: to what taunts it. Or nothing
 steeredTo :: method (hero: Hero) -> ?Vector2 {
-    if hero.has(.puppet) { return hero.status(.puppet).point; }
     if hero.has(.taunt)  { return hero.status(.taunt).point; }
-    if hero.has(.fear) {
-        away := hero.ground() - hero.status(.fear).point;
-        if away.length() < 0.01 { away = Vector2{1, 0}; }
-        return hero.ground() + away.normalize() * 10;
-    }
     return null;
 }
 
@@ -194,8 +194,9 @@ statusSpeed :: method (hero: Hero) -> f32 {
     if hero.has(.tangled)    { speed *= 1 - hero.status(.tangled).amount; }
     if hero.has(.windedDown) { speed *= 1 - hero.status(.windedDown).amount; }
     if hero.has(.hex)        { speed *= HexSpeed; }
-    if hero.has(.fear)       { speed *= 1.1; }
+    if hero.has(.trance)     { speed *= TranceSpeed; }
     return speed;
 }
 
 HexSpeed :: 0.55;
+TranceSpeed :: 0.6;

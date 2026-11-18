@@ -174,6 +174,8 @@ Hero :: struct {
     nearMissLeft:     f32;          // Seconds until a near miss makes its abilities ready again (the trait adrenaline)
     castCount:        int;          // Spells it has cast (the trait staticCharge)
     nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
+    shrugged:         int = -1;     // The car it threw aside last, berserk (Ivar), which doesn't hit it while it slides over
+    shruggedLeft:     f32;
     mirrorLeft:       f32;          // Seconds until its mirror sends a spell back again
     portalLeft:       f32;          // Seconds until it can go through a portal again
 
