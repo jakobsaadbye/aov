@@ -90,7 +90,7 @@ writeRecording :: (game: *Game, file: ?string) {
 
 @console.command("Turns the music on or off (M)")
 toggleMusic :: (game: *Game) {
-    game.sounds.toggleMute("theme");
+    game.sounds.toggleSoundtrack();
 }
 
 @console.command("The time of the game, and how each player is doing")

@@ -297,5 +297,9 @@
   "voice.twins_kill_1": "db838d834a1fd7a15987521d98057c5c13e095c7ba6ff87a652ddfb8824a32c2",
   "voice.twins_kill_2": "4807debf43b5f03f901c0819d44b27c21a179e5344ec85982550e28cdcfe2117",
   "voice.twins_spawn_1": "93db1ad4213802e324e454861f82530a9837e523e22035573f5197b104ce2401",
-  "voice.twins_spawn_2": "6e168ec90d6beaa66fb843df8e0e93eb75ec40bdfe819a648018c5cc9182f9f5"
+  "voice.twins_spawn_2": "6e168ec90d6beaa66fb843df8e0e93eb75ec40bdfe819a648018c5cc9182f9f5",
+  "music.first_light": "a39201a1d359c8953d57a8dc0ccceba198677960aa070fd4904e19c564ccb4b4",
+  "music.puddles": "481876b5d3906063404768b9b9469ee85ab33f9a87ccbb8c918c6a02ee348b40",
+  "music.lanterns": "4e6c4c6b7d976b2ded65ada6249caa4e9625d8fb42bd85edd9c2d845ba057c51",
+  "music.far_side": "c9c8e3d16f76ebcda4b11aceb91b24f4b24a8951bb57aa38f2a0177c4a8895de"
 }

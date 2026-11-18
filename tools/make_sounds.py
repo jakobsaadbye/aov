@@ -4,18 +4,17 @@ Writes the sounds and the music of the game to data/, synthesized from scratch:
 
     data/sounds/<group>/<name>.wav       a sound effect. The game plays it as "<group>.<name>", e.g "hero.crossed"
     data/sounds/<group>/<name>_<n>.wav   variants of the same sound: the game picks one at random
-    data/music/<name>.ogg                music and loops, streamed: "theme" and "traffic"
+    data/music/traffic.ogg               the hum of the traffic, a loop, streamed
 
     python3 tools/make_sounds.py         (needs numpy, scipy and soundfile)
 
 The aim is the sound of a fantasy game rather than of an 8-bit one: every effect is built in layers (a low body, a
 transient on top, and a tail), from noise, filters, inharmonic metal, formant voices and plucked strings instead of
-square waves, and all of it is put in a room with a convolution reverb. The music is a small orchestra: strings,
-cellos, horns, a choir, a harp and war drums.
+square waves, and all of it is put in a room with a convolution reverb.
 
 They are plain files: any .wav, .ogg or .mp3 dropped into data/sounds/<group>/ can be played by its name, without
-changing the game. The sounds of the spells, the items and the heroes, and the voices, are made with ElevenLabs by
-tools/make_audio.sd instead, as .ogg files, which this leaves alone.
+changing the game. The sounds of the spells, the items and the heroes, the voices and the music are made with
+ElevenLabs by tools/make_audio.sd instead, as .ogg files, which this leaves alone.
 """
 
 import os
@@ -153,19 +152,6 @@ def modal(freqs, decays, amps, seconds):
     out = np.zeros(len(t))
     for f, d, a in zip(freqs, decays, amps):
         out += a * np.sin(2 * np.pi * f * t + rng.uniform(0, 6.28)) * np.exp(-d * t)
-    return out
-
-
-def pluck(freq, seconds, brightness=0.5, decay=0.996):
-    """A plucked string (Karplus-Strong), e.g a harp"""
-    n = n_of(seconds)
-    period = max(2, int(RATE / freq))
-    buf = lowpass(rng.uniform(-1, 1, period), 1500 + 6000 * brightness, 1)
-    out = np.zeros(n)
-    for start in range(0, n, period):
-        end = min(start + period, n)
-        out[start:end] = buf[:end - start]
-        buf = decay * 0.5 * (buf + np.roll(buf, 1))
     return out
 
 
@@ -576,15 +562,6 @@ def save_music(left, right, name, loop_samples):
     print(os.path.relpath(path, DATA), f"{loop_samples / RATE:.1f} s")
 
 
-NOTE_NAMES = {"C": -9, "C#": -8, "Db": -8, "D": -7, "D#": -6, "Eb": -6, "E": -5, "F": -4, "F#": -3, "Gb": -3,
-              "G": -2, "G#": -1, "Ab": -1, "A": 0, "A#": 1, "Bb": 1, "B": 2}
-
-
-def note_freq(name):
-    octave = int(name[-1])
-    return 440.0 * 2 ** ((NOTE_NAMES[name[:-1]] + 12 * (octave - 4)) / 12)
-
-
 class Score:
     """Stereo tracks, each sent to the hall reverb by its own amount"""
 
@@ -625,14 +602,6 @@ def strings(freq, seconds, attack=0.6, voices=5, cutoff=2400):
     return out * adsr(seconds, attack, min(0.8, seconds * 0.4), 0.85, 0.2)
 
 
-def cello(freq, seconds, accent=1.0):
-    """A short, driving bowed note"""
-    n = n_of(seconds)
-    raw = osc(np.full(n, freq), "saw") + osc(np.full(n, freq * 1.004), "saw") * 0.6
-    raw = sweep_filter(raw, "low", 1500 * accent, 500)
-    return raw * adsr(seconds, 0.02, seconds * 0.5, 0.6, seconds * 0.3)
-
-
 def horn(freq, seconds, swell=0.25):
     """A French horn: a mellow saw with a filter that opens as it swells"""
     n = n_of(seconds)
@@ -656,125 +625,6 @@ def horn(freq, seconds, swell=0.25):
 def choir(freq, seconds, vowel="ah"):
     out = sum(voice(freq * (1 + d), seconds, vowel, 0.25, 0.01) for d in (-0.004, 0.0, 0.005))
     return out * adsr(seconds, 0.7, 1.0, 0.9, 0.4) / 3
-
-
-def war_drum(seconds=1.4, pitch=58):
-    body = osc(glide(pitch * 1.6, pitch, 0.25, "lin").tolist() + [pitch] * (n_of(seconds) - n_of(0.25)))
-    body = saturate(body * env(seconds, 0.002, 4), 1.8)
-    skin = bandpass(noise(0.12), 80, 900) * env(0.12, 0.001, 6)
-    return mix(body, skin * 0.7)
-
-
-def tom(pitch, seconds=0.6):
-    return mix(saturate(osc(glide(pitch * 1.4, pitch, 0.08, "lin").tolist() + [pitch] * (n_of(seconds) - n_of(0.08))) * env(seconds, 0.001, 6), 1.5),
-               bandpass(noise(0.06), 200, 2000) * env(0.06, 0.001, 7) * 0.4)
-
-
-def cymbal_swell(seconds):
-    c = highpass(noise(seconds), 5000) + metal(410, seconds, 3, 1.5) * 0.05
-    return c * np.linspace(0, 1, n_of(seconds)) ** 3
-
-
-def make_theme():
-    """A heroic loop in D minor for a small orchestra: 24 bars at 84 BPM"""
-    bpm = 84
-    beat = 60 / bpm
-    bar = 4 * beat
-    bars = 24
-    loop_seconds = bars * bar
-    score = Score(loop_seconds + 5)
-
-    # i - VI - III - VII - iv - VI - VII - V, in D minor
-    progression = [("D", ["D", "F", "A"]), ("Bb", ["Bb", "D", "F"]), ("F", ["F", "A", "C"]), ("C", ["C", "E", "G"]),
-                   ("G", ["G", "Bb", "D"]), ("Bb", ["Bb", "D", "F"]), ("C", ["C", "E", "G"]), ("A", ["A", "C#", "E"])]
-    opening = [0, 0, 1, 1, 2, 2, 3, 7]                  # Slower at first: two bars a chord
-    chord_of_bar = [progression[opening[b]] if b < 8 else progression[(b - 8) % 8] for b in range(bars)]
-
-    for b in range(bars):
-        t0 = b * bar
-        root, chord = chord_of_bar[b]
-        intro = b < 4
-        full = b >= 16
-
-        # Strings: the chord, sustained over the bar, spread wide
-        for k, name in enumerate(chord):
-            octave = 3 if k == 0 else 4
-            f = note_freq(name + str(octave))
-            score.add(strings(f, bar + 0.4, attack=0.5 if intro else 0.25), t0, pan=-0.6 + 0.6 * k, gain=0.13, wet=0.45)
-        if full:
-            f = note_freq(chord[1] + "5")
-            score.add(strings(f, bar + 0.3, attack=0.3, cutoff=3200), t0, pan=0.4, gain=0.07, wet=0.5)
-
-        # Cellos and basses: the root in driving eighths, once the intro is over
-        if not intro:
-            f = note_freq(root + "2")
-            for e in range(8):
-                accent = 1.0 if e % 4 == 0 else 0.6
-                octave = 2 if e in (3, 7) else 1
-                score.add(cello(f * octave, beat * 0.45, accent), t0 + e * beat / 2, pan=-0.2, gain=0.22 * (1.1 if e % 2 == 0 else 0.85), wet=0.2)
-            score.add(strings(f / 2, bar, attack=0.05, voices=3, cutoff=500), t0, gain=0.12, wet=0.1)
-
-        # Harp: an arpeggio up and down the chord in sixteenths, in the intro and the last part
-        if intro or full:
-            notes = [note_freq(n + "4") for n in chord] + [note_freq(chord[0] + "5")]
-            pattern = notes + notes[-2:0:-1]
-            for s in range(16):
-                f = pattern[s % len(pattern)]
-                score.add(pluck(f, 1.2, 0.6), t0 + s * beat / 4, pan=0.5 - 0.3 * (s % 2), gain=0.11 if intro else 0.07, wet=0.4)
-
-        # War drums: a big one on the one, and a pattern that grows
-        if not intro or b == 3:
-            score.add(war_drum(1.6, 52), t0, pan=0.0, gain=0.55, wet=0.35)
-        if b >= 4:
-            score.add(war_drum(1.2, 62), t0 + 2.5 * beat, pan=0.1, gain=0.35, wet=0.35)
-            score.add(war_drum(1.2, 62), t0 + 3 * beat, pan=-0.1, gain=0.4, wet=0.35)
-        if b >= 8:
-            for s in (1.5, 3.5):
-                score.add(tom(140), t0 + s * beat, pan=0.4, gain=0.2, wet=0.3)
-        if b % 4 == 3 and b >= 4:
-            for k, p in enumerate((180, 160, 140, 120, 105, 95)):                  # A fill into the next phrase
-                score.add(tom(p), t0 + 3 * beat + k * beat / 6, pan=-0.5 + k * 0.2, gain=0.22, wet=0.3)
-            score.add(cymbal_swell(bar * 0.5), t0 + bar * 0.5, pan=0.3, gain=0.08, wet=0.6)
-
-        # Choir: long ahs from bar 13
-        if b >= 12:
-            for k, name in enumerate(chord):
-                f = note_freq(name + ("4" if k else "3"))
-                score.add(choir(f, bar + 0.5), t0, pan=-0.3 + 0.3 * k, gain=0.12, wet=0.55)
-
-    # The horns: the melody, first alone, then an octave up with a second horn under it
-    melody_a = [("A4", 1.5), ("D5", 0.5), ("F5", 1), ("E5", 1),
-                ("D5", 1.5), ("C5", 0.5), ("Bb4", 2),
-                ("A4", 1.5), ("F4", 0.5), ("C5", 1.5), ("Bb4", 0.5),
-                ("A4", 2), ("E4", 2),
-                ("F4", 1.5), ("G4", 0.5), ("A4", 1), ("D5", 1),
-                ("C5", 1.5), ("Bb4", 0.5), ("A4", 1), ("G4", 1),
-                ("F4", 1), ("A4", 1), ("G4", 1), ("E4", 1),
-                ("D4", 3), ("C#4", 1)]
-    melody_b = [("D5", 1), ("E5", 1), ("F5", 1.5), ("G5", 0.5), ("A5", 2), ("F5", 2),
-                ("G5", 1), ("F5", 1), ("E5", 1), ("C5", 1), ("D5", 2), ("A4", 2),
-                ("Bb4", 1), ("C5", 1), ("D5", 1), ("F5", 1), ("E5", 2), ("C5", 2),
-                ("D5", 1.5), ("E5", 0.5), ("C#5", 2), ("A4", 4)]
-
-    def play_melody(melody, start_bar, octave=1.0, gain=0.16, harmony=False):
-        t = start_bar * bar
-        for name, beats in melody:
-            f = note_freq(name) * octave
-            length = beats * beat
-            score.add(horn(f, length + 0.08, swell=min(0.2, length * 0.3)), t, pan=0.15, gain=gain, wet=0.45)
-            if harmony:
-                score.add(horn(f * 2 ** (-5 / 12), length + 0.08, swell=min(0.2, length * 0.3)), t, pan=-0.25, gain=gain * 0.55, wet=0.5)
-            t += length
-
-    play_melody(melody_a, 4, 1.0, 0.17)
-    play_melody(melody_b, 12, 1.0, 0.15)
-    play_melody(melody_a, 16, 2.0, 0.12, harmony=True)
-
-    left, right = score.render()
-    loop = n_of(loop_seconds)
-    # Gentle glue on the mix
-    left, right = saturate(left / np.max(np.abs(left)) * 1.2, 1.2), saturate(right / np.max(np.abs(right)) * 1.2, 1.2)
-    save_music(left, right, "theme", loop)
 
 
 def make_traffic():
@@ -803,6 +653,6 @@ if __name__ == "__main__":
     import sys
     only = set(sys.argv[1:])
     for name, make in (("hero", hero_sounds), ("ability", ability_sounds), ("ui", ui_sounds), ("item", item_sounds), ("traffic_sounds", traffic_sounds),
-                       ("theme", make_theme), ("traffic", make_traffic)):
+                       ("traffic", make_traffic)):
         if not only or name in only:
             make()
