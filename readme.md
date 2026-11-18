@@ -62,7 +62,7 @@ bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its
 walk, and one for each ability, named by its icon. The game plays a hero's
 GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
 hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
-else idle. The Butcher, Birgit, Frosty, Mira, Magnus and Karl have one so far; the others are still OBJ.
+else idle. The Butcher, Birgit, Frosty, Mira, Magnus, Karl and Mads have one so far; the others are still OBJ.
 
 The Butcher's face has bones of its own: a jaw, two brows and two eyelids, over sculpted eyeballs, lips, teeth and
 tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks, chews and sneers while he stands,
@@ -104,6 +104,14 @@ adjustable wrench in his right fist and a dented oil can with a long spout in hi
 shakes the can to hear what is left in it, crouches and cranks with the wrench to jack up a car (which goes up on a
 scissor jack at each end, `models/car_jack.obj`, that opens as it rises), and swings the can round to sling its oil,
 which flies from the can in an arc and lands with a splash.
+
+Mads rides sideways on his skateboard, as a skater does: every one of his poses turns his hips a quarter round
+(`Sideways`), so his feet are across the board and his chest faces the side, his head turned to where he is going, and
+the rest of each pose is in the frame of his body. The board is on a bone of its own, under him, along the way he goes.
+He wears a baggy orange hoodie with its hood down, headphones round his neck, wide grey jeans torn at a knee, chunky skate
+shoes and a blue cap on backwards, with a bored, half-lidded look. He bobs on the board and looks about, pushes with his
+back foot to roll, ollies (a crouch, the tail popped so the nose comes up, a tuck with the board up under his feet, a
+landing), and grinds low with his arms out.
 
 Mira is a tall, slender person on the same skeleton, in a long robe of deep violet scattered with gold stars: its skirt
 is bound to her hips and legs, so it follows her steps and swings out when she turns. She has wide bell sleeves, long
