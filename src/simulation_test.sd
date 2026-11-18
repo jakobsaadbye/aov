@@ -1076,6 +1076,11 @@ testHazards :: () {
     for 0..15 { game.simulate(Dt); }
     ran := Vector3Distance(start, you.hero.position);
     assert(you.hero.slideLeft <= 0 && near(ran, you.hero.info().moveSpeed * core.GreaseSpeed * 15 * Dt, 0.05));
+    // and keeps the speed for a moment after he is off it, Greased
+    for 0..45 { game.simulate(Dt); }
+    assert(!you.hero.onOil && you.hero.has(.greased) && you.hero.speed() > you.hero.info().moveSpeed * 1.5);
+    for 0..(1.5 * 60) as int { game.simulate(Dt); }
+    assert(!you.hero.has(.greased) && near(you.hero.speed(), you.hero.info().moveSpeed));
     game.spawnHero(game.local, .allan);
     you.hero.position = Vector3{-30 - 6, 0, 20};
     you.hero.moveTo(Vector3{-30 + 20, 0, 20});

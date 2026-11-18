@@ -1,7 +1,8 @@
 namespace core;
 
-// What is on a hero right now, as a row of small icons over the hero card: its statuses, its passives and perks, and what
-// else holds it or helps it for a while. A green border is good for it, a red one bad. The mouse on one says what it is
+// What is on a hero right now, as a row of small round badges over the hero card: its statuses, its passives and perks, and
+// what else holds it or helps it for a while. A green ring is good for it, a red one bad, and it runs down with the time
+// left. The mouse on one says what it is
 
 import fmt;
 import math;
@@ -17,8 +18,8 @@ Buff :: struct {
     count:       int;           // A number in the corner, e.g charges, or 0
 }
 
-BuffSize :: 34;
-BuffGap  :: 5;
+BuffSize :: 38;
+BuffGap  :: 6;
 GoodBuffColor :: Color{80, 220, 90, 255};
 BadBuffColor  :: Color{230, 60, 50, 255};
 
@@ -101,28 +102,63 @@ drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
     }
 }
 
+// A round badge: a soft shadow, the icon in a circle, a dark sweep over the part of its time that has gone, and a ring
+// round it, bevelled, light on top and dark below, in green for good and red for bad, that runs down as its time does.
+// The number of one that counts sits in a little disc at its foot
 drawBuff :: (assets: *Assets, buff: Buff, box: Rectangle) {
-    border := GoodBuffColor;
-    if !buff.good { border = BadBuffColor; }
-    DrawRectangleRec(box, {0, 0, 0, 200});
-    if assets.icons.has(buff.icon) {
-        icon := assets.icons[buff.icon];
-        DrawTexturePro(icon, {0, 0, icon.width as f32, icon.height as f32}, {box.x + 2, box.y + 2, box.width - 4, box.height - 4}, {0, 0}, 0, White);
-    }
-    // How much of it has gone: dark from the top, clockwise
+    color := GoodBuffColor;
+    if !buff.good { color = BadBuffColor; }
+    center := Vector2{box.x + box.width * 0.5, box.y + box.height * 0.5};
+    r := box.width * 0.5;
+    DrawCircleV(center + Vector2{1.5, 2.5}, r + 1, {0, 0, 0, 110});
+    DrawCircleV(center, r, {12, 12, 16, 235});
+    inner := r - 4;
+    if assets.icons.has(buff.icon) { drawRoundTexture(assets.icons[buff.icon], center, inner); }
+    left: f32 = 1;
     if buff.timeLeft > 0 && buff.duration > 0 {
-        inner := Rectangle{box.x + 2, box.y + 2, box.width - 4, box.height - 4};
-        BeginScissorMode(inner.x as int, inner.y as int, inner.width as int, inner.height as int);
-        gone := 1 - math.clamp(buff.timeLeft / buff.duration, 0, 1);
-        if gone > 0 { DrawCircleSector({inner.x + inner.width * 0.5, inner.y + inner.height * 0.5}, inner.width, -90, -90 + gone * 360, 32, {0, 0, 0, 150}); }
-        EndScissorMode();
+        left = math.clamp(buff.timeLeft / buff.duration, 0, 1);
+        if left < 1 { DrawCircleSector(center, inner, -90, -90 + (1 - left) * 360, 36, {0, 0, 0, 140}); }
     }
-    DrawRectangleLinesEx(box, 2, border);
+    // The ring: dark where its time has gone, bright where it is left, a light rim on top and a dark one below
+    DrawRing(center, r - 4, r, 0, 360, 40, ColorAlpha(ColorBrightness(color, -0.55), 0.95));
+    DrawRing(center, r - 4, r, -90, -90 + left * 360, 40, color);
+    DrawRing(center, r - 1.2, r, 200, 340, 24, ColorAlpha(ColorBrightness(color, 0.6), 0.9));
+    DrawRing(center, r - 4, r - 2.8, 20, 160, 24, ColorAlpha(Black, 0.45));
+    DrawRing(center, r, r + 1.3, 0, 360, 40, {0, 0, 0, 200});
+    DrawRing(center, inner - 0.8, inner, 0, 360, 40, ColorAlpha(Black, 0.6));
+    // A glint on the glass of it
+    DrawCircleV(center + Vector2{-inner * 0.4, -inner * 0.45}, inner * 0.22, {255, 255, 255, 40});
     if buff.count > 0 {
         text := tprint("%", buff.count);
-        x := (box.x + box.width) as int - textWidth(text, 14) - 3;
-        y := (box.y + box.height) as int - 16;
-        drawText(text, x + 1, y + 1, 14, Black);
-        drawText(text, x, y, 14, White);
+        at := center + Vector2{r * 0.62, r * 0.62};
+        DrawCircleV(at, 8.5, {0, 0, 0, 230});
+        DrawRing(at, 7, 8.5, 0, 360, 20, color);
+        drawText(text, (at.x - textWidth(text, 13) * 0.5) as int, (at.y - 7) as int, 13, White);
     }
+}
+
+// A texture in a circle: a fan of triangles from its middle, each with its part of the texture
+drawRoundTexture :: (texture: Texture, center: Vector2, radius: f32) {
+    Segments :: 36;
+    rlSetTexture(texture.id);
+    rlBegin(RlTriangles);
+    rlColor4ub(255, 255, 255, 255);
+    for k in 0..Segments {
+        a := Pi * 2 * k as f32 / Segments;
+        b := Pi * 2 * (k + 1) as f32 / Segments;
+        rlTexCoord2f(0.5, 0.5);
+        rlVertex2f(center.x, center.y);
+        rlTexCoord2f(0.5 + math.cosf(b) * 0.5, 0.5 + math.sinf(b) * 0.5);
+        rlVertex2f(center.x + math.cosf(b) * radius, center.y + math.sinf(b) * radius);
+        rlTexCoord2f(0.5 + math.cosf(a) * 0.5, 0.5 + math.sinf(a) * 0.5);
+        rlVertex2f(center.x + math.cosf(a) * radius, center.y + math.sinf(a) * radius);
+    }
+    rlEnd();
+    rlSetTexture(0);
+}
+
+RlTriangles :: 4;           // RL_TRIANGLES of rlgl
+
+extern "raylib.dll" {
+    rlVertex2f :: (x: f32, y: f32) -> void;
 }
