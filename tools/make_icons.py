@@ -276,13 +276,18 @@ def icon_attract():
     finish(image, "attract")
 
 
-def icon_steel_frame():
-    image, draw = icon_base((170, 175, 190), (70, 75, 90))
-    poly(draw, [(128, 30), (210, 70), (200, 170), (128, 226), (56, 170), (46, 70)], (180, 185, 195))
-    for x in (90, 166):
-        for y in (90, 170):
-            circle(draw, x, y, 10, (120, 125, 135))
-    finish(image, "steel_frame")
+def icon_scrap_armor():
+    image, draw = icon_base((150, 165, 200), (35, 40, 70))
+    # Scrap circling round: a hubcap, a number plate and a bent pipe, on a ring of the field
+    draw.ellipse([30, 70, 226, 190], outline=(170, 210, 255), width=8)
+    circle(draw, 70, 92, 34, (205, 210, 220))
+    circle(draw, 70, 92, 13, (120, 125, 135))
+    draw.rectangle([140, 150, 220, 192], fill=(245, 215, 60), outline=INK, width=6)
+    draw.rectangle([152, 164, 208, 178], fill=(40, 40, 45))
+    line(draw, [(150, 52), (190, 62), (205, 100)], (130, 118, 110), 16)
+    for x, y in ((118, 128), (40, 160), (214, 130)):
+        star(draw, x, y, 14, (220, 235, 255), points=4, inner=0.35)
+    finish(image, "scrap_armor")
 
 
 # Stormy

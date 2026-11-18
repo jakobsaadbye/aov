@@ -49,6 +49,8 @@ Trait :: union {
     mirror;                     // The next spell cast on it goes back to its caster, now and then (a mirror)
     airTime:      f32;          // Times how long its leaps and flights stay up (an umbrella)
     knockTaken:   f32;          // Times how far it is knocked away
+    scrapArmor:   int;          // The cars that rush past close leave scraps of metal on it, up to this many, and a car
+                                // that would hit it knocks one off instead (Magnus)
 }
 
 ChillAura :: struct {
@@ -71,6 +73,7 @@ HeroStats :: struct {
     throughWalls: bool;
     oilProof:    bool;
     unshovable:  bool;
+    scrapArmor:  int;
     ambulanceProof: bool;
     stunTaken:   f32 = 1;
     momentum:    bool;
@@ -122,6 +125,7 @@ addTrait :: method (stats: *HeroStats, trait: Trait) {
         case .throughWalls { stats.throughWalls = true; }
         case .oilProof     { stats.oilProof = true; }
         case .unshovable   { stats.unshovable = true; }
+        case .scrapArmor   { stats.scrapArmor = math.max(stats.scrapArmor, v); }
         case .ambulanceProof { stats.ambulanceProof = true; }
         case .stunTaken    { stats.stunTaken *= v; }
         case .momentum     { stats.momentum = true; }

@@ -176,6 +176,10 @@ Hero :: struct {
     nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
     shrugged:         int = -1;     // The car it threw aside last, berserk (Ivar), which doesn't hit it while it slides over
     shruggedLeft:     f32;
+    scrap:            int;          // Scraps of metal stuck to it (the trait scrapArmor, Magnus)
+    scrapLeft:        f32;          // Seconds until a car that rushes past leaves another
+    scrapCar:         int = -1;     // The car that knocked one off last, which doesn't hit it while it is flung aside
+    scrapCarLeft:     f32;
     mirrorLeft:       f32;          // Seconds until its mirror sends a spell back again
     portalLeft:       f32;          // Seconds until it can go through a portal again
 

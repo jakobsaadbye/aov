@@ -182,6 +182,7 @@ Game :: struct {
     cones:       [..]Cone;                  // Traffic cones in the lanes (world_effects.sd)
     peels:       [..]Peel;                  // Banana peels on the ground
     strikes:     [..]Strike;                // Stormy's lightning, while it is seen
+    arcs:        [..]MagnetArc;             // Magnus' crackling arcs, while they are seen
     rods:        [..]LightningRod;          // Stormy's lightning rods
     trampolines: [..]Trampoline;            // Birgit's trampolines
     portals:     [..]Portal;                // The pairs of portals of portal guns (item_abilities.sd)
@@ -263,6 +264,7 @@ restart :: method (game: *Game) {
     game.cones.clear();
     game.peels.clear();
     game.strikes.clear();
+    game.arcs.clear();
     game.rods.clear();
     game.trampolines.clear();
     game.portals.clear();
@@ -299,6 +301,7 @@ free :: method (game: *Game) {
     game.cones.free();
     game.peels.free();
     game.strikes.free();
+    game.arcs.free();
     game.rods.free();
     game.trampolines.free();
     game.portals.free();
@@ -632,6 +635,8 @@ simulate :: method (game: *Game, dt: f32) {
     game.updatePeels(dt);
     for *strike in game.strikes { strike.timeLeft -= dt; }
     game.strikes.removeWhere(strike => strike.timeLeft <= 0);
+    for *arc in game.arcs { arc.timeLeft -= dt; }
+    game.arcs.removeWhere(arc => arc.timeLeft <= 0);
 
     for *line in game.feed { line.timeLeft -= dt; }
     while game.feed.count > 0 && game.feed[0].timeLeft <= 0 { game.feed.removeAt(0).text.free(); }
@@ -711,7 +716,8 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
             hero := &player.hero;
             car := game.traffic.carHitting(hero.ground(), hero.info().hitRadius);
             if car.hasValue() && car.value().kind == .ambulance && hero.stats.ambulanceProof { car = null; }
-            if car.hasValue() && !hero.carsPass() && !game.onBridge(hero.ground()) && !game.dodgedCar(index, car.value()) && !game.shrugOffCar(index) {
+            if car.hasValue() && !hero.carsPass() && !game.onBridge(hero.ground()) && !game.dodgedCar(index, car.value()) && !game.shrugOffCar(index) &&
+               !game.scrapShield(index) {
                 if hero.hurtFor > 0.3 { game.sounds.playAt("hero.hurt", hero.position, 0.8, 0.06); }
                 if hero.hurtFor > 0.3 && player.isBot() { player.brain.wasHit(game, index, car.value()); }
                 hero.health -= car.value().damagePerSecond() * hero.damageTaken() * dt;
@@ -721,7 +727,10 @@ updatePlayer :: method (game: *Game, index: int, dt: f32) {
                     game.heroRunOver(index, car.value());
                 }
             } else {
-                if !car.hasValue() { game.nearMiss(index); }
+                if !car.hasValue() {
+                    game.nearMiss(index);
+                    game.collectScrap(index, dt);
+                }
                 hero.hurtFor += dt;
                 // Only a First Aid Kit heals, a while after a car was on the hero
                 if hero.hurtFor > HealDelay && hero.stats.regen > 0 {
