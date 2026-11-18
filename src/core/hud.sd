@@ -59,7 +59,7 @@ drawHud :: method (game: *Game, assets: *Assets) {
     drawHeroCard(game, assets);
     if game.canSwitchView() { drawWatching(game); }
     drawBanner(game);
-    drawPerkOffer(game, assets);
+    drawTalentOffer(game, assets);
     if game.showHelp       { drawHelp(); }
     if game.debug.overlay  { drawDebug(game); }
     drawInspectorPanel(game);
@@ -206,7 +206,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     buttonsWidth := slots.count as int * (AbilityButtonSize + AbilityButtonGap) - AbilityButtonGap;
     if actives > 0 && actives < slots.count { buttonsWidth += PassiveGap - AbilityButtonGap; }
     backpackWidth := game.you().backpack.size * (ItemSlotSize + 8) - 8;
-    width  := math.max(20 + PortraitBox + 28 + buttonsWidth + 40 + backpackWidth + 24, 600);
+    width  := math.max(20 + PortraitBox + 10 + TalentTreeWidth + 24 + buttonsWidth + 40 + backpackWidth + 24, 640);
     height := HeroCardHeight;
     panel := Rectangle{(GetScreenWidth() - width) as f32 * 0.5, (GetScreenHeight() - height - 10) as f32, width as f32, height as f32};
     game.mouseOnHud = CheckCollisionPointRec(GetMousePosition(), panel);
@@ -237,8 +237,12 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
     alive := tprint("Alive % s", fmt.fixed(hero.timeAlive, 1));
     drawText(alive, (panel.x + panel.width * 0.5) as int - textWidth(alive, 14) / 2, panel.y as int + 16, 14, UiGoldDim);
 
+    // The talent tree, right of the portrait
+    treeRect := Rectangle{(x + PortraitBox + 10) as f32, top as f32, TalentTreeWidth, PortraitBox};
+    onTree := drawTalentTree(game, assets, &game.players[game.watched], treeRect);
+
     // The abilities
-    left := x + PortraitBox + 28;
+    left := x + PortraitBox + 10 + TalentTreeWidth + 24;
     drawTitle("Abilities", left, top - 2, 15, UiGoldDim);
     mouse := GetMousePosition();
     game.hoveredAbility = -1;
@@ -274,6 +278,7 @@ drawHeroCard :: (game: *Game, assets: *Assets) {
 
     drawBackpack(game, assets, backpackX, buttonY);
     drawBuffs(game, assets, panel);
+    if onTree { drawTalentTreeTip(game, &game.players[game.watched], treeRect); }
     if game.hoveredAbility >= 0 {
         drawAbilityTooltip(hero, abilities[game.hoveredAbility], hoveredButton, panel);
     }

@@ -1,7 +1,7 @@
 namespace core;
 
 // The ways a hero moves besides walking, and what the world gets built on it: riding on a car (Bent), dashing (Mads),
-// getting out of the way of a car by itself (Spring Shoes, Kenji's roll, the perk nimble), and footbridges over the road
+// getting out of the way of a car by itself (Spring Shoes, Kenji's roll, the talent nimble), and footbridges over the road
 // (Birgit). Leaps and hooks are in heroes.sd and heroes/butcher.sd
 
 import math;

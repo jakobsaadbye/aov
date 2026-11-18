@@ -39,7 +39,7 @@ endRound :: method (game: *Game, index: int) {
         player.hero.stop();
         player.phase = Phase{regroup: {timeLeft: RegroupTime}};
     }
-    game.offerPerks();
+    game.offerTalents();
 }
 
 win :: method (game: *Game, index: int) {

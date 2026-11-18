@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Writes the icons of the abilities of the heroes after the first seven, of the items, the perks and the statuses, to
+Writes the icons of the abilities of the heroes after the first seven, of the items, the talents and the statuses, to
 data/icons/, like make_textures.py: shapes drawn on a background, which tools/iconkit.py paints as raised, lit objects.
 
     python3 tools/make_icons.py                  all of them
@@ -464,7 +464,7 @@ def icon_item_umbrella():
     finish(image, "item_umbrella")
 
 
-# Perks: a bronze medallion with a sign on it
+# Talents: a bronze medallion with a sign on it
 
 
 def medallion(top, bottom):
@@ -474,66 +474,66 @@ def medallion(top, bottom):
     return image, draw
 
 
-def icon_perk_thick_skin():
+def icon_talent_thick_skin():
     image, draw = medallion((200, 150, 120), (100, 60, 40))
     poly(draw, [(128, 70), (175, 90), (170, 150), (128, 185), (86, 150), (81, 90)], (230, 180, 140))
-    finish(image, "perk_thick_skin")
+    finish(image, "talent_thick_skin")
 
 
-def icon_perk_scavenger():
+def icon_talent_scavenger():
     image, draw = medallion((200, 180, 120), (90, 70, 30))
     circle(draw, 115, 115, 36, None, outline=(240, 230, 210), width=10)
     line(draw, [(140, 140), (175, 175)], (240, 230, 210), 12)
-    finish(image, "perk_scavenger")
+    finish(image, "talent_scavenger")
 
 
-def icon_perk_revenge():
+def icon_talent_revenge():
     image, draw = medallion((200, 60, 60), (80, 10, 10))
     poly(draw, [(85, 90), (150, 90), (150, 70), (180, 110), (150, 150), (150, 130), (85, 130)], (250, 200, 180))
-    finish(image, "perk_revenge")
+    finish(image, "talent_revenge")
 
 
-def icon_perk_pocket():
+def icon_talent_pocket():
     image, draw = medallion((150, 110, 70), (70, 40, 20))
     poly(draw, [(85, 80), (171, 80), (165, 160), (128, 180), (91, 160)], (90, 110, 170))
     draw.line([(85, 100), (171, 100)], fill=(250, 220, 120), width=6)
-    finish(image, "perk_pocket")
+    finish(image, "talent_pocket")
 
 
-def icon_perk_nimble():
+def icon_talent_nimble():
     image, draw = medallion((150, 220, 160), (30, 90, 40))
     draw.arc([80, 80, 176, 176], start=200, end=340, fill=(250, 250, 250), width=12)
     poly(draw, [(165, 95), (185, 120), (155, 120)], (250, 250, 250))
-    finish(image, "perk_nimble")
+    finish(image, "talent_nimble")
 
 
-def icon_perk_cold_blooded():
+def icon_talent_cold_blooded():
     image, draw = medallion((150, 210, 240), (30, 80, 130))
     poly(draw, [(115, 70), (141, 70), (141, 150), (115, 150)], (240, 250, 255))
     circle(draw, 128, 165, 22, (200, 40, 40))
-    finish(image, "perk_cold_blooded")
+    finish(image, "talent_cold_blooded")
 
 
-def icon_perk_hot_potato():
+def icon_talent_hot_potato():
     image, draw = medallion((240, 150, 60), (120, 50, 10))
     draw.ellipse([85, 95, 171, 165], fill=(190, 140, 80), outline=INK, width=5)
     for x in (100, 128, 156):
         line(draw, [(x, 85), (x + 6, 65)], (255, 120, 40), 6, outline=False)
-    finish(image, "perk_hot_potato")
+    finish(image, "talent_hot_potato")
 
 
-def icon_perk_focus():
+def icon_talent_focus():
     image, draw = medallion((170, 140, 220), (60, 30, 100))
     for r in (55, 35, 15):
         circle(draw, 128, 128, r, None, outline=(240, 230, 255), width=8)
-    finish(image, "perk_focus")
+    finish(image, "talent_focus")
 
 
-def icon_perk_long_arms():
+def icon_talent_long_arms():
     image, draw = medallion((130, 180, 240), (30, 60, 120))
     line(draw, [(80, 160), (176, 96)], (235, 190, 150), 14)
     poly(draw, [(170, 80), (195, 92), (180, 115)], (235, 190, 150))
-    finish(image, "perk_long_arms")
+    finish(image, "talent_long_arms")
 
 
 # The redesigned kits
@@ -782,24 +782,24 @@ def icon_item_portal_gun():
     finish(image, "item_portal_gun")
 
 
-def icon_perk_thick_soles():
+def icon_talent_thick_soles():
     image, draw = medallion((200, 160, 110), (90, 60, 30))
     poly(draw, [(80, 120), (95, 80), (130, 80), (140, 110), (180, 120), (180, 140), (80, 140)], (240, 240, 245))
     draw.rectangle([78, 140, 182, 165], fill=(60, 50, 40), outline=INK, width=5)
-    finish(image, "perk_thick_soles")
+    finish(image, "talent_thick_soles")
 
 
-def icon_perk_hit_and_run():
+def icon_talent_hit_and_run():
     image, draw = medallion((230, 90, 70), (100, 20, 20))
     car_shape(draw, 128, 160, 110, (60, 120, 200))
     star(draw, 175, 100, 22, (255, 230, 90))
-    finish(image, "perk_hit_and_run")
+    finish(image, "talent_hit_and_run")
 
 
-def icon_perk_scrapper():
+def icon_talent_scrapper():
     image, draw = medallion((220, 150, 90), (100, 50, 20))
     poly(draw, [(85, 140), (85, 100), (150, 100), (150, 85), (185, 120), (150, 155), (150, 140)], (235, 190, 150))
-    finish(image, "perk_scrapper")
+    finish(image, "talent_scrapper")
 
 
 # The survival spells of Hugo, Ivar, Magnus and Gudrun

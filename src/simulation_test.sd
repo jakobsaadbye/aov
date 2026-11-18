@@ -58,7 +58,7 @@ main :: () {
     testParticles();
     testEveryAbility();
     testEveryItem();
-    testPerks();
+    testTalents();
     testRedesignedKits();
     testNewItems();
     fmt.print("All simulation tests passed");
@@ -1279,33 +1279,38 @@ testEveryItem :: () {
     }
 }
 
-// Perks: three are offered after a crossing, and the one picked is the player's, with what it does
-testPerks :: () {
+// Talents: two are offered after a crossing, and the one picked is the player's, with what it does. Each pick is a tier
+// of the tree, with the one that was left
+testTalents :: () {
     game := bots.newGame(33, bots: 1);
     defer game.free();
     you := game.you();
-    game.offerPerks();
-    assert(you.perkOffer.hasValue() && game.players[1].perkOffer.hasValue());
-    offer := you.perkOffer.value();
-    a := offer.perks[0];
-    b := offer.perks[1];
-    c := offer.perks[2];
-    assert(offer.timeLeft == core.PerkPickTime);
-    assert(a != b && b != c && a != c);
-    game.choosePerk(0, 1);
-    assert(!you.perkOffer.hasValue() && you.perks.count == 1 && you.perks[0] == b);
+    game.offerTalents();
+    assert(you.talentOffer.hasValue() && game.players[1].talentOffer.hasValue());
+    offer := you.talentOffer.value();
+    a := offer.talents[0];
+    b := offer.talents[1];
+    assert(core.TalentChoices == 2 && offer.timeLeft == core.TalentPickTime && a != b);
+    game.chooseTalent(0, 1);
+    assert(!you.talentOffer.hasValue() && you.talents.count == 1 && you.talents[0].taken() == b && you.talents[0].options[0] == a);
 
     // Deep Pockets: a third slot in the backpack
-    you.perks.add(.pocket);
+    you.talents.add(core.TalentPick{options: [.pocket, .focus], chosen: 0});
     you.refreshStats();
-    assert(you.backpack.size == 3);
+    assert(you.backpack.size == 3 && core.hasTalent(you, .pocket) && !core.hasTalent(you, .focus));
+
+    // Talents aren't statuses: they are in the tree, not in the row of badges
+    buffs := core.buffsOf(game, game.local);
+    assert(!buffs.some(buff => buff.icon == "talent_pocket"));
+    buffs.free();
 
     // The bot picks one too, by itself, and nobody has to: the time runs out
     for 0..(14 * 60) { game.simulate(Dt); }
-    assert(game.players[1].perks.count == 1);
-    game.offerPerks();
+    assert(game.players[1].talents.count == 1);
+    game.offerTalents();
     for 0..(13 * 60) { game.simulate(Dt); }
-    assert(!you.perkOffer.hasValue() && you.perks.count == 3);
+    assert(!you.talentOffer.hasValue() && you.talents.count == 3);
+    assert(core.talentTiers(game) >= 4);
 }
 
 // The heroes whose kits play with the cars as things: thrown, steered, reversed, pushed aside, stopped, struck

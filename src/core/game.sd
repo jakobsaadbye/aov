@@ -39,7 +39,7 @@ Command :: union {
     cast: struct { slot: int; target: Vector2; };
     lockItem: int;                          // Locks the item in a slot of the backpack, or unlocks it
     useItem: struct { slot: int; target: Vector2; };    // Uses the item in a slot of the backpack (item_abilities.sd)
-    choosePerk: int;                        // Picks one of the perks offered after a crossing (perks.sd)
+    chooseTalent: int;                        // Picks one of the talents offered after a crossing (talents.sd)
 }
 
 Player :: struct {
@@ -52,9 +52,9 @@ Player :: struct {
     brain:     Brain;                       // What gives the orders of a bot. Null for a player at the keyboard
     commands:  [..]Command;                 // The orders of this frame, carried out by Game.simulate
     backpack:  Backpack;                    // The items it picked up, which boost all of its heroes (items.sd)
-    perks:     [..]PerkKind;                // Picked after the crossings, for all of its heroes (perks.sd)
+    talents:     [..]TalentPick;                // A tier of its tree for each crossing: the two offered, and the one taken, for all of its heroes (talents.sd)
     decoy:     ?Decoy;                      // Tim & Tom's other twin, while it walks (world_effects.sd)
-    perkOffer: ?PerkOffer;                  // The perks it may pick one of, after a crossing (perks.sd)
+    talentOffer: ?TalentOffer;                  // The talents it may pick one of, after a crossing (talents.sd)
     voiceUntil: f32;                        // Its hero says nothing more until then, unless it matters (voices.sd)
     moveLineAt: f32;                        // and answers no move order until then
 
@@ -163,7 +163,7 @@ Game :: struct {
     mouseOnHud:  bool;                      // The mouse is on the hero card: a click there isn't on the ground
     aiming:      int = -1;                  // An ability whose icon was clicked: the next left click on the ground casts it
     aimingItem:  int = -1;                  // and an item
-    hoveredPerk: int = -1;                  // The card of a perk the mouse is on
+    hoveredTalent: int = -1;                  // The card of a talent the mouse is on
     sounds:      SoundPlayer;               // Silent until it is loaded, e.g in simulation_test.sd
     inspector:   Inspector;                 // F4: what a bot thinks (inspector.sd)
     recording:   Recording;                 // What was played so far (recording.sd)
@@ -280,8 +280,8 @@ restart :: method (game: *Game) {
     for *player, i in game.players {
         player.stats = Stats{};
         player.backpack = Backpack{};
-        player.perks.clear();
-        player.perkOffer = null;
+        player.talents.clear();
+        player.talentOffer = null;
         player.startSide = .left;
         player.commands.clear();
         kind := (game.rng.between(0, HeroKind.count as int - 1)) as HeroKind;
@@ -309,7 +309,7 @@ free :: method (game: *Game) {
     game.slicks.list.free();
     for *player in game.players {
         player.commands.free();
-        player.perks.free();
+        player.talents.free();
         if player.isBot() { player.brain.free(); }
     }
     for *frame in game.recording.frames { frame.commands.free(); }
@@ -476,15 +476,15 @@ updateCamera :: method (game: *Game, dt: f32) {
 readInput :: method (game: *Game) {
     if !game.hasLocal() { return; }                         // Spectating
     player := &game.players[game.local];
-    // Perks: a click on a card, or 1, 2 and 3 while the hero waits for the next round
-    if game.players[game.local].perkOffer.hasValue() && !game.keyboardTaken {
-        if IsMouseButtonPressed(.left) && game.hoveredPerk >= 0 {
-            game.players[game.local].order(Command{choosePerk: game.hoveredPerk});
+    // Talents: a click on a card, or 1 and 2 while the hero waits for the next round
+    if game.players[game.local].talentOffer.hasValue() && !game.keyboardTaken {
+        if IsMouseButtonPressed(.left) && game.hoveredTalent >= 0 {
+            game.players[game.local].order(Command{chooseTalent: game.hoveredTalent});
             return;
         }
         if !game.players[game.local].isPlaying() {
             for key, k in ItemKeys {
-                if IsKeyPressed(key) { game.players[game.local].order(Command{choosePerk: k as int}); }
+                if k < TalentChoices && IsKeyPressed(key) { game.players[game.local].order(Command{chooseTalent: k as int}); }
             }
         }
     }
@@ -600,7 +600,7 @@ simulate :: method (game: *Game, dt: f32) {
         profileEnd(.heroes);
     }
     game.updateMatch(dt);
-    game.updatePerkOffers(dt);
+    game.updateTalentOffers(dt);
 
     game.separateHeroes();
     game.updateItems(dt);
@@ -687,8 +687,8 @@ carryOut :: method (game: *Game, index: int) {
     defer player.commands.clear();
 
     for command in player.commands {
-        // A perk can be picked while the hero isn't on the field, e.g after a crossing. Nothing else
-        if !player.isPlaying() && command.kind != .choosePerk { continue; }
+        // A talent can be picked while the hero isn't on the field, e.g after a crossing. Nothing else
+        if !player.isPlaying() && command.kind != .chooseTalent { continue; }
         switch v in command {
             case .move {
                 game.endEarly(index);           // Out of the igloo, and away
@@ -700,7 +700,7 @@ carryOut :: method (game: *Game, index: int) {
                 if v >= 0 && v < player.backpack.count { player.backpack.locked[v] = !player.backpack.locked[v]; }
             }
             case .useItem    { game.useItem(index, v.slot, v.target); }
-            case .choosePerk { game.choosePerk(index, v); }
+            case .chooseTalent { game.chooseTalent(index, v); }
         }
     }
 }

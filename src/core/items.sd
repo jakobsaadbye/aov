@@ -2,7 +2,7 @@ namespace core;
 
 // Items: now and then one lies in the middle of the road, and the first hero that walks over it puts it in the backpack of
 // its player. An item is for every hero of that player for the rest of the game, also the ones after the hero that
-// picked it up is run over. A backpack holds two (three with the perk Deep Pockets).
+// picked it up is run over. A backpack holds two (three with the talent Deep Pockets).
 //
 // A new item is a value of ItemKind and its definition in itemDefinition: its traits (traits.sd) say what it does while
 // it is in the backpack, and an item that is used has an Ability, like a hero's, cast with 1, 2 or 3
@@ -106,7 +106,7 @@ itemDefinition :: method (kind: ItemKind) -> ItemDefinition {
     };
 }
 
-BackpackMax  :: 3;          // With the perk Deep Pockets
+BackpackMax  :: 3;          // With the talent Deep Pockets
 BackpackSize :: 2;
 
 // The items of a player, the oldest first. A locked item stays when a new one is picked up; else the new one takes the
@@ -241,7 +241,7 @@ pickUp :: method (game: *Game, index: int, kind: ItemKind) {
     game.effects.particles.emit(.sparkles, player.hero.position + Vector3{0, 1.5, 0}, 30, tint: kind.itemDefinition().color);
 }
 
-// The stats of the hero, after an item or a perk was added. Its health goes up with its most health
+// The stats of the hero, after an item or a talent was added. Its health goes up with its most health
 refreshStats :: method (player: *Player) {
     hero := &player.hero;
     share := hero.health / hero.maxHealth();

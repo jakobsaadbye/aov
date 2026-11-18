@@ -1,7 +1,7 @@
 namespace core;
 
 // What makes a hero different, besides its abilities: its passives, the items in the backpack of its player and the
-// perks the player picked are all lists of traits. Together they make the HeroStats of the hero, which the rest of the game
+// talents the player picked are all lists of traits. Together they make the HeroStats of the hero, which the rest of the game
 // asks (speed, damage, auras, ...), so it never needs to know where a trait came from.
 //
 // A new kind of trait is a case of Trait, what it does to the stats in addTrait, and where the game reads that stat.
@@ -38,9 +38,9 @@ Trait :: union {
     tripsShovers;               // Can't be shoved: who walks into it trips (Gudrun)
     lollipop;                   // Its stop sign stays up as long as it stands still (Hilda)
     buildTime:    f32;          // Times how long what it builds stays (Birgit)
-    shoveTaken:   f32;          // Times how far the enemies it shoves go (the perk Scrapper)
-    hitAndRun;                  // An enemy it gets run over makes its abilities ready (the perk Hit and Run)
-    slipProof;                  // Doesn't slip on banana peels, nor slide on oil (the perk Thick Soles)
+    shoveTaken:   f32;          // Times how far the enemies it shoves go (the talent Scrapper)
+    hitAndRun;                  // An enemy it gets run over makes its abilities ready (the talent Hit and Run)
+    slipProof;                  // Doesn't slip on banana peels, nor slide on oil (the talent Thick Soles)
     revenge:      f32;          // Seconds added to the cooldowns of whoever ran it over
     pocket;                     // One more slot in the backpack
     nimble;                     // Steps aside by itself when a car is about to hit it, now and then
@@ -157,7 +157,7 @@ addTrait :: method (stats: *HeroStats, trait: Trait) {
     }
 }
 
-// The stats of the hero of a player: its passives, the items in the backpack and the perks of the player
+// The stats of the hero of a player: its passives, the items in the backpack and the talents of the player
 statsOf :: (player: *Player) -> HeroStats {
     stats: HeroStats;
     for ability in player.hero.abilities() {
@@ -168,6 +168,6 @@ statsOf :: (player: *Player) -> HeroStats {
         stats.addTrait(definition.trait);
         stats.addTrait(definition.also);
     }
-    for perk in player.perks { stats.addTrait(perk.perkDefinition().trait); }
+    for pick in player.talents { stats.addTrait(pick.taken().talentDefinition().trait); }
     return stats;
 }

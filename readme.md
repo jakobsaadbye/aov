@@ -29,7 +29,7 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | --- | --- |
 | `data/textures/` | The pavement (`pavement/pavement.png`), the road (`road/asphalt.png`), the particles and the frames of the UI, the Warcraft cursor |
 | `data/models/` | The vehicles (car, van, truck, bus), the heroes, the city and a segment of the wall, as OBJ, each with its hand-painted texture (`car.png` for `car.obj`) |
-| `data/icons/` | A 128x128 icon for each ability, item, perk and status, by the name in the code |
+| `data/icons/` | A 128x128 icon for each ability, item, talent and status, by the name in the code |
 | `data/sounds/` | The sound effects, by group: `hero/`, `car/`, `ability/`, `ui/` |
 | `data/music/` | The soundtracks, a folder each (`band/`, `quiet/`, `board/`, `toybox/`), whose pieces the game shuffles together anew every game and plays one at a time (the `soundtrack` command of the console picks one alone), and the hum of the traffic (`traffic.ogg`), looped |
 | `data/fonts/` | Cinzel (titles) and Fira Sans (text), both under the SIL Open Font License |
@@ -208,7 +208,7 @@ A font is a `.ttf` in `data/fonts`, loaded in `loadFonts()` in `hud.sd`.
 | Right click | Walk there. On an item in the backpack: lock it, or unlock it |
 | Left click on an ability's icon | Cast it. One that is cast at a point (hook, blink, leap, time lock) waits for a left click on the ground; a right click calls it off |
 | Q, W, E, R, D, F | The abilities of the hero: the first is on Q, the second on W, ... Passives have no key |
-| 1, 2, 3 | Use the item in that slot of the backpack (a left click on it does too). After a crossing, while your hero waits: pick that perk |
+| 1, 2, 3 | Use the item in that slot of the backpack (a left click on it does too). After a crossing, while your hero waits: 1 or 2 picks that talent |
 | S | Stop |
 | Y | Lock or unlock the camera. Locked (at the start), it follows the hero |
 | Space (hold) | The camera to the hero |
@@ -298,7 +298,7 @@ own. A new hero is a value of `HeroKind`, its file, its line in `defineHero()` (
 * **An ability** is an `Ability` (`abilities.sd`) with the function that casts it, and numbers whose meaning its cast says
   (range, duration, radius, power, count). Abilities that several heroes share (sprint, blink, leap, freeze) are in
   `abilities.sd`. A cast that fails, e.g with no enemy in range, returns false and doesn't cool down.
-* **A passive** is a `Trait` (`traits.sd`). Passives, items and perks are all traits, which add up to the `HeroStats` of the
+* **A passive** is a `Trait` (`traits.sd`). Passives, items and talents are all traits, which add up to the `HeroStats` of the
   hero: its speed, the damage it takes, its auras, what it is immune to. A new kind of trait is a case of `Trait`, what it
   does to the stats, and where the game reads that.
 * **What happens to a hero for a while** (stunned, faded, hexed, asleep, scared, a puppet, blinded, ...) is a status
@@ -314,10 +314,11 @@ own. A new hero is a value of `HeroKind`, its file, its line in `defineHero()` (
 
 ### What is on a hero
 
-Over the hero card is a row of small icons of everything on the hero: its statuses (stunned, hasted, leashed, ...), its
-passives and perks, and what holds it or helps it for a while (in a car, blended in, magnetized, a stench). The good ones
-have a green border and start from the left, the bad ones a red border and start from the right. One that runs out
-darkens as it goes, and the mouse on one says what it is (`core/buffs.sd`).
+Over the middle of the hero card is a row of round badges of everything on the hero: its statuses (stunned, hasted,
+leashed, ...), its passives, and what holds it or helps it for a while (in a car, blended in, magnetized, a stench). As
+in Dota, the good ones have a green ring and sit left of the middle, the bad ones a red ring and sit right of it. The ring
+of one that runs out is its clock: it darkens clockwise from the top as the time goes. The mouse on one says what it is
+(`core/buffs.sd`). The talents aren't among them: they are in the talent tree, next to the portrait.
 
 ## A game
 
@@ -358,7 +359,7 @@ then on), and see the oil as never safe, so they walk around it. To try them: `r
 ## Items
 
 Now and then an item lies in the middle of the road, with a beam over it that is seen from far. The first hero that
-walks over it puts it in the backpack of its player, which holds two (three with the perk Deep Pockets). An item is for
+walks over it puts it in the backpack of its player, which holds two (three with the talent Deep Pockets). An item is for
 every hero of that player for the rest of the game; with a full backpack a new item takes the place of the oldest one,
 unless it is locked (right click on it). Some items are used, like abilities: with 1, 2 or 3 (the slot), or a left
 click on them; the number in their corner is how many uses they have left.
@@ -391,13 +392,18 @@ with its charges (`core/item_abilities.sd`). The bots go for an item when the wa
 across, and use items by their `BotUse`, like abilities. To try one: `giveItem bananaPeel`, then `useItemNow 0 x z`;
 `items` says what everyone has.
 
-## Perks
+## Talents
 
-After each crossing, every player is offered three perks, at random, and keeps the one it picks for the rest of the
-game: a click on its card, or 1, 2 or 3 while the hero waits for the next round. After 12 seconds one is picked for it.
+After each crossing, every player is offered two talents, at random, and keeps the one it picks for the rest of the
+game: a click on its card, or 1 or 2 while the hero waits for the next round. After 12 seconds one is picked for it.
 They are traits, like the items, so two players with the same hero play it differently.
 
-| Perk | |
+As in Dota, they grow a talent tree, in a slot right of the portrait: a trunk up its middle and a tier for each crossing
+that doesn't win, from the bottom up, with a pip on each side for its two talents. The one taken is lit gold, the one
+left dark, the tiers to come empty, and the tier of a pick that waits glows. The mouse on the tree shows it whole, each
+tier with the names of its two talents.
+
+| Talent | |
 | --- | --- |
 | Thick Soles | Doesn't slip on banana peels, nor slide on oil |
 | Thick Skin | 20% more health |
@@ -412,8 +418,8 @@ They are traits, like the items, so two players with the same hero play it diffe
 | Focus | 12% shorter cooldowns |
 | Long Arms | The abilities reach 15% further |
 
-A perk is a value of `PerkKind` and its definition (`core/perks.sd`). In the console, `offerPerksNow` offers perks at once,
-and `perks` lists them and who has which.
+A talent is a value of `TalentKind` and its definition (`core/talents.sd`). In the console, `offerTalentsNow` offers talents at once,
+and `talents` lists them and who has which.
 
 ## The look of the UI
 
@@ -606,7 +612,7 @@ window and runs the loop.
 | `heroes.sd`, `heroes/` | The heroes: what they all have, and a file for each with its abilities |
 | `abilities.sd`, `traits.sd`, `status.sd` | Abilities and casting them, the traits that add up to the stats of a hero, and statuses |
 | `motions.sd`, `world_effects.sd` | Riding cars, dashes, footbridges; thrown things, rain, decoys, banana peels |
-| `perks.sd`, `item_abilities.sd` | The perks, and the items that are used |
+| `talents.sd`, `item_abilities.sd` | The talents, and the items that are used |
 | `world.sd` | The walls with their openings, and the collisions of the heroes with them |
 | `traffic.sd` | The lanes and the cars |
 | `game.sd` | The game itself: the players, their commands, the heroes, being run over, crossing, the next hero |
