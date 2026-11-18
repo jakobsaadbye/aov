@@ -22,11 +22,11 @@ PausedVolume    :: 0.12;    // Of the music while the game is paused. The sounds
 DuckSpeed       :: 4.0;     // How fast the volume follows a pause, per second
 
 // The soundtrack (tools/make_audio.sd): cheerful pieces for a little band that go together, played in a random order, each once,
-// with a while of silence between them, so the music comes and goes instead of looping one tune all game
+// with a breath of silence between them, so the music changes instead of looping one tune all game
 Soundtrack      :: ["first_light", "puddles", "lanterns", "far_side"];
-FirstPieceAfter :: 4.0;     // Seconds of silence before the first piece
-SilenceLeast    :: 25.0;    // and between two pieces, from this
-SilenceMost     :: 70.0;    // to this
+FirstPieceAfter :: 2.0;     // Seconds of silence before the first piece
+SilenceLeast    :: 3.0;     // and between two pieces, from this
+SilenceMost     :: 6.0;     // to this
 
 // One file of a sound, with copies of it that share its samples, so it can play over itself
 SoundVariant :: struct {
