@@ -849,8 +849,28 @@ def ogre_face(m, hd, sk, rig_, style="brute", S=1.3):
     for x in (0.13, -0.15):
         m.add(horn(P(x, -0.15, 0.47 - abs(x) * 0.3), (0, -1, 0.1), 0.06 * S, 0.024 * S), tooth, bones="head")
     # The jaw: wide and jutting, its thick lower lip, its teeth and its tusks
-    m.add(blob(P(0, -0.28, 0.13), R(0.5, 0.18, 0.44), (0.5, 0.6)).deform(push(P(0, -0.33, 0.52), 0.32 * S, (0, -0.02 * S, 0.06 * S))),
-          skin_paint(sk, warts=warts) + wr, bones="jaw", weight=W)
+    # Its top is flat, a floor of the mouth just under the lower lip, dark with the tongue on it, so the mouth opens
+    # wide when the jaw drops rather than showing the skin of the jaw
+    floor_y, lip_z = -0.2, 0.46
+
+    def mouth_floor(p):
+        out = p.copy()
+        y = (p[..., 1] - h[1]) / S
+        q = (p - h) / S
+        inside = (q[..., 2] < lip_z) & ((q[..., 0] / 0.38) ** 2 + ((q[..., 2] - 0.12) / 0.36) ** 2 < 1)
+        out[..., 1] = np.where(inside & (y > floor_y), h[1] + S * (floor_y + (y - floor_y) * 0.1), p[..., 1])
+        return out
+
+    def mouth_paint(ctx, base):
+        q = (ctx.p - h) / S
+        a = smoothstep(floor_y - 0.03, floor_y - 0.005, q[..., 1]) * smoothstep(lip_z + 0.02, lip_z - 0.04, q[..., 2]) * (ctx.n[..., 1] > 0.3)
+        a = a * smoothstep(1.0, 0.8, (q[..., 0] / 0.38) ** 2 + ((q[..., 2] - 0.12) / 0.36) ** 2)
+        back = smoothstep(0.45, 0.0, q[..., 2])
+        inside = np.array([0.36, 0.08, 0.07]) * (1 - 0.7 * back)[..., None]
+        tongue = smoothstep(0.17, 0.1, np.abs(q[..., 0]))[..., None] * np.array([0.22, 0.1, 0.09]) * (1 - back)[..., None]
+        return _over(base, inside + tongue, a)
+    m.add(blob(P(0, -0.28, 0.13), R(0.5, 0.18, 0.44), (0.5, 0.6)).deform(push(P(0, -0.33, 0.52), 0.32 * S, (0, -0.02 * S, 0.06 * S)), mouth_floor),
+          skin_paint(sk, warts=warts) + wr + mouth_paint, bones="jaw", weight=W)
     if style == "warlord":
         for side in (1, -1):
             m.add(ellipsoid(P(side * 0.36, -0.33, 0.12), R(0.16, 0.14, 0.2)), skin_paint(sk, warts=0.9) + wr, bones="jaw", weight=W)
@@ -914,7 +934,7 @@ def bristles(c):
     return fn
 
 
-def make_butcher(face="brute"):
+def make_butcher(face="boar"):
     """The Butcher, a swamp brute of a butcher-monger: as wide as he is tall, olive skin, a wide frog mouth with a
     snaggletooth, drooping ears, a bloodied hide apron round his gut, a shell on one shoulder, a big fish on his belt,
     an iron meat hook for a right hand and a cleaver in his left. Simple, bold shapes, painted broadly. He is rigged,
