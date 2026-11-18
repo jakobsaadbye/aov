@@ -16,6 +16,7 @@ Buff :: struct {
     timeLeft:    f32;           // Seconds left, or 0 for one that lasts
     duration:    f32;
     count:       int;           // A number in the corner, e.g charges, or 0
+    meter:       bool;          // Its ring is how full something is, not a time, e.g Mads' speed
 }
 
 BuffSize :: 38;
@@ -55,6 +56,13 @@ buffsOf :: (game: *Game, index: int) -> [..]Buff {
             buff.duration = NearMissEvery;
         }
         if kind == .staticCharge { buff.count = hero.castCount % 3; }
+        // Rolling fills its ring as Mads gathers speed, and counts how much faster he is, in percent
+        if kind == .momentum && hero.momentum > 0.01 {
+            buff.timeLeft = hero.momentum;
+            buff.duration = 1;
+            buff.count = (hero.momentum * MomentumBonus * 100 + 0.5) as int;
+            buff.meter = true;
+        }
         buffs.add(buff);
     }
     return buffs;
@@ -98,7 +106,8 @@ drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
         lines := wrapText(buff.description, 16, 300);
         defer lines.free();
         sub := "";
-        if buff.timeLeft > 0 { sub = tprint("% s left", fmt.fixed(buff.timeLeft, 1)); }
+        if buff.meter            { sub = tprint("%% faster", buff.count, "%"); }
+        else if buff.timeLeft > 0 { sub = tprint("% s left", fmt.fixed(buff.timeLeft, 1)); }
         color := GoodBuffColor;
         if !buff.good { color = BadBuffColor; }
         uiTooltip(hoveredBox, buff.name, color, lines, sub);

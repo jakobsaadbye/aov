@@ -2269,7 +2269,14 @@ def mads_clips():
     pop = dict(ride, hips=hips(0.12), thigh_r=(-4, 0, 0), thigh_l=(-20, 0, 0), shin_r=(6, 0, 0), shin_l=(30, 0, 0), upper_r=(-60, 0, 40), upper_l=(-60, 0, -40))
     tuck = dict(ride, hips=hips(0.15), thigh_r=(-62, 0, 0), thigh_l=(-62, 0, 0), shin_r=(92, 0, 0), shin_l=(92, 0, 0), foot_r=(-30, 0, 0), foot_l=(-30, 0, 0),
                 upper_r=(-50, 0, 55), upper_l=(-50, 0, -55), fore_r=(-30, 0, 0), fore_l=(-30, 0, 0), spine=(14, -12, 0))
-    land = dict(crouch, hips=hips(-0.22))
+    # A soft landing: the knees give a little and he rolls on
+    land = dict(ride, hips=hips(-0.12), thigh_r=(-16, 0, 0), thigh_l=(-16, 0, 0), shin_r=(30, 0, 0), shin_l=(30, 0, 0), foot_r=(-14, 0, 0), foot_l=(-14, 0, 0),
+                upper_r=(-20, 0, 35), upper_l=(-20, 0, -35))
+    # Cruising at speed: no more pushing, low and still, arms loose and a little back, swaying with the board
+    cruise_a = dict(low, hips=hips(-0.16, rot=(0, 0, 3)), upper_r=(20, 0, 25), upper_l=(10, 0, -28), fore_r=(-20, 0, 0), fore_l=(-25, 0, 0), head=(-6, -50, 0))
+    cruise_b = dict(cruise_a, hips=hips(-0.12, rot=(0, 0, -3)), upper_r=(14, 0, 30), upper_l=(16, 0, -24))
+    # In a trick: the feet off the board while it flips, knees up and open, then the catch
+    split = dict(tuck, thigh_r=(-50, 0, 18), thigh_l=(-50, 0, -18), shin_r=(80, 0, 0), shin_l=(80, 0, 0), upper_r=(-40, 0, 70), upper_l=(-40, 0, -70))
     # The grind: low, knees bent, arms out wide for balance, one up
     grind = dict(low, hips=hips(-0.2, rot=(0, 0, -6)), thigh_r=(-28, 0, 0), thigh_l=(-28, 0, 0), shin_r=(52, 0, 0), shin_l=(52, 0, 0), foot_r=(-24, 0, 0),
                  foot_l=(-24, 0, 0), upper_r=(10, 0, 80), upper_l=(-30, 0, -100), fore_r=(-10, 0, 0), fore_l=(-20, 0, 0), spine=(14, -10, 6), head=(-14, -45, 0))
@@ -2278,14 +2285,31 @@ def mads_clips():
         "walk": clip(1.0, (0.0, ride), (0.25, push_down), (0.5, push_back), (0.75, ride)),
         "ollie": once(0.42, (0.0, ride), (0.06, crouch), (0.13, pop), (0.24, tuck), (0.34, land), (0.42, ride)),
         "grind": once(0.8, (0.0, ride), (0.1, grind), (0.7, grind), (0.8, ride)),
+        "cruise": clip(1.6, (0.0, cruise_a), (0.8, cruise_b)),
     }
+    trick = once(0.42, (0.0, ride), (0.06, crouch), (0.12, pop), (0.2, split), (0.28, tuck), (0.36, land), (0.42, ride))
+    for k in range(1, 5):
+        body["ollie_%d" % k] = trick
     boards = {
         "idle": clip(3.0, (0.0, board0), (0.7, board_r), (1.4, board0), (2.1, board_l)),
         "walk": clip(1.0, (0.0, board0), (0.25, board_l), (0.5, board_r), (0.75, board0)),
         "ollie": once(0.42, (0.0, board0), (0.06, board0), (0.13, {"board": {"rot": (-28, 0, 0), "pos": (0, 0.1, 0)}}),
-                      (0.24, {"board": {"rot": (0, 0, 0), "pos": (0, 0.62, 0)}}), (0.34, {"board": {"rot": (4, 0, 0), "pos": (0, 0.02, 0)}}), (0.42, board0)),
+                      (0.24, {"board": {"rot": (0, 0, 0), "pos": (0, 0.62, 0)}}), (0.34, {"board": {"rot": (2, 0, 0), "pos": (0, 0.02, 0)}}), (0.42, board0)),
         "grind": once(0.8, (0.0, board0), (0.1, {"board": (0, 0, -8)}), (0.4, {"board": (0, 0, -5)}), (0.7, {"board": (0, 0, -8)}), (0.8, board0)),
+        "cruise": clip(1.6, (0.0, {"board": (0, 0, 3)}), (0.8, {"board": (0, 0, -3)})),
     }
+
+    # The tricks: the tail popped, then the board turns under him as it rises, and he catches it level. A kickflip rolls it
+    # round its length one way, a heelflip the other, a pop shove-it spins it half round flat, a 360 flip does both
+    def flip(roll, spin):
+        def b(rot, y):
+            return {"board": {"rot": rot, "pos": (0, y, 0)}}
+        return once(0.42, (0.0, board0), (0.06, board0), (0.12, b((-28, 0, 0), 0.12)), (0.2, b((-6, spin * 0.5, roll * 0.5), 0.55)),
+                    (0.28, b((0, spin, roll), 0.62)), (0.36, b((2, spin, roll), 0.03)), (0.42, b((0, spin, roll), 0.0)))
+    boards["ollie_1"] = flip(360, 0)
+    boards["ollie_2"] = flip(-360, 0)
+    boards["ollie_3"] = flip(0, 180)
+    boards["ollie_4"] = flip(360, 360)
     bored, blink = face_pose(jaw=1, brow=-2, lid=30), face_pose(jaw=1, brow=-2, lid=88)
     chew = face_pose(jaw=7, brow=-2, lid=32)
     stoked, focus = face_pose(jaw=16, brow=-10, lid=6, lift=0.015), face_pose(jaw=3, brow=14, lid=24)
@@ -2294,7 +2318,10 @@ def mads_clips():
         "walk": clip(1.0, (0.0, bored), (0.5, chew)),
         "ollie": once(0.42, (0.0, bored), (0.06, focus), (0.2, stoked), (0.42, stoked)),
         "grind": once(0.8, (0.0, bored), (0.1, focus), (0.5, stoked), (0.8, bored)),
+        "cruise": clip(1.6, (0.0, face_pose(jaw=2, brow=-6, lid=22)), (0.8, face_pose(jaw=5, brow=-6, lid=22))),
     }
+    for k in range(1, 5):
+        face["ollie_%d" % k] = once(0.42, (0.0, bored), (0.06, focus), (0.2, focus), (0.3, stoked), (0.42, stoked))
     clips_ = {name: layered(body[name], boards[name], face[name]) for name in body}
     for name in body:
         still = clip(body[name]["duration"], (0.0, ride))
@@ -2385,7 +2412,7 @@ def make_mads():
             m.add(cylinder((x, deck_y - 0.13, z), 0.1, 0.1, rot=(0, 0, 90 if x > 0 else -90)), color((0.2, 0.8, 0.75)) + edges(0.3, 0.15), bones="board")
     m.clips = mads_clips()
     finish(m, "mads")
-    print(write_glb(m, fps=30))
+    print(write_glb(m, fps=60))         # The board turns a long way in a moment in a trick: more keys
     return m
 
 

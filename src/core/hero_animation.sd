@@ -24,6 +24,8 @@ HeroAnimations :: struct {
 FirstPartMaterial :: 3;
 
 AnimationFrameSeconds :: 0.017;     // raylib samples the clips of a GLB every 17 ms
+ClipVariants          :: 4;         // At most this many variants of the clip of an ability
+CruiseAt              :: 0.6;       // The momentum from which a hero cruises
 WalkCycleDistance     :: 7.0;       // How far a hero walks in one cycle of its walk clip
 
 // The name of a clip, as it is in the GLB
@@ -91,10 +93,15 @@ poseHero :: method (assets: *Assets, game: *Game, hero: *Hero, portrait := false
     loops := true;
     for ability, slot in hero.abilities() {
         if ability.isPassive() || hero.cooldowns[slot] <= 0 { continue; }
-        k := anims.clipIndex(ability.icon);
+        // An ability can have variants of its clip, <icon>_1, <icon>_2, ...: the casts take them in turn, the plain clip
+        // too, e.g Mads' tricks
+        name := ability.icon;
+        variant := hero.variants[slot] % (ClipVariants + 1);
+        if variant > 0 && anims.clipIndex(tprint("%_%", ability.icon, variant)) >= 0 { name = tprint("%_%", ability.icon, variant); }
+        k := anims.clipIndex(name);
         if k < 0 { continue; }
         if portrait {
-            face := anims.clipIndex(tprint("%_face", ability.icon));
+            face := anims.clipIndex(tprint("%_face", name));
             if face >= 0 { k = face; }
         }
         elapsed := ability.cooldown * hero.stats.cooldown - hero.cooldowns[slot];
@@ -107,6 +114,11 @@ poseHero :: method (assets: *Assets, game: *Game, hero: *Hero, portrait := false
     }
     if clip < 0 && hero.isMoving && anims.walk >= 0 {
         clip = anims.walk;
+        // At speed, a hero that gathers it cruises instead, e.g Mads stops pushing
+        if hero.stats.momentum && hero.momentum > CruiseAt {
+            cruise := anims.clipIndex("cruise");
+            if cruise >= 0 { clip = cruise; }
+        }
         if portrait {
             face := anims.clipIndex("walk_face");
             if face >= 0 { clip = face; }

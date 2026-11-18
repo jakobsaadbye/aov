@@ -110,8 +110,12 @@ Mads rides sideways on his skateboard, as a skater does: every one of his poses 
 the rest of each pose is in the frame of his body. The board is on a bone of its own, under him, along the way he goes.
 He wears a baggy orange hoodie with its hood down, headphones round his neck, wide grey jeans torn at a knee, chunky skate
 shoes and a blue cap on backwards, with a bored, half-lidded look. He bobs on the board and looks about, pushes with his
-back foot to roll, ollies (a crouch, the tail popped so the nose comes up, a tuck with the board up under his feet, a
-landing), and grinds low with his arms out.
+back foot to roll, and at speed stops pushing and cruises low. His ollie takes a trick in turn (a clip has variants,
+`<icon>_1` to `_4`, that its casts take in turn with the plain one): a plain ollie, a kickflip, a heelflip, a pop
+shove-it or a 360 flip, the board turning under him as it rises and caught level. He lands softly and rolls on the way he
+jumped, with the speed he had, 8 further unless told otherwise: he is never still for long. He grinds low with his arms
+out. How fast he is shows: lines of wind stream past him, more and longer as he gathers speed, his wheels kick up dust,
+his trucks spark at full speed, and the ring of his Rolling badge fills, with how much faster he is in it.
 
 Mira is a tall, slender person on the same skeleton, in a long robe of deep violet scattered with gold stars: its skirt
 is bound to her hips and legs, so it follows her steps and swings out when she turns. She has wide bell sleeves, long

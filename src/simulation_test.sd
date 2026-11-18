@@ -1424,6 +1424,18 @@ testRedesignedKits :: () {
     assert(you.hero.health < you.hero.maxHealth() && you.hero.health > you.hero.maxHealth() * 0.8);
     clearRoad(game);
 
+    // Mads ollies, lands rolling, and rolls on the way he jumped, with the speed he had: he never stops
+    game.spawnHero(0, .mads);
+    you.hero.position = Vector3{lane, 0, 0};
+    you.hero.moveTo(Vector3{lane, 0, 40});
+    for 0..60 { game.simulate(Dt); }
+    speedBefore := you.hero.momentum;
+    game.cast(0, 0, {lane, you.hero.position.z + 7});
+    assert(you.hero.leap.hasValue() && you.hero.variants[0] == you.hero.castCount);
+    for 0..30 { game.simulate(Dt); }
+    assert(!you.hero.leap.hasValue() && you.hero.isMoving && you.hero.target.z > you.hero.position.z + 4 && you.hero.momentum >= speedBefore * 0.9);
+    clearRoad(game);
+
     // Magnus repels the cars that come at him into the lanes beside his
     game.spawnHero(0, .magnus);
     you.hero.position = Vector3{lane, 0, 0};

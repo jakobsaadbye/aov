@@ -1,6 +1,7 @@
 namespace core;
 
-// Mads the Skater: the longer he rolls straight on, the faster he gets. He ollies over cars and grinds the lane lines
+// Mads the Skater: the longer he rolls straight on, the faster he gets, and he never stops: he ollies over cars, doing a
+// trick, lands rolling, and grinds the lane lines
 
 import math;
 use raylib;
@@ -9,7 +10,7 @@ defineMads :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Mads", title: "the Skater", color: {250, 90, 40, 255}, width: 2.2, height: 4.1, moveSpeed: 7.6, hitRadius: 0.7, maxHealth: 25, drawExtras: drawMads};
     hero.abilities.add(Ability{
         name: "Ollie", icon: "ollie", sound: "ability.ollie", cooldown: 6, targeting: .point, cast: castLeap, bot: .escape,
-        description: "Pops the board up and jumps to the cursor, up to 7 away, over a car",
+        description: "Pops the board up and jumps to the cursor, up to 7 away, over a car, with a trick, and lands rolling on",
         range: 7, duration: 0.42, power: 2.8, delay: 0.42,
     });
     hero.abilities.add(Ability{
@@ -36,12 +37,35 @@ castGrind :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> b
     return true;
 }
 
-// His skateboard, under his feet, with sparks while he grinds
+// What shows his speed: lines of wind streaming past him, more and longer the faster he rolls, dust off his wheels once he
+// is going, and sparks from his trucks at full speed, or while he grinds
 drawMads :: (game: *Game, index: int, bob: f32) {
     hero := &game.players[index].hero;
-    if !hero.dash.hasValue() || !game.effects.particles.isOn { return; }
-    // Sparks off the trucks of his board (the board is in his model)
     forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
+    side := Vector3{forward.z, 0, -forward.x};
     deck := hero.position + Vector3{0, bob + 0.3, 0};
-    game.effects.particles.emit(.sparks, deck - forward * 0.8, 1, push: (forward * -6).xz().at(2));
+    rolling := hero.isMoving || hero.dash.hasValue() || hero.leap.hasValue();
+    speed := hero.momentum;
+    if hero.dash.hasValue() { speed = 1; }
+    if rolling && speed > 0.15 {
+        lines := 2 + (speed * 8) as int;
+        for k in 0..lines {
+            seed := k as f32 * 1.73;
+            phase := math.fmodf(game.time * (2.5 + speed * 3) + seed * 0.37, 1);
+            across := math.sinf(seed * 2.3) * 1.3;
+            high := 0.6 + math.fmodf(seed * 0.71, 1) * hero.info().height * 0.85;
+            start := hero.position + side * across + Vector3{0, high + bob, 0} - forward * (0.8 + phase * 3);
+            length := 0.8 + speed * 2.4;
+            alpha := speed * (1 - phase) * 0.7;
+            DrawCylinderEx(start, start - forward * length, 0.025, 0.01, 4, ColorAlpha({255, 250, 240, 255}, alpha));
+        }
+    }
+    if !game.effects.particles.isOn { return; }
+    dt := GetFrameTime();
+    if rolling && !hero.leap.hasValue() && speed > 0.4 {
+        game.effects.particles.emitRate(.dust, deck - forward * 0.8 - Vector3{0, 0.25, 0}, 6 + speed * 14, dt);
+    }
+    if hero.dash.hasValue() || (rolling && !hero.leap.hasValue() && speed > 0.95) {
+        game.effects.particles.emit(.sparks, deck - forward * 0.8, 1, push: (forward * -6).xz().at(2));
+    }
 }

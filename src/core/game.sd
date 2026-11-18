@@ -869,6 +869,8 @@ moveHero :: method (game: *Game, index: int, dt: f32) {
     }
 }
 
+GlideOn :: 8.0;             // How far a skater rolls on after he lands, unless he is told otherwise
+
 // Through the air, over cars and walls, and down again
 flyLeap :: method (game: *Game, index: int, dt: f32) {
     hero := &game.players[index].hero;
@@ -884,8 +886,19 @@ flyLeap :: method (game: *Game, index: int, dt: f32) {
 
     hero.leap = null;
     hero.position = game.world.resolveCollisions(hero.ground(), hero.info().hitRadius, hero.walksThroughWalls()).at();
-    hero.stop();
     hero.forgetTrail();
+    // A skater lands rolling, and rolls on the way he jumped, with the speed he had
+    if hero.stats.momentum {
+        along := leap.to.xz() - leap.from.xz();
+        if along.length() > 0.1 {
+            hero.target = (hero.ground() + along.normalize() * GlideOn).at();
+            hero.isMoving = true;
+        }
+        game.effects.particles.emit(.dust, hero.position, 6);
+        game.sounds.playAt("ability.land", hero.position, 0.45, 0.1);
+        return;
+    }
+    hero.stop();
     game.effects.addRing(hero.ground(), 0.5, 6, {230, 200, 150, 255}, 0.45);
     game.effects.particles.emit(.dust, hero.position, 16);
     if index == game.watched { game.camera.shake = math.max(game.camera.shake, 0.15); }

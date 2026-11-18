@@ -94,6 +94,7 @@ cast :: method (game: *Game, index: int, slot: int, target: Vector2) {
     ability := &abilities[slot];
     if !ability.cast(game, index, ability, target) { return; }
     hero.castCount += 1;
+    hero.variants[slot] = hero.castCount;
     charged := hero.stats.staticCharge && hero.castCount % 3 == 0;
     if charged {
         game.effects.particles.emit(.sparks, hero.position + Vector3{0, 2, 0}, 20);
