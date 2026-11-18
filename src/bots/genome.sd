@@ -153,12 +153,13 @@ fromJson :: (values: GenomeJson) -> Genome {
 }
 
 // How well a player did in a game, for training: crossings, few deaths, enemies it got run over, how far across its
-// hero is at the end, and how fast its best crossing was. The weights are what training aims for
+// heroes got, and how fast its best crossing was. The weights are what training aims for. How far each hero got counts
+// for a lot, as on a road this wide a crossing is rare in a game: without it, keeping off the road (and alive) wins
 FitnessWeights :: struct {
     crossing: f32 = 10;
-    death:    f32 = 7;
+    death:    f32 = 4;
     kill:     f32 = 4;
-    progress: f32 = 3;      // For the hero it has at the end, from 0 at its start to 1 across
+    progress: f32 = 8;      // For each hero, from 0 at its start to 1 across, as far as it got
     fastest:  f32 = 2;      // For a best crossing of 20 seconds, less for a slower one
 }
 
@@ -166,7 +167,16 @@ fitnessOf :: (game: *Game, index: int, weights: FitnessWeights = FitnessWeights{
     player := &game.players[index];
     stats := player.stats;
     fitness := weights.crossing * stats.crossings as f32 - weights.death * stats.deaths as f32 + weights.kill * stats.kills as f32;
-    if player.isPlaying() { fitness += weights.progress * progressOf(player.hero.ground(), player.startSide); }
+    // A bot keeps how far each of its heroes got (the bots of the games of training are all Bots); of a human, only the
+    // hero it has now counts
+    progress: f32 = 0;
+    if player.isBot() {
+        profile := (player.brain as *Bot).stats;
+        progress = profile.progress + profile.lifeProgress;
+    } else if player.isPlaying() {
+        progress = progressOf(player.hero.ground(), player.startSide);
+    }
+    fitness += weights.progress * progress;
     if stats.bestTime.hasValue() { fitness += weights.fastest * math.min(1, 20 / stats.bestTime.value()); }
     return fitness;
 }

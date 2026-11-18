@@ -91,6 +91,8 @@ BotProfile :: struct {
     walking:         f64;
     noPlan:          f64;           // Seconds it had no plan to follow
     dodges:          int;
+    progress:        f32;           // How far across each of its heroes got at most (0 to 1 each), added up
+    lifeProgress:    f32;           // and the one it has now
 }
 
 newBot :: (seed: u64, personality: BotPersonality) -> *Bot {
@@ -165,6 +167,12 @@ think :: method (bot: *Bot, game: *Game, me: int, dt: f32) {
     // A perk to pick: one of them, at random, after a moment to think
     if player.perkOffer.hasValue() && player.perkOffer.value().timeLeft < PerkPickTime - 1 {
         player.order(Command{choosePerk: bot.rng.between(0, PerkChoices - 1)});
+    }
+    if player.isPlaying() {
+        bot.stats.lifeProgress = math.max(bot.stats.lifeProgress, progressOf(player.hero.ground(), player.startSide));
+    } else if bot.stats.lifeProgress > 0 {
+        bot.stats.progress += bot.stats.lifeProgress;       // Run over, or across
+        bot.stats.lifeProgress = 0;
     }
     if !player.isPlaying() {
         if debugTrace && bot.decision.mode != .notPlaying { fmt.print("DEATH % at (% %) crossings %", fmt.fixed(game.time, 2), fmt.fixed(player.hero.position.x, 1), fmt.fixed(player.hero.position.z, 1), player.stats.crossings); }
