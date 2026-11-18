@@ -1,17 +1,17 @@
 namespace core;
 
-// Gudrun the Grandmother: slow, but hard to break. Her cane trips the young ones, her yarn ties them to her, and who
-// tries to push her over falls over themselves
+// Gudrun the Grandmother: slow, but hard to break. The cars stop for her when she crosses, her yarn ties the young ones to
+// her, and who tries to push her over falls over her cane
 
 import math;
 use raylib;
 
 defineGudrun :: () -> HeroDefinition {
-    hero := HeroDefinition{name: "Gudrun", title: "the Grandmother", color: {170, 110, 170, 255}, width: 2.3, height: 3.6, moveSpeed: 6.2, hitRadius: 0.85, maxHealth: 80, drawExtras: drawLeashes};
+    hero := HeroDefinition{name: "Gudrun", title: "the Grandmother", color: {170, 110, 170, 255}, width: 2.3, height: 3.6, moveSpeed: 6.2, hitRadius: 0.85, maxHealth: 80, drawExtras: drawGudrun};
     hero.abilities.add(Ability{
-        name: "Cane trip", icon: "cane_trip", sound: "ability.cane", cooldown: 8, cast: castCaneTrip, bot: .disableEnemy,
-        description: "Hooks her cane round the nearest enemy within 3.5: it falls over, and can't move for 1.2 seconds",
-        range: 3.5, duration: 1.2,
+        name: "Granny's crossing", icon: "grannys_crossing", sound: "ability.stop_sign", cooldown: 12, cast: castGrannysCrossing, bot: .stopCars,
+        description: "Nobody runs over a grandmother: for 4 seconds, the cars that come to her stop and wait until she has gone by",
+        duration: 4,
     });
     hero.abilities.add(Ability{
         name: "Yarn leash", icon: "yarn_leash", sound: "ability.knit", cooldown: 12, targeting: .enemy, cast: castYarnLeash, bot: .disableEnemy,
@@ -25,12 +25,30 @@ defineGudrun :: () -> HeroDefinition {
 LeashShortest :: 3.0;
 CaneTripTime :: 1.0;
 
-castCaneTrip :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+castGrannysCrossing :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
-    victim := game.enemyNear(caster, hero.ground(), hero.reach(ability.range));
-    if victim < 0 { return false; }
-    game.tripOverCane(victim, caster, ability.duration);
+    hero.addStatus(.crossing, ability.duration);
+    game.effects.addRing(hero.ground(), 1, 4, {255, 255, 255, 255}, 0.35);
     return true;
+}
+
+// The cars that come to a grandmother who is crossing stop, a little before her, until she is out of their way. One that
+// is already on her doesn't stop in time
+GrannyBrakeGap :: 4.0;      // How far before her they stop, at the most
+
+waitForGranny :: method (game: *Game, index: int) {
+    hero := &game.players[index].hero;
+    if !hero.has(.crossing) { return; }
+    ground := hero.ground();
+    radius := hero.info().hitRadius;
+    reach := CarWidth * 0.5 + radius + 0.6;
+    for *car in game.traffic.cars {
+        if !car.isActive || car.kind == .ambulance { continue; }
+        if math.fabsf(car.x() - ground.x) > reach { continue; }
+        gap := ground.y - radius - (car.z + car.length() * 0.5);
+        if gap < -0.3 || gap > GrannyBrakeGap { continue; }
+        car.frozenLeft = math.max(car.frozenLeft, 0.15);
+    }
 }
 
 tripOverCane :: method (game: *Game, victim: int, gudrun: int, duration: f32) {
@@ -67,9 +85,16 @@ holdLeash :: method (game: *Game, index: int) {
     hero.position = game.world.resolveCollisions(pulled, hero.info().hitRadius, hero.stats.throughWalls).at(hero.position.y);
 }
 
-// The yarn from Gudrun to everyone she has on a leash
-drawLeashes :: (game: *Game, index: int, bob: f32) {
-    hand := game.players[index].hero.position + Vector3{0, bob + 2.2, 0};
+// A zebra crossing under her while she crosses, and the yarn from her to everyone she has on a leash
+drawGudrun :: (game: *Game, index: int, bob: f32) {
+    gudrun := &game.players[index].hero;
+    if gudrun.has(.crossing) {
+        fade := math.min(gudrun.timeLeft(.crossing) / 0.4, 1);
+        for k in -3...3 {
+            DrawCube(gudrun.position + Vector3{k as f32 * 1.1, 0.12, 0}, 0.6, 0.02, 3.2, ColorAlpha({250, 250, 250, 255}, 0.85 * fade));
+        }
+    }
+    hand := gudrun.position + Vector3{0, bob + 2.2, 0};
     for *player in game.players {
         if !player.isPlaying() { continue; }
         if !player.hero.has(.leashed) || player.hero.status(.leashed).source != index { continue; }

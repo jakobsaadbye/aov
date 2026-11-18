@@ -1,7 +1,7 @@
 namespace core;
 
-// Tim & Tom: twins, and nobody can tell them apart. One walks on ahead as a decoy, spells hit him first, and they swap
-// places in a blink
+// Tim & Tom: twins, and nobody can tell them apart. One walks on ahead as a decoy, minding the cars, spells hit him first,
+// and they swap places in a blink
 
 import math;
 use raylib;
@@ -9,17 +9,19 @@ use raylib;
 defineTwins :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Tim & Tom", title: "the Twins", color: {245, 200, 50, 255}, width: 2.8, height: 3.0, moveSpeed: 8, hitRadius: 0.8, maxHealth: 30};
     hero.abilities.add(Ability{
-        name: "Split up", icon: "split", sound: "ability.split", cooldown: 10, cast: castSplit, bot: .speedUp,
-        description: "The other twin walks on towards the far side by himself, for 5 seconds",
-        duration: 5,
+        name: "Split up", icon: "split", sound: "ability.split", cooldown: 9, cast: castSplit, bot: .speedUp,
+        description: "The other twin walks on towards the far side by himself for 6 seconds, minding the cars: he waits for a gap, and steps back out of the way",
+        duration: 6,
     });
     hero.abilities.add(Ability{
         name: "Swap", icon: "swap", sound: "ability.swap", cooldown: 5, cast: castSwapTwin, bot: .untouchable,
-        description: "Swaps places with the other twin, while he is out",
+        description: "Swaps places with the other twin, while he is out. For a moment after, the cars go through him",
     });
     hero.abilities.add(passive("Double take", "double_take", "Spells cast on them hit the other twin first, while he is out", .decoysFirst));
     return hero;
 }
+
+SwapFade :: 0.5;        // Seconds the cars go through him after a swap, so he isn't swapped into a car
 
 castSplit :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     player := &game.players[caster];
@@ -41,6 +43,7 @@ castSwapTwin :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -
     hero.forgetTrail();
     decoy.position = was;
     player.decoy = decoy;
+    hero.addStatus(.fade, SwapFade);
     game.effects.particles.emit(.blink, hero.position + Vector3{0, 1.5, 0}, 16);
     return true;
 }

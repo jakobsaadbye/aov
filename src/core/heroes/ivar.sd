@@ -1,16 +1,17 @@
 namespace core;
 
-// Ivar the Berserker: his battle cry sends his enemies running, his axe stuns whoever it hits, and every enemy that falls
-// near him gets him going again
+// Ivar the Berserker: berserk, he throws the cars that hit him aside; his axe stuns whoever it hits, and every enemy that
+// falls near him gets him going again
 
+import math;
 use raylib;
 
 defineIvar :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Ivar", title: "the Berserker", color: {190, 70, 30, 255}, width: 3.9, height: 6.0, moveSpeed: 7.5, hitRadius: 0.95, maxHealth: 50};
     hero.abilities.add(Ability{
-        name: "Battle cry", icon: "battle_cry", sound: "ability.battle_cry", cooldown: 12, cast: castBattleCry, bot: .disableEnemy,
-        description: "Roars: the enemies within 9 of him run away from him for 1.4 seconds, wherever that takes them",
-        range: 9, duration: 1.4,
+        name: "Berserk", icon: "berserk", sound: "ability.battle_cry", cooldown: 12, cast: castBerserk, bot: .untouchable,
+        description: "Goes berserk for 3 seconds: a car that hits him is thrown a lane aside instead of running him over, and he loses a little health",
+        duration: 3, power: BerserkToll,
     });
     hero.abilities.add(Ability{
         name: "Axe throw", icon: "axe_throw", sound: "ability.axe_throw", cooldown: 8, targeting: .point, cast: castAxeThrow, bot: .disableEnemy,
@@ -21,18 +22,36 @@ defineIvar :: () -> HeroDefinition {
     return hero;
 }
 
-castBattleCry :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
+castBerserk :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;
-    ground := hero.ground();
-    range := hero.reach(ability.range);
-    for *player, i in game.players {
-        if i as int == caster || !player.isPlaying() || !player.hero.isTargetable() { continue; }
-        if player.hero.ground().distance(ground) > range { continue; }
-        player.hero.addStatus(.fear, ability.duration, point: ground, source: caster, time: game.time);
-    }
-    game.effects.addRing(ground, 1, range, {255, 120, 60, 255}, 0.4);
+    hero.addStatus(.berserk, ability.duration);
+    game.effects.addRing(hero.ground(), 1, 5, {255, 80, 40, 255}, 0.35);
+    game.effects.particles.emit(.sparks, hero.position + Vector3{0, 3, 0}, 20, tint: {255, 90, 50, 255});
     return true;
 }
+
+// A car that hits a berserk hero is thrown a lane aside, away from him, and he loses a little health but lives. The car
+// it threw doesn't hit him again while it slides over
+shrugOffCar :: method (game: *Game, index: int) -> bool {
+    hero := &game.players[index].hero;
+    if !hero.has(.berserk) { return false; }
+    car := game.traffic.carIndexHitting(hero.ground(), hero.info().hitRadius);
+    if car < 0 { return false; }
+    if car == hero.shrugged && hero.shruggedLeft > 0 { return true; }
+    side := 1;
+    if game.traffic.cars[car].x() < hero.position.x { side = -1; }
+    lane := game.traffic.cars[car].lane;
+    if lane + side < 0 || lane + side >= LaneCount { side = -side; }
+    game.traffic.moveToLane(car, lane + side);
+    hero.shrugged = car;
+    hero.shruggedLeft = 0.8;
+    hero.health = math.max(1, hero.health - hero.maxHealth() * BerserkToll);
+    game.effects.particles.emit(.sparks, hero.position + Vector3{side as f32, 1.5, 0}, 24, tint: {255, 120, 60, 255});
+    game.sounds.playAt("ability.shield_bash", hero.position, 0.8, 0.1);
+    return true;
+}
+
+BerserkToll :: 0.12;        // Of his most health, for each car he throws aside
 
 castAxeThrow :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bool {
     hero := &game.players[caster].hero;

@@ -1225,7 +1225,7 @@ testPerks :: () {
     assert(!you.perkOffer.hasValue() && you.perks.count == 3);
 }
 
-// The heroes whose kits play with the cars as things: thrown, steered, reversed, magnetized, struck
+// The heroes whose kits play with the cars as things: thrown, steered, reversed, pushed aside, stopped, struck
 testRedesignedKits :: () {
     game := bots.newGame(41, bots: 1);
     defer game.free();
@@ -1306,17 +1306,63 @@ testRedesignedKits :: () {
     assert(enemy.hero.has(.stun) && you.hero.ground().distance({grass, 0}) < 0.5);
     enemy.hero.clearStatus(.stun);
 
-    // Magnus magnetizes a car: it pulls his enemies near it in
-    game.spawnHero(0, .magnus);
+    // The survival spells. Hugo, in a trance, walks slowly and the cars go through him
+    lane := core.laneCenter(4);
+    game.spawnHero(0, .hugo);
     game.spawnHero(1, .allan);
-    you.hero.position = Vector3{-core.RoadHalfWidth - 1, 0, 0};
-    game.traffic.cars[0] = core.Car{isActive: true, lane: 0, z: 0, speed: 0.001};
-    enemy.hero.position = Vector3{core.laneCenter(0), 0, 6};
-    game.cast(0, 0, {core.laneCenter(0), 0});
-    assert(game.traffic.cars[0].magnetLeft > 0 && game.traffic.cars[0].magnetOwner == 0);
-    distance := enemy.hero.ground().distance(game.traffic.cars[0].position().xz());
+    enemy.hero.position = Vector3{grass, 0, 40};
+    you.hero.position = Vector3{lane, 0, 0};
+    game.cast(0, 0, {lane, 0});
+    assert(you.hero.has(.trance) && near(you.hero.speed(), you.hero.info().moveSpeed * core.TranceSpeed));
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -6, speed: 15};
+    for 0..60 { game.simulate(Dt); }
+    assert(you.phase.kind == .playing && near(you.hero.health, you.hero.maxHealth()));
+    clearRoad(game);
+
+    // Ivar, berserk, throws a car that hits him a lane aside, for a little of his health
+    game.spawnHero(0, .ivar);
+    you.hero.position = Vector3{lane, 0, 0};
+    game.cast(0, 0, {lane, 0});
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -6, speed: 15};
+    for 0..60 { game.simulate(Dt); }
+    assert(you.phase.kind == .playing && game.traffic.cars[0].lane != 4);
+    assert(you.hero.health < you.hero.maxHealth() && you.hero.health > you.hero.maxHealth() * 0.8);
+    clearRoad(game);
+
+    // Magnus repels the cars that come at him into the lanes beside his
+    game.spawnHero(0, .magnus);
+    you.hero.position = Vector3{lane, 0, 0};
+    game.cast(0, 0, {lane, 0});
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -14, speed: 15};
+    for 0..90 { game.simulate(Dt); }
+    assert(you.phase.kind == .playing && near(you.hero.health, you.hero.maxHealth()) && game.traffic.cars[0].lane != 4);
+    clearRoad(game);
+
+    // The cars stop for Gudrun when she crosses, before they get to her
+    game.spawnHero(0, .gudrun);
+    you.hero.position = Vector3{lane, 0, 0};
+    game.cast(0, 0, {lane, 0});
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -14, speed: 10};
+    for 0..120 { game.simulate(Dt); }
+    car := game.traffic.cars[0];
+    assert(you.phase.kind == .playing && near(you.hero.health, you.hero.maxHealth()));
+    assert(car.z + car.length() * 0.5 < you.hero.position.z - you.hero.info().hitRadius);
+    // and drive on when she is gone
+    you.hero.position = Vector3{lane + 12, 0, 0};
     for 0..30 { game.simulate(Dt); }
-    assert(enemy.hero.ground().distance(game.traffic.cars[0].position().xz()) < distance - 1 && enemy.hero.harmedBy == 0);
+    assert(game.traffic.cars[0].z > car.z + 1);
+    clearRoad(game);
+
+    // The other twin minds the cars: he waits for one that would hit him, and is still out, and a swap to him is safe
+    game.spawnHero(0, .twins);
+    you.hero.position = Vector3{lane - 6, 0, 0};
+    game.cast(0, 0, {lane, 0});
+    assert(you.decoy.hasValue());
+    game.traffic.cars[0] = core.Car{isActive: true, lane: 4, z: -8, speed: 10, kind: .truck};
+    for 0..60 { game.simulate(Dt); }
+    assert(you.decoy.hasValue());
+    game.cast(0, 1, {lane, 0});
+    assert(you.hero.has(.fade));
     clearRoad(game);
 
     // Stormy's rod strikes the enemy near it, else a car; her gust blows enemies away and cars a lane over

@@ -41,7 +41,6 @@ buffsOf :: (game: *Game, index: int) -> [..]Buff {
     if hero.slowedBy > 0 {
         buffs.add(Buff{"item_garlic", "Stench", tprint("The garlic of an enemy near: %% slower", (hero.slowedBy * 100) as int, "%"), false});
     }
-    if game.isMagnetized(index) { buffs.add(Buff{"magnetize", "Magnetized", "Pulled towards a car", false}); }
 
     // What it always has: the passives of the hero, and the perks of its player
     for ability in hero.abilities() {
@@ -63,16 +62,7 @@ buffsOf :: (game: *Game, index: int) -> [..]Buff {
     return buffs;
 }
 
-// Near a car that an enemy magnetized
-isMagnetized :: method (game: *Game, index: int) -> bool {
-    hero := &game.players[index].hero;
-    if hero.stats.unshovable { return false; }
-    for car in game.traffic.cars {
-        if !car.isActive || car.magnetLeft <= 0 || car.magnetOwner < 0 || car.magnetOwner == index { continue; }
-        if car.position().xz().distance(hero.ground()) <= MagnetRadius { return true; }
-    }
-    return false;
-}
+
 
 // Over the hero card: the good ones from its left, the bad ones from its right
 drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {

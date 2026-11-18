@@ -18,9 +18,8 @@ drawHeroExtras :: (game: *Game, index: int, bob: f32) {
         DrawCube(top, 0.9 * pulse, 0.3, 0.3, {90, 230, 110, 255});
         DrawCube(top, 0.3, 0.9 * pulse, 0.3, {90, 230, 110, 255});
     }
-    // Scared: a drop of sweat that jumps. Taunted: a red mark. Blinded: stars of the flash
+    // Taunted: a red mark. Blinded: stars of the flash
     top := hero.position + Vector3{0, hero.info().height + 0.7 + bob, 0};
-    if hero.has(.fear)  { DrawSphere(top + Vector3{0.6, math.fabsf(math.sinf(game.time * 9)) * 0.4, 0}, 0.2, {120, 190, 255, 255}); }
     if hero.has(.taunt) { DrawCube(top, 0.25, 0.8, 0.25, {255, 60, 50, 255}); }
     if hero.has(.blind) {
         for k in 0..4 {
@@ -32,6 +31,25 @@ drawHeroExtras :: (game: *Game, index: int, bob: f32) {
         for k in 0..3 {
             rise := math.fmodf(game.time * 0.8 + k as f32 * 0.33, 1);
             DrawCube(top + Vector3{0.4 + rise * 0.6, rise * 1.4, 0}, 0.35 * (1 - rise * 0.5), 0.35 * (1 - rise * 0.5), 0.05, ColorAlpha({220, 230, 255, 255}, 1 - rise));
+        }
+    }
+    // In a trance: purple rings that rise round him, slowly
+    if hero.has(.trance) {
+        for k in 0..3 {
+            rise := math.fmodf(game.time * 0.6 + k as f32 / 3, 1);
+            DrawCircle3D(hero.position + Vector3{0, rise * hero.info().height, 0}, hero.info().hitRadius + 0.6, {1, 0, 0}, 90, ColorAlpha({200, 120, 255, 255}, 1 - rise));
+        }
+    }
+    // Berserk: a red glow on the ground that throbs
+    if hero.has(.berserk) {
+        throb := 0.5 + 0.5 * math.sinf(game.time * 14);
+        DrawCylinder(hero.position + Vector3{0, 0.14, 0}, hero.info().hitRadius + 0.8 + throb * 0.3, hero.info().hitRadius + 0.8, 0.02, 16, ColorAlpha({255, 60, 30, 255}, 0.35 + throb * 0.25));
+    }
+    // Repelling: blue rings that run out to as far as he pushes the cars
+    if hero.has(.repel) {
+        for k in 0..3 {
+            t := math.fmodf(game.time * 1.5 + k as f32 / 3, 1);
+            DrawCircle3D(hero.position + Vector3{0, 0.3, 0}, RepelRadius * t, {1, 0, 0}, 90, ColorAlpha({110, 160, 255, 255}, (1 - t) * 0.8));
         }
     }
     if hero.has(.tangled) {
