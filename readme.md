@@ -57,11 +57,12 @@ where an arm meets the body, the texture is darker (ambient occlusion, worked ou
 
 **Rig** (`tools/rig.py`) gives a model bones: a skeleton, its parts bound to bones (smoothly between two where a limb
 bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its texture, skin and clips.
-`tools/anatomy.py` has the bodies the heroes are built from (a brute's, from where its joints are) with the rig that
-fits them and the clips they play: idle, walk, and one for each ability, named by its icon. The game plays a hero's
+`tools/anatomy.py` has the bodies the heroes are built from, from where their joints are: a brute's, and a person's
+(`human_body`: chunky, big gloved hands and heavy boots), with the rig that fits them and the clips they play: idle,
+walk, and one for each ability, named by its icon. The game plays a hero's
 GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
 hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
-else idle. Only the Butcher has one so far; the others are still OBJ.
+else idle. The Butcher and Birgit have one so far; the others are still OBJ.
 
 The Butcher's face has bones of its own: a jaw, two brows and two eyelids, over sculpted eyeballs, lips, teeth and
 tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks, chews and sneers while he stands,
@@ -72,6 +73,16 @@ GLB (`part="hook"`), which the game leaves out while the hook is thrown. The thr
 are models of their own (`models/meat_hook.obj` and `models/chain_link.obj`, the same hook as on his arm), and the chain
 comes from his hand bone: the throw clip starts wound up, so the arm is flung forward the moment the hook leaves. `tools/make_butcher_concepts.py` draws the
 directions he was picked from, as sketch sheets.
+
+Birgit is a person on the same skeleton, with a face of the same bones (`human_face`: big eyes under lids that blink,
+brows, a chin that drops open, freckles) under a big hard hat, and two more bones for her braid, which swings a moment
+after she moves. She carries a framing hammer in her right fist: she stands and now and then tips it up to look at it,
+swings it up over her head and slams it into the road to raise her footbridge (the bridge comes up out of the road as the hammer lands), and
+tosses her trampoline out underarm, which flies from her hand, tumbling, and pops open where it lands; it bounces no
+one until it is down. Her builds are models of their own: a span of the footbridge for each lane and a ramp at each end
+with the scaffold under it, so nothing stands where the cars drive (`models/footbridge_span.obj`,
+`models/footbridge_ramp.obj`), and the trampoline with its mat apart (`models/trampoline.obj`,
+`models/trampoline_mat.obj`), which dips when it bounces someone.
 
 **Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape
 as a layer, and paints them like raised objects: a bevel lit from the top left, lighter at the top, a shine, a little

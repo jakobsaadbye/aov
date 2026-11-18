@@ -189,41 +189,27 @@ bridgeHeightAt :: method (game: *Game, point: Vector2) -> f32 {
 
 RampLength :: 2.5;
 
-drawBridges :: (game: *Game) {
-    Wood  :: Color{150, 105, 60, 255};
-    Dark  :: Color{95, 65, 38, 255};
-    Rail  :: Color{230, 200, 60, 255};
+// The models of tools/make_heroes.py: a span for each lane, and a ramp at each end with the scaffold under the deck's
+// edge. It grows up out of the road as it is raised, and sinks back into it at the end
+drawBridges :: (game: *Game, assets: *Assets) {
     for bridge in game.bridges {
         rise := math.min(bridge.age / BridgeRaiseTime, 1);
-        fade: f32 = math.min(bridge.timeLeft / 0.4, 1);
-        h := BridgeHeight * rise;
-        rect := bridge.bridgeRect();
+        sink := math.min(bridge.timeLeft / 0.4, 1);
+        tall := rise * sink;
+        deep := bridge.halfLength / BridgeModelHalfLength;
         flat := bridge.halfWidth - RampLength;
-        center := bridge.center;
-        // The deck, the ramps at both ends, and the posts under it
-        DrawCube(center.at(h), flat * 2, 0.3, rect.height, ColorAlpha(Wood, fade));
-        for side in [-1.0, 1.0] {
-            rampMid := Vector3{center.x + side * (flat + RampLength * 0.5), h * 0.5, center.y};
-            angle := math.atan2f(h, RampLength) * Rad2Deg * -side;
-            rlPushMatrix();
-            rlTranslatef(rampMid.x, rampMid.y, rampMid.z);
-            rlRotatef(angle, 0, 0, 1);
-            DrawCube({0, 0, 0}, math.sqrtf(RampLength * RampLength + h * h), 0.3, rect.height, ColorAlpha(Dark, fade));
-            rlPopMatrix();
+        lanes := math.max((flat * 2 / LaneWidth + 0.5) as int, 1);
+        span := flat * 2 / lanes as f32;
+        for i in 0..lanes {
+            x := bridge.center.x - flat + span * (i as f32 + 0.5);
+            DrawModelEx(assets.footbridgeSpan, {x, 0, bridge.center.y}, {0, 1, 0}, 0, {span / LaneWidth, tall, deep}, White);
         }
-        x := center.x - flat;
-        while x <= center.x + flat {
-            for z in [rect.y + 0.3, rect.y + rect.height - 0.3] {
-                DrawCube({x, h * 0.5, z}, 0.3, h, 0.3, ColorAlpha(Dark, fade));
-                DrawCube({x, h + 0.6, z}, 0.15, 1.2, 0.15, ColorAlpha(Rail, fade));
-            }
-            x += 3;
-        }
-        for z in [rect.y + 0.3, rect.y + rect.height - 0.3] {
-            DrawCube({center.x, h + 1.15, z}, flat * 2, 0.12, 0.12, ColorAlpha(Rail, fade));
-        }
+        DrawModelEx(assets.footbridgeRamp, {bridge.center.x + flat, 0, bridge.center.y}, {0, 1, 0}, 0, {1, tall, deep}, White);
+        DrawModelEx(assets.footbridgeRamp, {bridge.center.x - flat, 0, bridge.center.y}, {0, 1, 0}, 180, {1, tall, deep}, White);
     }
 }
+
+BridgeModelHalfLength :: 2.2;       // How deep the models of the footbridge are made, half of it
 
 extern "raylib.dll" {
     rlPushMatrix :: () -> void;

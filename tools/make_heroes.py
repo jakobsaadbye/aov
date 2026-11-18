@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from sculpt import (Model, Paint, blob, horn, loft, lumps, push, bands, cloth, color, cylinder, edges, ellipsoid, fbm, fur, ghostly, glass,
+from sculpt import (Model, Paint, blob, bulge, squash, horn, loft, lumps, push, bands, cloth, color, cylinder, edges, ellipsoid, fbm, fur, ghostly, glass,
                     grime, hair, knit, lathe, leather, metal, painted, patch, plane, rect, rgb, scales, skin,
                     smoothstep, snow, sphere, spots, stains, stitches, stripes, flowers, torus, tube, wood, _ellipse,
                     _over, _varied)
@@ -1235,32 +1235,359 @@ def make_karl():
     finish(m, "karl")
 
 
+def human_face(m, hd, sk, rig_, S=1.0, iris=(0.3, 0.52, 0.32), brow_c=(0.55, 0.3, 0.12), lips=(0.72, 0.42, 0.38),
+               freckles=0.0, nose="button"):
+    """A person's head with bones for its face, like ogre_face: a skull that is a little square, big eyes under lids
+    that blink (lid bones), brows that frown and lift (brow bones), a nose, round cheeks, a mouth whose chin and lower
+    lip drop open (the jaw bone), and ears. No hair: that, and a hat, go on top. S scales it (1 is about 0.4 round)"""
+    from anatomy import skin_paint
+    h = np.asarray(hd, float)
+
+    def P(x, y, z):
+        return h + S * np.array([x, y, z], float)
+
+    def R(*r):
+        return tuple(S * v for v in r)
+    E = 0.14
+    eye_r = P(E, 0.03, 0.305)
+    rig_.bone("jaw", P(0, -0.04, -0.05), P(0, -0.3, 0.3), "head")
+    rig_.bone("brow_r", P(0.04, 0.13, 0.36), P(0.24, 0.14, 0.3), "head")
+    rig_.bone("lid_r", eye_r, eye_r + S * np.array([0, 0, 0.08]), "head")
+    rig_.mirror()
+    detail = m.detail
+    m.detail = 0.025
+    W = 5
+
+    def dots(ctx, base):
+        if not freckles:
+            return base
+        q = (ctx.p - h) / S
+        band = smoothstep(0.14, 0.04, np.abs(q[..., 1] + 0.06)) * smoothstep(0.3, 0.6, ctx.n[..., 2]) * smoothstep(0.32, 0.18, np.abs(q[..., 0]))
+        f = smoothstep(0.8, 0.83, fbm(ctx.p, 140 / S, 1, 77)) * band * freckles
+        return _over(base, tuple(c * 0.78 for c in sk), f * 0.8)
+    sp = skin_paint(sk) + flush(h, S, 0.08) + dots
+    # The skull: round at the back, a flat face, a jaw that tapers to the chin
+    m.add(blob(P(0, 0.04, -0.02), R(0.36, 0.4, 0.37), (0.72, 0.8)).deform(push(P(0, -0.27, 0.25), 0.22 * S, (0, 0.01 * S, -0.05 * S))),
+          sp, bones="head", weight=W)
+    # Eyes, big for a hero: white, a coloured iris, a lid over each that blinks, and a crease under it
+    for side in (1, -1):
+        c = eye_r if side > 0 else eye_r * np.array([-1, 1, 1]) + np.array([2 * h[0], 0, 0])
+        m.add(sphere(c, 0.075 * S, nu=18, nv=14), eyeball(c, look=(0, -0.03, 1), iris=iris, sclera=(0.97, 0.96, 0.94), iris_size=44, pupil_size=15),
+              bones="head", weight=W)
+    lid = m.add(ellipsoid(eye_r, R(0.082, 0.082, 0.082), vrange=(0.62, 1.0), nu=18, nv=6), sp + lash_line(True, c=(0.12, 0.06, 0.04), width=0.22),
+                bones="lid_r", weight=W)
+    m.mirror(lid)
+    # Brows: thin arches of hair
+    m.mirror(m.add(loft([P(0.06, 0.135, 0.37), P(0.14, 0.16, 0.365), P(0.22, 0.14, 0.32)], [(0.014, 0.02, 2.2), (0.018, 0.024, 2.2), (0.01, 0.014, 2.2)],
+                        facing=(0, 0.3, 1), nu=10, nv=10), color(brow_c), bones="brow_r", weight=W))
+    # Cheeks and the nose
+    m.mirror(m.add(blob(P(0.16, -0.08, 0.22), R(0.09, 0.07, 0.08), (0.9, 0.9)), sp, bones="head", weight=W))
+    if nose == "button":
+        m.add(blob(P(0, -0.06, 0.375), R(0.05, 0.06, 0.06), (0.85, 0.85)), sp, bones="head", weight=W)
+    else:
+        m.add(loft([P(0, 0.06, 0.34), P(0, -0.08, 0.43)], [(0.035, 0.04, 2.2), (0.06, 0.05, 2.2)], nu=10), sp, bones="head", weight=W)
+    # The mouth: dark inside, an upper lip on the head, and the chin with the lower lip on the jaw, so it opens
+    m.add(ellipsoid(P(0, -0.19, 0.25), R(0.1, 0.04, 0.09)), color((0.3, 0.07, 0.07)), bones="head")
+    lip_p = skin_paint(lips)
+    m.add(loft([P(-0.09, -0.158, 0.31), P(-0.04, -0.17, 0.34), P(0, -0.168, 0.35), P(0.04, -0.17, 0.34), P(0.09, -0.158, 0.31)], [(0.01, 0.014, 2.2), (0.016, 0.018, 2.2), (0.017, 0.019, 2.2), (0.016, 0.018, 2.2), (0.01, 0.014, 2.2)],
+               facing=(0, 0, 1), nu=10, nv=14), lip_p, bones="head", weight=W)
+    m.add(blob(P(0, -0.26, 0.15), R(0.19, 0.1, 0.19), (0.75, 0.75)).deform(push(P(0, -0.31, 0.32), 0.1 * S, (0, -0.005 * S, 0.01 * S))), sp, bones="jaw", weight=W)
+    m.add(loft([P(-0.07, -0.192, 0.31), P(0, -0.205, 0.335), P(0.07, -0.192, 0.31)], [(0.01, 0.014, 2.2), (0.019, 0.021, 2.2), (0.01, 0.014, 2.2)],
+               facing=(0, 0, 1), nu=10, nv=12), lip_p, bones="jaw", weight=W)
+    m.add(ellipsoid(P(0, -0.212, 0.24), R(0.075, 0.016, 0.07)), color((0.8, 0.78, 0.72)), bones="jaw")
+    m.add(ellipsoid(P(0, -0.17, 0.25), R(0.075, 0.016, 0.07)), color((0.9, 0.88, 0.84)), bones="head")
+    # Ears
+    for side in (1, -1):
+        m.add(blob(P(side * 0.36, -0.01, -0.02), R(0.05, 0.1, 0.07), (0.7, 0.7), rot=(0, side * 15, 0)), sp, bones="head")
+    m.detail = detail
+    return P
+
+
+def birgit_clips():
+    """Birgit: she stands with her hammer, walks with a swing in her step, slams her hammer down to build a bridge,
+    and tosses a trampoline out underarm. Each with what her face does, and the swing of her braid"""
+    from rig import clip, layered
+    from anatomy import once
+    stand = {"upper_r": (-6, 0, 6), "fore_r": (-28, 0, 0), "upper_l": (0, 0, -8), "fore_l": (-14, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0, 0)}}
+    breathe = {"upper_r": (-8, 0, 7), "fore_r": (-32, 0, 0), "upper_l": (0, 0, -10), "fore_l": (-18, 0, 0), "chest": (-3, 0, 0), "head": (2, 0, 0),
+               "hips": {"rot": (0, 0, 0), "pos": (0, 0.02, 0)}}
+    # Now and then she tips the hammer up, checks it, and lets it down again
+    check = {"upper_r": (-30, 0, 4), "fore_r": (-95, 0, 0), "hand_r": (0, 0, -20), "upper_l": (0, 0, -9), "fore_l": (-16, 0, 0), "head": (14, -18, 0),
+             "chest": (-2, -6, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0.01, 0)}}
+
+    def walk(s):
+        return {"thigh_r": (-28 * s, 0, 0), "thigh_l": (26 * s, 0, 0), "shin_r": (8 if s > 0 else 38, 0, 0), "shin_l": (38 if s > 0 else 8, 0, 0),
+                "foot_r": (8 * s, 0, 0), "foot_l": (-8 * s, 0, 0),
+                "upper_r": (24 * s, 0, 6), "upper_l": (-26 * s, 0, -8), "fore_r": (-30 - 10 * s, 0, 0), "fore_l": (-24 + 8 * s, 0, 0),
+                "spine": (5, 7 * s, 0), "chest": (3, 6 * s, 0), "hips": {"rot": (0, -8 * s, 3 * s), "pos": (0, -0.05, 0)}, "head": (-6, -8 * s, 0)}
+
+    def passing(s):
+        return {"thigh_r": (-4 if s > 0 else 2, 0, 0), "thigh_l": (2 if s > 0 else -4, 0, 0), "shin_r": (10 if s > 0 else 45, 0, 0),
+                "shin_l": (45 if s > 0 else 10, 0, 0), "upper_r": (0, 0, 6), "upper_l": (0, 0, -8), "fore_r": (-30, 0, 0), "fore_l": (-24, 0, 0),
+                "spine": (5, 0, 0), "chest": (3, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0.05, 0)}, "head": (-6, 0, 0)}
+    # The footbridge: the hammer up over her head with both hands, a slam down onto the ground in front of her (the
+    # bridge goes up as it lands), and back up
+    raise_ = {"upper_r": (-150, 0, 10), "fore_r": (-40, 0, 0), "upper_l": (-140, 0, -10), "fore_l": (-55, 0, 0), "hand_r": (20, 0, 0),
+              "spine": (-8, 0, 0), "chest": (-12, 0, 0), "head": (-14, 0, 0), "thigh_r": (-6, 0, 0), "thigh_l": (4, 0, 0),
+              "hips": {"rot": (0, 0, 0), "pos": (0, 0.06, 0)}}
+    slam = {"upper_r": (-82, 0, 4), "fore_r": (-4, 0, 0), "upper_l": (-80, 0, 18), "fore_l": (-12, 0, 0), "hand_r": (72, 0, 0),
+            "spine": (20, 0, 0), "chest": (16, 0, 0), "head": (-18, 0, 0), "thigh_r": (-48, 0, 0), "shin_r": (55, 0, 0), "thigh_l": (14, 0, 0),
+            "shin_l": (36, 0, 0), "hips": {"rot": (6, 0, 0), "pos": (0, -0.34, 0.12)}}
+    settle = {"upper_r": (-30, 0, 6), "fore_r": (-30, 0, 0), "upper_l": (-10, 0, -6), "fore_l": (-30, 0, 0), "spine": (8, 0, 0), "chest": (4, 0, 0),
+              "head": (-4, 0, 0), "thigh_r": (-14, 0, 0), "shin_r": (14, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, -0.06, 0.04)}}
+    # The trampoline: her free hand goes back low, then flings it forward and up, a step into it
+    back = {"upper_l": (55, 0, -14), "fore_l": (-20, 0, 0), "upper_r": (-20, 0, 10), "fore_r": (-40, 0, 0), "chest": (6, 24, 0), "spine": (6, 10, 0),
+            "head": (-4, -16, 0), "thigh_l": (8, 0, 0), "thigh_r": (-16, 0, 0), "shin_r": (20, 0, 0), "hips": {"rot": (0, 10, 0), "pos": (0, -0.1, 0)}}
+    toss = {"upper_l": (-120, 0, -10), "fore_l": (-10, 0, 0), "upper_r": (10, 0, 12), "fore_r": (-30, 0, 0), "chest": (-6, -20, 0), "spine": (-2, -8, 0),
+            "head": (-8, 12, 0), "thigh_l": (-30, 0, 0), "shin_l": (20, 0, 0), "thigh_r": (14, 0, 0), "hips": {"rot": (0, -10, 0), "pos": (0, -0.04, 0.12)}}
+    body = {
+        "idle": clip(3.0, (0.0, stand), (0.9, breathe), (1.4, stand), (1.7, check), (2.2, check), (2.6, stand)),
+        "walk": clip(0.9, (0.0, walk(1)), (0.225, passing(1)), (0.45, walk(-1)), (0.675, passing(-1))),
+        "footbridge": once(0.95, (0.0, stand), (0.16, raise_), (0.3, slam), (0.6, slam), (0.95, settle)),
+        "trampoline": once(0.8, (0.0, stand), (0.14, back), (0.3, toss), (0.5, toss), (0.8, stand)),
+    }
+    calm, blink = face_pose(jaw=1, brow=2, lid=4), face_pose(jaw=1, brow=2, lid=80)
+    smirk, look = face_pose(jaw=4, brow=-6, lid=2, lift=0.01), face_pose(jaw=1, brow=10, lid=12)
+    effort, shout = face_pose(jaw=6, brow=20, lid=22, drop=0.01), face_pose(jaw=22, brow=16, lid=0)
+    grin = face_pose(jaw=14, brow=-8, lid=0, lift=0.012)
+    face = {
+        "idle": clip(3.0, (0.0, calm), (0.8, calm), (0.85, blink), (0.92, calm), (1.7, look), (2.2, look), (2.5, smirk), (2.85, calm)),
+        "walk": clip(0.9, (0.0, face_pose(jaw=2, brow=6, lid=6)), (0.45, face_pose(jaw=4, brow=6, lid=6))),
+        "footbridge": once(0.95, (0.0, calm), (0.16, effort), (0.3, shout), (0.6, face_pose(jaw=12, brow=12, lid=6)), (0.95, calm)),
+        "trampoline": once(0.8, (0.0, calm), (0.14, look), (0.3, grin), (0.6, grin), (0.8, smirk)),
+    }
+    # The braid swings behind her, a moment after what she does
+    braid = {
+        "idle": clip(3.0, (0.0, {"braid_1": (4, 0, 2), "braid_2": (6, 0, 0)}), (1.5, {"braid_1": (6, 0, -2), "braid_2": (2, 0, 0)})),
+        "walk": clip(0.9, (0.0, {"braid_1": (10, 0, 8), "braid_2": (8, 0, 10)}), (0.225, {"braid_1": (4, 0, 0), "braid_2": (14, 0, 2)}),
+                     (0.45, {"braid_1": (10, 0, -8), "braid_2": (8, 0, -10)}), (0.675, {"braid_1": (4, 0, 0), "braid_2": (14, 0, -2)})),
+        "footbridge": once(0.95, (0.0, {"braid_1": (4, 0, 0)}), (0.16, {"braid_1": (-20, 0, 0), "braid_2": (-10, 0, 0)}),
+                           (0.3, {"braid_1": (14, 0, 0), "braid_2": (18, 0, 0)}), (0.6, {"braid_1": (-8, 0, 0), "braid_2": (10, 0, 0)}), (0.95, {"braid_1": (4, 0, 0)})),
+        "trampoline": once(0.8, (0.0, {"braid_1": (4, 0, 0)}), (0.14, {"braid_1": (8, 0, 20), "braid_2": (4, 0, 14)}),
+                           (0.3, {"braid_1": (14, 0, -24), "braid_2": (10, 0, -20)}), (0.8, {"braid_1": (4, 0, 0)})),
+    }
+    clips_ = {name: layered(body[name], face[name], braid[name]) for name in body}
+    # For the portrait: the face of each clip on a body that stands still
+    for name in body:
+        still = clip(body[name]["duration"], (0.0, stand))
+        still["once"] = body[name].get("once", False)
+        clips_[name + "_face"] = layered(still, face[name], braid["idle"])
+    return clips_
+
+
 def make_birgit():
-    """A builder: an orange hi-vis vest with silver stripes over a work shirt, a yellow hard hat, a heavy tool belt with
-    a hammer, a braid, work gloves, a focused look, and a plank on her shoulder"""
-    m = hero_model("birgit")
-    vest = cloth((0.98, 0.46, 0.08)) + bands((0.86, 0.88, 0.9), [(0.35, 0.42), (0.62, 0.69)]) + stitches((0.6, 0.3, 0.05), [0.33, 0.44, 0.6, 0.71])
-    gloves = leather((0.75, 0.6, 0.35))
-    b = person(m, ATHLETE, vest, cloth((0.3, 0.3, 0.34)) + stains((0.5, 0.45, 0.35), 0.15, 3), arms=cloth((0.36, 0.38, 0.44)) + bands((0.36, 0.38, 0.44), [(0.0, 0.1)]),
-               hands=gloves, hair_paint=hair((0.85, 0.56, 0.22)), hair_style="short", arm_pose=("up", "down"),
-               eyes_kw=dict(iris=(0.3, 0.5, 0.35), lid=0.35, size=0.07), mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.6, 0.38, 0.15), tilt=0.4), nose="round",
-               cuffs=leather((0.3, 0.2, 0.12)))
-    hx, hy, hz = b.head
-    hs = b.hs
-    m.add(tube([(hx, hy, hz - 0.55 * hs), (hx, hy - 0.6 * hs, hz - 0.65 * hs), (hx, hy - 1.25 * hs, hz - 0.55 * hs)], [0.14 * hs, 0.12 * hs, 0.07 * hs]),
-          hair((0.85, 0.56, 0.22)) + stripes((0.65, 0.4, 0.15), 8, 0.3, axis="v", angle=40))
-    hat = color((0.98, 0.82, 0.1)) + bands((0.85, 0.68, 0.05), [(0.4, 0.45)]) + stains((0.5, 0.45, 0.35), 0.1, 4)
-    m.add(ellipsoid((hx, hy + 0.15 * hs, hz), (0.68 * hs, 0.7 * hs, 0.66 * hs), vrange=(0.5, 1.0), nu=22, nv=8), hat)
-    m.add(blob((hx, hy + 0.5 * hs, hz), (0.08 * hs, 0.22 * hs, 0.62 * hs), (0.4, 0.5)), hat)
-    m.add(torus((hx, hy + 0.15 * hs, hz + 0.08), 0.74 * hs, 0.06 * hs, sz=1.1), hat)
-    belt(m, b, leather((0.45, 0.28, 0.14)) + stitches((0.7, 0.55, 0.3), [0.3, 0.7]))
-    for x in (0.42, -0.42, 0.0):
-        m.add(blob((x, b.waist_y - 0.25, 0.5 if x else -0.55), (0.17, 0.2, 0.1), (0.4, 0.4)), leather((0.4, 0.25, 0.12)) + stitches((0.7, 0.55, 0.3), [0.85]))
-    m.add(tube([(-0.45, b.waist_y - 0.1, 0.62), (-0.48, b.waist_y - 0.7, 0.66)], 0.05), wood((0.5, 0.32, 0.18)))
-    m.add(blob((-0.48, b.waist_y - 0.08, 0.66), (0.22, 0.07, 0.07), (0.3, 0.3)), metal((0.5, 0.5, 0.55)))
-    rx, ry, rz = b.right
-    m.add(blob((rx - 0.1, ry + 0.05, rz - 0.4), (0.18, 0.1, 1.7), (0.1, 0.1), rot=(20, 0, 0)), wood((0.75, 0.55, 0.32), 16) + edges(0.15, 0.04, dark=True))
+    """Birgit the Builder: a sturdy woman in an orange hi-vis vest with silver stripes over a rolled-up work shirt,
+    cargo trousers with knee pads, steel-toed boots, a big yellow hard hat, a thick ginger braid down her back, freckles
+    and a confident set to her mouth. A heavy tool belt with a tape measure, a pencil behind her ear, and a big framing
+    hammer in her right fist, its head as big as her hand. Rigged like the Butcher, with clips for standing, walking,
+    slamming down her hammer to raise a footbridge and tossing out a trampoline, written as models/birgit.glb too"""
+    from anatomy import human_joints, human_body, make_rig, grip_point, skin_paint, L
+    from rig import write_glb
+    m = Model("birgit", size=1024, light=0.5, ao=1.3, detail=0.07)
+    J = human_joints()
+    m.rig = make_rig(J)
+    sk = (0.94, 0.74, 0.6)
+    skin_p = skin_paint(sk)
+    shirt = (0.36, 0.42, 0.52)
+    vest_c = (1.0, 0.45, 0.06)
+    silver = (0.86, 0.88, 0.9)
+    gloves = leather((0.78, 0.62, 0.36)) + stitches((0.5, 0.36, 0.2), [0.3, 0.7]) + edges(0.2, 0.05, dark=True)
+    trousers = cloth((0.3, 0.32, 0.36), folds=4) + stains((0.55, 0.5, 0.4), 0.15, 3) + stitches((0.2, 0.2, 0.24), [0.2, 0.8], axis="u")
+    boots = leather((0.58, 0.4, 0.2)) + stitches((0.35, 0.22, 0.1), [0.45]) + edges(0.25, 0.06, dark=True) + stains((0.4, 0.35, 0.28), 0.15, 4)
+    pads = color((0.2, 0.2, 0.22)) + edges(0.35, 0.12)
+    torso = human_body(m, J, cloth(shirt, folds=4), cloth(shirt, folds=3) + bands(tuple(c * 0.8 for c in shirt), [(0.9, 1.0)]), skin_p, trousers, gloves, boots,
+                       chest=1.04, hips=1.06, bust=0.6, arm=1.05, leg=1.05, cuff_p=cloth(tuple(c * 0.85 for c in shirt), folds=2), knee_p=pads)
+    h, s, c, n = J["hips"], J["spine"], J["chest"], J["neck"]
+    # The vest over the shirt: bright orange with two silver bands round it, a zip down the front, a pocket with a pen
+    vest_p = cloth(vest_c, folds=3) + bands(silver, [(0.4, 0.47), (0.66, 0.73)]) + bands((0.25, 0.25, 0.28), [(0.495, 0.505)], axis="u") + \
+        stains((0.5, 0.35, 0.2), 0.12, 3) + edges(0.2, 0.06, dark=True)
+    path = [s + [0, -0.22, 0], s, c, (c + n) / 2 + [0, 0.0, -0.02], n + [0, 0.02, -0.02]]
+    secs = [dict(w=0.5, d=0.36, e=2.6), dict(w=0.48, d=0.35, e=2.5), dict(w=0.62, d=0.42, e=2.7, oy=0.02), dict(w=0.62, d=0.36, e=3.0), dict(w=0.24, d=0.22, e=2.4)]
+    m.add(loft(path, secs, nu=26, nv=16, caps=None).deform(bulge(c + [0.19, -0.02, 0.34], 0.22, 0.04), bulge(c + [-0.19, -0.02, 0.34], 0.22, 0.04)),
+          vest_p, bones=["hips", "spine", "chest"])
+    m.add(blob(c + [-0.22, 0.12, 0.43], (0.11, 0.1, 0.03), (0.4, 0.4)), cloth(tuple(v * 0.9 for v in vest_c), folds=2) + edges(0.3, 0.1, dark=True), bones="chest")
+    m.add(tube([c + [-0.18, 0.18, 0.44], c + [-0.18, 0.32, 0.44]], 0.018), color((0.15, 0.3, 0.8)), bones="chest")
+    # The tool belt: thick leather, a big buckle, pouches at the front and back, a tape measure on her left hip
+    belt_p = leather((0.45, 0.28, 0.14)) + stitches((0.75, 0.6, 0.35), [0.25, 0.75]) + edges(0.25, 0.05, dark=True)
+    m.add(torus(h + [0, 0.02, 0.0], 0.54, 0.075, sz=0.72, nu=28), belt_p, bones="hips")
+    m.add(blob(h + [0, 0.03, 0.4], (0.11, 0.08, 0.04), (0.3, 0.3)), metal((0.72, 0.66, 0.4), 0.5) + edges(0.4, 0.08), bones="hips")
+    pouch = leather((0.4, 0.25, 0.12)) + stitches((0.75, 0.6, 0.35), [0.85]) + edges(0.3, 0.08, dark=True)
+    for x, z in ((0.38, 0.26), (-0.36, -0.28), (0.12, -0.4)):
+        m.add(blob(h + [x, -0.14, z], (0.14, 0.17, 0.09), (0.4, 0.5), rot=(0, math.degrees(math.atan2(x, z)), 0)), pouch, bones="hips")
+    m.add(blob(h + [0.4, -0.02, 0.3], (0.03, 0.08, 0.03), (0.5, 0.5)), wood((0.6, 0.4, 0.2)), bones="hips")
+    m.add(cylinder(h + [-0.55, -0.1, 0.12], 0.13, 0.1, rot=(0, 0, 90)), color((0.98, 0.8, 0.1)) + edges(0.3, 0.05, dark=True), bones="hips")
+    m.add(blob(h + [-0.6, -0.1, 0.12], (0.03, 0.06, 0.06), (0.5, 0.5)), color((0.15, 0.15, 0.15)), bones="hips")
+    # A pocket on each thigh
+    m.mirror(m.add(blob(J["hip_r"] + (J["knee_r"] - J["hip_r"]) * 0.45 + [0.2, 0, 0.02], (0.06, 0.15, 0.13), (0.4, 0.5)),
+                   cloth((0.27, 0.29, 0.33), folds=2) + edges(0.3, 0.08, dark=True), bones="thigh_r"))
+    # The head: freckles, green eyes, a determined set to the mouth
+    hd = J["head"] + np.array([0, 0.28, 0.08])
+    P = human_face(m, hd, sk, m.rig, S=1.0, iris=(0.3, 0.55, 0.32), brow_c=(0.65, 0.33, 0.1), lips=(0.82, 0.52, 0.46), freckles=1.0)
+    ginger = (0.86, 0.45, 0.14)
+    hair_p = hair(ginger) + stripes(tuple(v * 0.75 for v in ginger), 14, 0.3, axis="u")
+    # Hair under the hat: round the back and the sides, and a fringe that sticks out under the brim
+    m.add(ellipsoid(P(0, 0.06, -0.06), (0.4, 0.38, 0.38), vrange=(0.3, 1.0), nu=20, nv=10), hair_p, bones="head", weight=3)
+    for x in (-0.2, -0.08, 0.06, 0.18):
+        m.add(horn(P(x, 0.24, 0.3), (x * 0.4, -0.6, 0.6), 0.14, 0.05, curl=(0, -0.1, 0.05), tip=0.015), hair_p, bones="head")
+    # The braid: thick, from under the back of the hat down between her shoulders, tied off with a band. Two bones,
+    # so it swings
+    top = P(0, -0.08, -0.36)
+    mid = top + np.array([0, -0.42, -0.1])
+    end = mid + np.array([0, -0.45, -0.02])
+    m.rig.bone("braid_1", top, mid, "head")
+    m.rig.bone("braid_2", mid, end, "braid_1")
+    for k in range(9):
+        t = k / 8
+        p_ = top + (mid - top) * min(t * 2, 1) + (end - mid) * max(t * 2 - 1, 0)
+        r = 0.1 - 0.035 * t
+        m.add(blob(p_ + np.array([0.025 * (1 if k % 2 else -1), 0, 0]), (r, 0.075, r * 0.8), (0.7, 0.7), rot=(0, 0, 25 if k % 2 else -25)), hair_p,
+              bones=["braid_1"] if t < 0.4 else (["braid_1", "braid_2"] if t < 0.6 else ["braid_2"]))
+    m.add(torus(end + np.array([0, 0.05, 0]), 0.055, 0.025), color((0.15, 0.55, 0.85)), bones="braid_2")
+    m.add(horn(end + np.array([0, 0.02, 0]), (0, -1, -0.1), 0.16, 0.06, curl=(0, 0, -0.05), tip=0.03), hair_p, bones="braid_2")
+    # The hard hat: big, yellow, a ridge over the top, a brim that is wider at the front, a sticker on the side
+    hat = color((1.0, 0.82, 0.08)) + stains((0.55, 0.45, 0.3), 0.12, 4) + edges(0.2, 0.06, dark=True)
+    m.add(ellipsoid(P(0, 0.2, 0.0), (0.47, 0.4, 0.49), vrange=(0.5, 1.0), nu=26, nv=10), hat, bones="head", weight=2)
+    ridge = [P(0, 0.2 + 0.41 * math.sin(a), 0.5 * math.cos(a)) for a in np.radians(np.linspace(48, 150, 8))]
+    m.add(loft(ridge, [(0.03, 0.02, 2.4)] + [(0.07, 0.035, 2.4)] * 6 + [(0.03, 0.02, 2.4)], facing=(0, 1, 0), nu=12, nv=24), hat, bones="head")
+    m.add(loft([P(0, 0.2, -0.1), P(0, 0.2, 0.08)], [dict(w=0.52, d=0.5, e=2.2), dict(w=0.54, d=0.6, e=2.2, oy=0.06)], facing=(0, 0, 1), nu=28, caps="flat").deform(
+        squash(P(0, 0.2, 0), (0, 1, 0), 0.12)), hat, bones="head")
+    # A pencil behind her right ear
+    m.add(tube([P(0.36, 0.08, 0.12), P(0.42, 0.0, -0.16)], 0.018), color((0.95, 0.75, 0.15)) + bands((0.2, 0.2, 0.2), [(0.0, 0.12)]), bones="head")
+    # The hammer: a long wooden handle through her right fist, and a heavy steel head with a claw at the far end
+    g = grip_point(J)
+    along = np.array([0.0, -0.25, 1.0])
+    along /= np.linalg.norm(along)
+    butt, head_at = g - along * 0.18, g + along * 1.05
+    m.add(loft([butt, g, head_at], [(0.05, 0.055, 2.4), (0.045, 0.05, 2.4), (0.05, 0.05, 2.4)], nu=10, caps="round"),
+          wood((0.62, 0.4, 0.2)) + bands((0.2, 0.2, 0.22), [(0.0, 0.18)]), bones="hand_r")
+    up = np.array([0.0, 1.0, 0.25])
+    up /= np.linalg.norm(up)
+    steel = metal((0.55, 0.56, 0.6), 0.45) + edges(0.4, 0.06)
+    m.add(loft([head_at - up * 0.36, head_at + up * 0.08], [(0.13, 0.13, 3.0), (0.12, 0.12, 3.0)], facing=along, nu=14, caps="flat"), steel, bones="hand_r")
+    m.add(loft([head_at - up * 0.36, head_at - up * 0.48], [(0.16, 0.16, 3.0), (0.16, 0.16, 3.0)], facing=along, nu=14, caps="flat"), steel, bones="hand_r")
+    for side in (1, -1):
+        m.add(horn(head_at + up * 0.05 + np.array([side * 0.04, 0, 0]), up + along * 0.5, 0.32, 0.05, curl=tuple(-along * 0.35), tip=0.012, facing=(1, 0, 0)),
+              steel, bones="hand_r")
+    m.clips = birgit_clips()
     finish(m, "birgit")
+    print(write_glb(m, fps=30))
+    return m
+
+
+def beam(a, b, w, d, facing=(0, 1, 0), e=6.0):
+    """A beam from a to b, w by d (half sizes), squared off with soft edges"""
+    return loft([a, b], [(w, d, e), (w, d, e)], facing=facing, nu=12, caps="flat")
+
+
+def site_paints():
+    """The paints of Birgit's builds: weathered planks, yellow steel with black hazard stripes, galvanised poles"""
+    planks = wood((0.62, 0.43, 0.24), 14) + edges(0.3, 0.08, dark=True) + stains((0.38, 0.3, 0.2), 0.15, 3) + grime(0.2, 0.5)
+    hazard = color((1.0, 0.78, 0.08)) + stripes((0.12, 0.12, 0.12), 10, 0.5, axis="v", angle=45) + edges(0.25, 0.08, dark=True)
+    yellow = color((1.0, 0.8, 0.1)) + edges(0.3, 0.1, dark=True) + stains((0.5, 0.4, 0.3), 0.1, 4)
+    pole = metal((0.66, 0.68, 0.7), 0.45) + edges(0.3, 0.08) + stains((0.45, 0.35, 0.25), 0.12, 5)
+    return planks, hazard, yellow, pole
+
+
+def footbridge_trestle(m, x, h, half, pole, hazard):
+    """A scaffold under the edge of a deck at x: two poles from the ground to the deck at z = +-half, a cross brace
+    between them, and base plates. Along the line between two lanes, where no car drives"""
+    for z in (-half, half):
+        m.add(cylinder((x, 0, z), 0.12, h - 0.25, caps=True), pole)
+        m.add(cylinder((x, 0, z), 0.32, 0.08, caps=True), hazard)
+    for z0, z1 in ((-half, half), (half, -half)):
+        m.add(tube([(x, 0.4, z0), (x, h - 0.6, z1)], 0.06), pole)
+    m.add(tube([(x, h - 0.45, -half), (x, h - 0.45, half)], 0.07), pole)
+
+
+def make_footbridge_span():
+    """A lane of Birgit's footbridge (the game repeats it across the lanes): a deck of thick planks across the way, on
+    two beams, with a yellow railing on each side. 6 long (x, across the road), 4.4 deep (z), its deck at 3
+    (BridgeHeight). It stands on the scaffolds of the ramps at its ends, so nothing is in the way of the cars"""
+    m = Model("footbridge_span", size=1024, ground_ao=False, light=0.4, ao=0.8, detail=0.08)
+    planks, hazard, yellow, pole = site_paints()
+    H, L, D = 3.0, 3.0, 2.2
+    for k in range(12):
+        x = -L + 0.25 + k * 0.5
+        lift = 0.02 * ((k * 7) % 3)
+        m.add(beam((x, H - 0.08 + lift, -D + 0.05), (x, H - 0.08 + lift, D - 0.05), 0.23, 0.09, facing=(0, 1, 0)), planks, share=None)
+    for z in (-D + 0.2, D - 0.2):
+        m.add(beam((-L, H - 0.32, z), (L, H - 0.32, z), 0.16, 0.18, facing=(0, 1, 0)), planks)
+    for z in (-D + 0.12, D - 0.12):
+        for x in (-L + 0.15, 0.0):
+            m.add(beam((x, H, z), (x, H + 1.25, z), 0.09, 0.09, facing=(0, 0, 1)), hazard)
+        m.add(tube([(-L, H + 1.2, z), (L, H + 1.2, z)], 0.08, nu=10, caps=False), yellow)
+        m.add(tube([(-L, H + 0.65, z), (L, H + 0.65, z)], 0.05, nu=8, caps=False), yellow)
+    tris = m.write()
+    print(f"models/footbridge_span.obj  {tris} triangles")
+
+
+def make_footbridge_ramp():
+    """The end of Birgit's footbridge: a ramp of planks with cleats to step on, from the deck (x = 0, at 3) down to the
+    ground 2.5 further (x = 2.5, RampLength), with a sloping railing and the scaffold under the deck's edge"""
+    m = Model("footbridge_ramp", size=1024, ground_ao=False, light=0.4, ao=0.8, detail=0.08)
+    planks, hazard, yellow, pole = site_paints()
+    H, R, D = 3.0, 2.5, 2.2
+    slope = math.atan2(H, R)
+    length = math.hypot(H, R)
+    for k in range(9):
+        t = (k + 0.5) / 9
+        x, y = R * t, H * (1 - t)
+        m.add(beam((x, y - 0.08, -D + 0.05), (x, y - 0.08, D - 0.05), 0.17, 0.08, facing=(math.sin(slope), math.cos(slope), 0)), planks)
+        m.add(beam((x + 0.05, y + 0.02, -D + 0.3), (x + 0.05, y + 0.02, D - 0.3), 0.035, 0.04, facing=(0, 1, 0)), planks)
+    for z in (-D + 0.2, D - 0.2):
+        m.add(beam((0, H - 0.3, z), (R, -0.05, z), 0.16, 0.16, facing=(math.sin(slope), math.cos(slope), 0)), planks)
+    for z in (-D + 0.12, D - 0.12):
+        for t in (0.02, 0.5, 0.98):
+            x, y = R * t, H * (1 - t)
+            m.add(beam((x, y, z), (x, y + 1.25, z), 0.09, 0.09, facing=(0, 0, 1)), hazard)
+        m.add(tube([(0, H + 1.2, z), (R, 1.2, z)], 0.08, nu=10, caps=False), yellow)
+        m.add(tube([(0, H + 0.65, z), (R, 0.65, z)], 0.05, nu=8, caps=False), yellow)
+    footbridge_trestle(m, 0.0, H, D - 0.2, pole, hazard)
+    # Sandbags at its foot, holding it down
+    for z in (-D + 0.5, D - 0.5):
+        m.add(blob((R + 0.25, 0.14, z), (0.32, 0.15, 0.22), (0.6, 0.6)), cloth((0.66, 0.58, 0.42), folds=3) + stitches((0.4, 0.34, 0.24), [0.5], axis="u"))
+    tris = m.write()
+    print(f"models/footbridge_ramp.obj  {tris} triangles")
+
+
+def make_trampoline():
+    """Birgit's trampoline, without its mat (make_trampoline_mat, which the game dips when it bounces someone): a ring
+    of yellow steel striped with hazard black on six bent legs, and the springs from it in to the mat. TrampolineRadius
+    (1.4) round, the mat at 0.62"""
+    m = Model("trampoline", size=1024, ground_ao=True, light=0.4, ao=0.8, detail=0.05)
+    planks, hazard, yellow, pole = site_paints()
+    R, Y = 1.4, 0.62
+    ring = color((1.0, 0.8, 0.1)) + bands((0.12, 0.12, 0.12), [(k / 16, k / 16 + 0.03) for k in range(16)], axis="u") + edges(0.2, 0.1, dark=True)
+    m.add(torus((0, Y, 0), R, 0.1, nu=48, nv=10), ring)
+    for k in range(6):
+        a = k * math.pi / 3 + 0.25
+        c, s_ = math.cos(a), math.sin(a)
+        top = (R * c, Y - 0.04, R * s_)
+        knee = (R * 1.08 * c, Y * 0.45, R * 1.08 * s_)
+        foot = (R * 1.02 * c, 0.04, R * 1.02 * s_)
+        m.add(tube([top, knee, foot], 0.055, nu=8), pole)
+        m.add(blob(foot, (0.12, 0.04, 0.12), (0.6, 0.6)), color((0.12, 0.12, 0.13)))
+    for k in range(28):
+        a = k * 2 * math.pi / 28
+        c, s_ = math.cos(a), math.sin(a)
+        m.add(tube([(1.12 * c, Y, 1.12 * s_), (1.36 * c, Y, 1.36 * s_)], 0.025, nu=6), metal((0.75, 0.76, 0.78), 0.55),
+              share=None)
+    tris = m.write()
+    print(f"models/trampoline.obj  {tris} triangles")
+
+
+def make_trampoline_mat():
+    """The mat of Birgit's trampoline: black, with an orange ring and a bullseye to land on, at y = 0.62"""
+    m = Model("trampoline_mat", size=512, ground_ao=False, light=0.4, ao=0.0, detail=0.05)
+
+    def mat(ctx):
+        r = np.linalg.norm(ctx.p[..., [0, 2]], axis=-1)
+        out = np.ones(ctx.shape + (3,)) * np.array([0.1, 0.1, 0.12]) * (0.9 + 0.2 * fbm(ctx.p, 6, 2, 3))[..., None]
+        ring = smoothstep(0.05, 0.03, np.abs(r - 0.82)) + smoothstep(0.05, 0.03, np.abs(r - 0.4)) + smoothstep(0.14, 0.12, r)
+        return _over(out, (1.0, 0.5, 0.08), np.clip(ring, 0, 1))
+    m.add(lathe([(-0.04, 0.0), (-0.04, 1.12), (0.0, 1.12), (0.0, 0.0)], (0, 0.62, 0), smooth=False, nu=40), Paint(mat))
+    tris = m.write()
+    print(f"models/trampoline_mat.obj  {tris} triangles")
 
 
 def make_bent():

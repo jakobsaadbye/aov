@@ -12,7 +12,7 @@ import math
 import numpy as np
 
 from rig import Rig, clip
-from sculpt import (Paint, blob, bulge, ellipsoid, fbm, leather, loft, lumps, metal, mirror_bone_name, push,
+from sculpt import (Paint, blob, bulge, ellipsoid, fbm, leather, loft, lumps, metal, mirror_bone_name, push, tube,
                     smoothstep, torus, _over, _varied, rgb)
 
 
@@ -225,3 +225,111 @@ def chain(m, a, b, links=8, r=0.07, paint=None, bones=None):
         rot = (90, 0, 0) if k % 2 else (0, 0, 90)
         s = m.add(torus(p, r, r * 0.3, rot=rot, nu=10, nv=6), paint, bones=bones, share=first)
         first = first or s
+
+
+#
+# A person's skeleton and body: the same bones as a brute, in human proportions, chunky like a hero of a strategy game
+# (big hands and feet, a head a bit big), so every hero can be rigged and play the same kinds of clips
+#
+
+
+def human_joints(**over):
+    j = dict(hips=(0, 1.85, 0), spine=(0, 2.3, 0.03), chest=(0, 2.85, 0.06), neck=(0, 3.3, 0.06), head=(0, 3.5, 0.1),
+             shoulder_r=(0.66, 3.15, 0.0), elbow_r=(0.86, 2.47, -0.06), wrist_r=(0.94, 1.84, 0.1), hand_end_r=(0.97, 1.56, 0.18),
+             hip_r=(0.3, 1.82, 0.0), knee_r=(0.35, 1.04, 0.08), ankle_r=(0.4, 0.3, -0.02), toe_r=(0.42, 0.08, 0.52))
+    j.update(over)
+    return {k: np.asarray(v, dtype=float) for k, v in j.items()}
+
+
+def human_body(m, J, shirt_p, sleeve_p, skin_p, legs_p, glove_p, boot_p, sole_p=None, chest=1.0, hips=1.0, bust=0.0,
+               arm=1.0, leg=1.0, rolled=True, cuff_p=None, knee_p=None):
+    """A person's body on the joints J, every part bound to its bones: a torso (shirt_p) that narrows at the waist,
+    shoulders, arms whose sleeves (sleeve_p) are rolled up to the elbow over bare forearms (skin_p) when rolled, big
+    gloved hands (glove_p) closed round a grip, legs (legs_p) with knee pads (knee_p) and heavy boots (boot_p). Returns
+    the surfaces of the torso, for clothes over it"""
+    lump = lumps(0.008, 3, 5)
+    h, s, c, n = J["hips"], J["spine"], J["chest"], J["neck"]
+    # The torso: pelvis, waist, chest and shoulders, a little square, up into the neck
+    path = [h + [0, -0.24, -0.02], h + [0, 0.06, 0], s, c, (c + n) / 2 + [0, 0.02, -0.02], n + [0, 0.1, -0.02]]
+    secs = [dict(w=0.5 * hips, d=0.33, e=2.6), dict(w=0.52 * hips, d=0.34, e=2.6), dict(w=0.43, d=0.3, e=2.5),
+            dict(w=0.56 * chest, d=0.36, e=2.7, oy=0.02), dict(w=0.6 * chest, d=0.32, e=3.0), dict(w=0.16, d=0.16, e=2.2)]
+    torso = m.add(loft(path, secs, nu=26, nv=24).deform(
+        lump, bulge(c + [0.19, -0.02, 0.32], 0.2, 0.07 * bust), bulge(c + [-0.19, -0.02, 0.32], 0.2, 0.07 * bust),
+        push(h + [0, -0.05, -0.3], 0.3, (0, -0.02, -0.04))), shirt_p, bones=["hips", "spine", "chest"])
+    m.add(tube([(c + n) / 2 + [0, 0, -0.02], J["head"] + [0, 0.12, 0.02]], 0.15, nu=12, caps=False), skin_p, bones=["chest", "neck"])
+    # Arms: a round shoulder, the upper arm in its sleeve with a rolled cuff, a bare forearm that is thick below the
+    # elbow and narrows to the wrist
+    sh, e, w = J["shoulder_r"], J["elbow_r"], J["wrist_r"]
+    m.mirror(m.add(blob(sh + [-0.05, 0.0, 0], (0.18 * arm, 0.17, 0.18), (0.8, 0.8)), sleeve_p, bones=["upper_r"]))
+    upper = [sh, sh + (e - sh) * 0.45, e + (sh - e) * 0.08]
+    m.mirror(m.add(loft(upper, [(0.17 * arm, 0.17 * arm, 2.2), (0.165 * arm, 0.17 * arm, 2.2), (0.15 * arm, 0.15 * arm, 2.2)], nu=14, nv=14, caps=None),
+                   sleeve_p, bones=["upper_r", "fore_r"]))
+    fore_p = skin_p if rolled else sleeve_p
+    fore = [e + (sh - e) * 0.12, e, e + (w - e) * 0.35, w]
+    m.mirror(m.add(loft(fore, [(0.12 * arm, 0.12 * arm, 2.2), (0.13 * arm, 0.13 * arm, 2.2), (0.145 * arm, 0.13 * arm, 2.3), (0.1 * arm, 0.09 * arm, 2.3)],
+                        facing=(0, 0, 1), nu=14, nv=14).deform(lump), fore_p, bones=["upper_r", "fore_r"]))
+    if rolled:
+        m.mirror(m.add(torus(e + (sh - e) * 0.1, 0.165 * arm, 0.055, rot=_tilt(sh - e), nu=16, nv=6), cuff_p or sleeve_p, bones=["upper_r", "fore_r"]))
+    glove(m, J, glove_p)
+    # Legs: the thigh, a knee pad over the knee, the shin, into the boot
+    hp, kn, an = J["hip_r"], J["knee_r"], J["ankle_r"]
+    path = [hp + [0, 0.12, 0], (hp + kn) / 2, kn, (kn + an) / 2 + [0, 0, -0.02], an + [0, 0.22, 0]]
+    secs = [(0.25 * leg, 0.26 * leg, 2.3), (0.22 * leg, 0.23 * leg, 2.3), (0.17 * leg, 0.18, 2.3), (0.175 * leg, 0.18, 2.3), (0.15, 0.15, 2.3)]
+    m.mirror(m.add(loft(path, secs, nu=14, nv=18).deform(lump), legs_p, bones=["thigh_r", "shin_r"]))
+    if knee_p is not None:
+        m.mirror(m.add(blob(kn + [0, -0.02, 0.15], (0.15, 0.17, 0.07), (0.6, 0.6)), knee_p, bones=["shin_r"]))
+    boot(m, J, boot_p, sole_p)
+    return torso
+
+
+def _tilt(d):
+    """The rotation (degrees, x then z) that stands a ring at the origin, flat in xz, across the direction d"""
+    d = np.asarray(d, float)
+    d = d / np.linalg.norm(d)
+    rx = math.degrees(math.atan2(d[2], d[1]))
+    rz = -math.degrees(math.asin(np.clip(d[0], -1, 1)))
+    return (rx, 0, rz)
+
+
+def glove(m, J, paint, size=1.0, both=True):
+    """A big work glove closed round a grip: a cuff that flares at the wrist, a broad back of the hand, four fingers
+    curled round, and a thumb over them. The grip (for a handle) is at grip_point(J)"""
+    w, he = J["wrist_r"], J["hand_end_r"]
+    d = (he - w) / np.linalg.norm(he - w)
+    out = np.array([1.0, 0, 0])                 # Away from the body: the back of the hand
+    fwd = np.cross(d, out)
+    fwd = fwd / np.linalg.norm(fwd) * np.sign(fwd[2] or 1)
+    k = size
+    parts = []
+    parts.append(m.add(loft([w - d * 0.12, w + d * 0.02], [(0.13 * k, 0.13 * k, 2.4), (0.155 * k, 0.15 * k, 2.4)], nu=14, caps="flat"), paint, bones=["fore_r", "hand_r"]))
+    palm = w + d * 0.17 * k
+    parts.append(m.add(blob(palm, (0.13 * k, 0.17 * k, 0.15 * k), (0.6, 0.6)), paint, bones=["hand_r"]))
+    for f in range(4):
+        base = palm + d * 0.1 * k + fwd * (f - 1.5) * 0.075 * k + out * 0.06 * k
+        tip = base + d * 0.06 * k - out * 0.16 * k
+        curl = base + d * 0.13 * k - out * 0.06 * k
+        parts.append(m.add(loft([base, curl, tip], [(0.05 * k, 0.05 * k, 2.2), (0.048 * k, 0.048 * k, 2.2), (0.044 * k, 0.044 * k, 2.2)], nu=8, nv=8),
+                           paint, bones=["hand_r"]))
+    parts.append(m.add(loft([palm - out * 0.06 * k + fwd * 0.08 * k, palm - out * 0.14 * k + fwd * 0.08 * k + d * 0.08 * k, palm - out * 0.14 * k + d * 0.16 * k],
+                            [(0.05 * k, 0.05 * k, 2.2), (0.05 * k, 0.05 * k, 2.2), (0.045 * k, 0.045 * k, 2.2)], nu=8, nv=8), paint, bones=["hand_r"]))
+    if both:
+        for p in parts:
+            m.mirror(p)
+    return parts
+
+
+def grip_point(J):
+    """Where a handle goes through the right fist of glove()"""
+    w, he = J["wrist_r"], J["hand_end_r"]
+    d = (he - w) / np.linalg.norm(he - w)
+    return w + d * 0.24 + np.array([-0.04, 0, 0])
+
+
+def boot(m, J, paint, sole_p=None):
+    """A heavy work boot: a shaft to above the ankle, a broad foot with a round steel toe, and a thick sole"""
+    an, toe = J["ankle_r"], J["toe_r"]
+    m.mirror(m.add(loft([an + [0, 0.3, -0.02], an + [0, 0.02, -0.02]], [(0.17, 0.17, 2.4), (0.19, 0.2, 2.4)], nu=14, caps=None), paint, bones=["shin_r", "foot_r"]))
+    m.mirror(m.add(loft([an + [0, 0.02, -0.24], an + [0, -0.04, 0.05], toe + [0, 0.04, -0.12], toe + [0, 0.04, 0.06]],
+                        [(0.19, 0.2, 2.6), (0.21, 0.22, 2.6), (0.19, 0.15, 2.4), (0.17, 0.12, 2.2)], facing=(0, 1, 0), nu=16, nv=14), paint, bones=["foot_r"]))
+    m.mirror(m.add(loft([an + [0, -0.2, -0.27], toe + [0, -0.09, 0.1]], [(0.23, 0.06, 4.0), (0.2, 0.06, 4.0)], facing=(0, 1, 0), nu=14, nv=6, caps="flat"),
+                   sole_p or leather((0.16, 0.12, 0.1)), bones=["foot_r"]))
