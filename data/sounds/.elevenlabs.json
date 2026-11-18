@@ -27,7 +27,7 @@
   "ability.lightning": "b7ffd85b18dd34bcfe1126d2490de9c69f7f32a74bd347f6800a7f010ad450cb",
   "ability.lightning_rod": "395ad15d9d231ee7833f6669ea82f21b6b044cdeb1f36bd4e694e95fcda376ad",
   "ability.night_bus": "934f2f74fde397e89de1ea7b73b722efb1662a1d705f637ebc154fa00e442800",
-  "ability.oil_change": "c3acc6130d946115d46df2c65b76d72615248d2fbae8223ddbe26f1fd18a33cb",
+  "ability.oil_change": "2aa602d92114c894bbf0f9c61fb5ac3aab86c0b0e0d02b16042c29b1084bfaf4",
   "ability.ollie": "c7ba593ed4fbe96480e13aa021dfc04eb09ceb6f6a8753f9d09984c5cd923247",
   "ability.possess": "a1b668423dc593f3760fb6c20ecf895be11b82bd1055b0431916ec2ea6eabbd7",
   "ability.repel": "d041b61164aa4363f5b3bb4a9b6e831ad0879e2f2f9103b568683d9141ac4af5",
@@ -376,5 +376,6 @@
   "music.toybox.toy_parade": "1339cd21fe8e0377cb1216fcb6e0effa0f19602c76c52d80f18465fedd3510b9",
   "ability.repel_push": "bc7f1aed861fbf6aa5e82ec4e02c2596df519524d73665647b8043bbaaa1fa4a",
   "ability.scrap_clang": "6b211881d4f6d57f0aa9c7fca889353b74f656334b573c466a99c84d2b0e199e",
-  "ability.scrap_hit": "43652b58ef343baaac4b53c09738651cfefc3eb97da49985237aa08fda530021"
+  "ability.scrap_hit": "43652b58ef343baaac4b53c09738651cfefc3eb97da49985237aa08fda530021",
+  "ability.oil_splat": "b82badc873575972fdb6669e06382dc7e2e763cd14ed4a299abdde3c824f9239"
 }

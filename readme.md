@@ -62,7 +62,7 @@ bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its
 walk, and one for each ability, named by its icon. The game plays a hero's
 GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
 hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
-else idle. The Butcher, Birgit, Frosty, Mira and Magnus have one so far; the others are still OBJ.
+else idle. The Butcher, Birgit, Frosty, Mira, Magnus and Karl have one so far; the others are still OBJ.
 
 The Butcher's face has bones of its own: a jaw, two brows and two eyelids, over sculpted eyeballs, lips, teeth and
 tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks, chews and sneers while he stands,
@@ -97,6 +97,13 @@ a belt with a gold buckle, slicked hair, a handlebar moustache and a cleft chin,
 right fist. He stands with his chest out and now and then flexes his free arm, holds the magnet up over his head and
 turns it round to repel the cars, and thrusts it at an enemy and heaves back to pull it in. While he pulls, blue lines
 of his field ripple from the magnet in his hand to the enemy (`drawMagnetPull`).
+
+Karl is a stocky mechanic on the person's body: brown canvas bib overalls with brass buttons over a rolled-up white
+undershirt, greasy forearms, an olive trucker cap, a grey walrus moustache and stubble, a rag in his back pocket, a big
+adjustable wrench in his right fist and a dented oil can with a long spout in his left. He stands and now and then
+shakes the can to hear what is left in it, crouches and cranks with the wrench to jack up a car (which goes up on a
+scissor jack at each end, `models/car_jack.obj`, that opens as it rises), and swings the can round to sling its oil,
+which flies from the can in an arc and lands with a splash.
 
 Mira is a tall, slender person on the same skeleton, in a long robe of deep violet scattered with gold stars: its skirt
 is bound to her hips and legs, so it follows her steps and swings out when she turns. She has wide bell sleeves, long
@@ -263,7 +270,7 @@ hero is run over, the player gets another at random.
 | Bjørn, the Shieldbearer | **Leap** (Q): high over cars and walls. **Shield bash** (W): stuns the nearest enemy and knocks it 9 away. **Iron hide** (passive): half the damage |
 | Hilda, the Crossing Guard | **Stop!** (Q): the five lanes around her stop for 3 seconds. **Wave through** (W): the lanes at the cursor drive two and a half times as fast for a moment. **Lollipop lady** (passive): her sign stays up as long as she stands by it, up to 8 seconds |
 | Mira, the Timekeeper | **Reverse** (Q): the cars of five lanes back up the road for 2 seconds. **Rewind** (W): back to where she was 3 seconds ago. **Time lock** (E): an enemy can't move or cast for 2 seconds |
-| Karl, the Mechanic | **Jack** (Q): jacks up a car for 3 seconds; anyone can walk under it. **Oil change** (W): a puddle of oil at the cursor. **Grease monkey** (passive): doesn't slide on oil |
+| Karl, the Mechanic | **Jack** (Q): jacks up a car for 3 seconds; anyone can walk under it. **Oil change** (W): slings a big splash of oil from his can at the cursor, which lies there 20 seconds; whoever walks onto it shoots off twice as fast the way it went, and can't turn until it is off. **Grease monkey** (passive): doesn't slide on oil |
 | Birgit, the Builder | **Footbridge** (Q): a bridge over three lanes for 5 seconds, safe for anyone on it, enemies too. **Trampoline** (W): bounces anyone who walks onto it 12 on, over the cars. **Overtime** (passive): what she builds stays 50% longer |
 | Bent, the Bus Driver | **Hop on** (Q): rides on the roof of a car for up to 2.5 seconds, then jumps off towards the far side. **Night bus** (W): a slow bus down the lane at the cursor; nothing gets past it, so the lane behind it is empty. **Timetable** (passive): the lanes light up before a car comes |
 | Sigrid, the Witch | **Broom** (Q): flies to the cursor over the cars, without turning. **Hex** (W): turns an enemy into a toad: slow, and it can't cast. **Nine lives** (passive): once a life, a car leaves her alive |
@@ -341,7 +348,7 @@ The road doesn't stay the same, so a crossing is never quite the one before:
 | No healing | Nothing heals a hero but a First Aid Kit, so every scrape counts for as long as the hero lives |
 | Rush hour | After 35 to 55 calm seconds, a warning, then for 9 to 13 seconds the cars of every lane come much closer after each other. Wait it out, or get across before it comes |
 | Ambulances | Every 30 to 55 seconds a siren, arrows flash down three lanes next to each other, and 2.5 seconds later three ambulances come down them, much faster than any car, with their lights flashing; the middle one a bit ahead. They are in a hurry: nothing slows them down, not a freeze, a chill aura, a stop sign or a lane driving backwards |
-| Oil | Now and then a car leaks for a moment and leaves a trail of tar on its lane, which dries up after a minute or so. A hero that walks onto it slides on the way it went, a bit faster, and can't turn until it is off the oil |
+| Oil | Now and then a car leaks for a moment and leaves a trail of tar on its lane, which dries up after a minute or so. A hero that walks onto it slides on the way it went, a bit faster (Karl's oil: twice as fast), and can't turn until it is off the oil. A blob spreads out when it lands, with drops splashed round it, a wet rim, the colors of oil drifting over it and the sky shining in it, and a hero that slides kicks up black drops |
 
 Rush hour and the ambulances are in `core/traffic_events.sd`, the oil in `core/slicks.sd`. They follow the random numbers
 of the game, so a replay has them at the same times. The bots hear the siren too (the forecast has the ambulance from

@@ -1627,30 +1627,191 @@ def make_clock_hand():
     print(f"models/clock_hand.obj  {tris} triangles")
 
 
+def make_car_jack():
+    """Karl's jack, that a car he lifts stands on at each end: a scissor jack of red steel arms in a diamond, a long screw
+    through it with a crank eye at one end, a wide base and a ridged saddle on top. It is drawn stretched up as the car
+    goes up, so it is made open, JackModelHeight (2.85) tall"""
+    m = Model("car_jack", size=512, ground_ao=True, light=0.4, ao=0.8, detail=0.05)
+    red = color((0.8, 0.12, 0.08)) + edges(0.35, 0.08, dark=True) + stains((0.2, 0.15, 0.1), 0.15, 4)
+    steel = metal((0.6, 0.62, 0.66), 0.5) + edges(0.3, 0.05)
+    H, W = 2.85, 0.75
+    m.add(beam((-0.75, 0.05, 0), (0.75, 0.05, 0), 0.12, 0.4, facing=(0, 0, 1)), color((0.25, 0.25, 0.28)) + edges(0.3, 0.1))
+    mid = H * 0.5
+    for z in (-0.18, 0.18):
+        for x in (-W, W):
+            m.add(beam((0, 0.18, z), (x, mid, z), 0.07, 0.04, facing=(0, 0, 1), e=4.0), red)
+            m.add(beam((x, mid, z), (0, H - 0.2, z), 0.07, 0.04, facing=(0, 0, 1), e=4.0), red)
+    m.add(tube([(-W - 0.35, mid, 0), (W + 0.15, mid, 0)], 0.05, nu=8), steel)
+    m.add(torus((-W - 0.45, mid, 0), 0.1, 0.035, rot=(0, 0, 90), nu=12), steel)
+    for x in (-W, W, 0):
+        y = mid if x else 0.18
+        m.add(sphere((x, y, 0.24), 0.06, nu=8, nv=6), steel)
+    m.add(beam((-0.45, H - 0.15, 0), (0.45, H - 0.15, 0), 0.12, 0.3, facing=(0, 0, 1)), red)
+    for k in range(4):
+        x = -0.3 + k * 0.2
+        m.add(beam((x, H - 0.02, -0.25), (x, H - 0.02, 0.25), 0.03, 0.025, facing=(0, 1, 0)), steel)
+    tris = m.write()
+    print(f"models/car_jack.obj  {tris} triangles")
+
+
+def karl_clips():
+    """Karl: he stands with his wrench and his oil can, shakes the can to hear how much is in it, plods along, crouches
+    and cranks to jack up a car, and swings his can round to sling its oil"""
+    from rig import clip, layered
+    from anatomy import once
+    stand = {"upper_r": (-6, 0, 8), "fore_r": (-30, 0, 0), "upper_l": (-6, 0, -8), "fore_l": (-35, 0, 0), "head": (4, 0, 0),
+             "hips": {"rot": (0, 0, 0), "pos": (0, 0, 0)}}
+    breathe = dict(stand, chest=(-3, 0, 0), head=(2, 0, 0))
+    breathe["hips"] = {"rot": (0, 0, 0), "pos": (0, 0.02, 0)}
+    shake0 = {"upper_r": (-6, 0, 8), "fore_r": (-30, 0, 0), "upper_l": (-30, 0, -20), "fore_l": (-95, 0, 0), "hand_l": (0, 0, 15), "head": (8, 0, -12),
+              "chest": (0, 10, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0, 0)}}
+    shake1 = dict(shake0, hand_l=(0, 0, -15), fore_l=(-100, 0, 0))
+
+    def walk(s):
+        return {"thigh_r": (-24 * s, 0, 0), "thigh_l": (22 * s, 0, 0), "shin_r": (8 if s > 0 else 34, 0, 0), "shin_l": (34 if s > 0 else 8, 0, 0),
+                "upper_r": (18 * s, 0, 8), "upper_l": (-18 * s, 0, -8), "fore_r": (-30, 0, 0), "fore_l": (-35, 0, 0),
+                "spine": (6, 6 * s, 0), "chest": (2, 5 * s, 0), "hips": {"rot": (0, -6 * s, 4 * s), "pos": (0, -0.05, 0)}, "head": (-4, -6 * s, 0)}
+
+    def passing(s):
+        return {"thigh_r": (-4 if s > 0 else 0, 0, 0), "thigh_l": (0 if s > 0 else -4, 0, 0), "shin_r": (12 if s > 0 else 40, 0, 0),
+                "shin_l": (40 if s > 0 else 12, 0, 0), "upper_r": (0, 0, 8), "upper_l": (0, 0, -8), "fore_r": (-30, 0, 0), "fore_l": (-35, 0, 0),
+                "spine": (6, 0, 0), "chest": (2, 0, 0), "hips": {"rot": (0, 0, 0), "pos": (0, 0.05, 0)}, "head": (-4, 0, 0)}
+    # The jack: down on his haunches, the wrench at the crank, round and round
+    squat = {"thigh_r": (-70, 0, 12), "thigh_l": (-60, 0, -12), "shin_r": (90, 0, 0), "shin_l": (80, 0, 0), "spine": (30, 0, 0), "chest": (10, 0, 0),
+             "head": (-25, 0, 0), "upper_l": (-40, 0, -25), "fore_l": (-60, 0, 0), "hips": {"rot": (10, 0, 0), "pos": (0, -0.6, 0.05)}}
+
+    def crank(a):
+        pose = dict(squat)
+        pose["upper_r"] = (-55 + 25 * math.sin(a), 0, 10 + 15 * math.cos(a))
+        pose["fore_r"] = (-40 + 25 * math.cos(a), 0, 0)
+        pose["hand_r"] = (0, 0, 30 * math.sin(a))
+        return pose
+    # The oil: the can back low, then swung round and up, tipped, the oil flying out of it
+    back = {"upper_l": (50, 0, -18), "fore_l": (-25, 0, 0), "hand_l": (-30, 0, 0), "upper_r": (-20, 0, 12), "fore_r": (-40, 0, 0), "chest": (4, -26, 0),
+            "spine": (4, -10, 0), "head": (-4, 14, 0), "thigh_r": (-14, 0, 0), "shin_r": (16, 0, 0), "hips": {"rot": (0, -12, 0), "pos": (0, -0.1, 0)}}
+    sling = {"upper_l": (-120, 0, -12), "fore_l": (-10, 0, 0), "hand_l": (60, 0, 0), "upper_r": (10, 0, 14), "fore_r": (-35, 0, 0), "chest": (-6, 22, 0),
+             "spine": (-2, 8, 0), "head": (-8, -10, 0), "thigh_l": (-30, 0, 0), "shin_l": (22, 0, 0), "thigh_r": (14, 0, 0), "hips": {"rot": (0, 10, 0), "pos": (0, -0.04, 0.14)}}
+    body = {
+        "idle": clip(3.4, (0.0, stand), (0.9, breathe), (1.6, stand), (1.9, shake0), (2.05, shake1), (2.2, shake0), (2.35, shake1), (2.5, shake0), (2.9, stand)),
+        "walk": clip(1.0, (0.0, walk(1)), (0.25, passing(1)), (0.5, walk(-1)), (0.75, passing(-1))),
+        "jack": once(1.0, (0.0, stand), (0.15, crank(0)), (0.3, crank(2.1)), (0.45, crank(4.2)), (0.6, crank(6.3)), (0.75, crank(8.4)), (1.0, stand)),
+        "oil_change": once(0.8, (0.0, stand), (0.15, back), (0.32, sling), (0.55, sling), (0.8, stand)),
+    }
+    calm, blink = face_pose(jaw=1, brow=6, lid=24), face_pose(jaw=1, brow=6, lid=88)
+    listen = face_pose(jaw=4, brow=-4, lid=30, lift=0.01)
+    effort, grunt = face_pose(jaw=3, brow=20, lid=40, drop=0.01), face_pose(jaw=10, brow=22, lid=36)
+    grin = face_pose(jaw=12, brow=-6, lid=18, lift=0.01)
+    face = {
+        "idle": clip(3.4, (0.0, calm), (1.1, calm), (1.15, blink), (1.22, calm), (1.9, listen), (2.6, listen), (2.9, calm)),
+        "walk": clip(1.0, (0.0, face_pose(jaw=2, brow=8, lid=26)), (0.5, face_pose(jaw=3, brow=8, lid=26))),
+        "jack": once(1.0, (0.0, calm), (0.15, effort), (0.4, grunt), (0.6, effort), (0.8, grunt), (1.0, calm)),
+        "oil_change": once(0.8, (0.0, calm), (0.15, effort), (0.32, grin), (0.6, grin), (0.8, calm)),
+    }
+    clips_ = {name: layered(body[name], face[name]) for name in body}
+    for name in body:
+        still = clip(body[name]["duration"], (0.0, stand))
+        still["once"] = body[name].get("once", False)
+        clips_[name + "_face"] = layered(still, face[name])
+    return clips_
+
+
 def make_karl():
-    """A mechanic: stocky, in oil-stained blue overalls with straps, pockets and a rag, a red cap, a thick moustache, a
-    tired squint, and a big wrench"""
-    m = hero_model("karl")
-    overalls = cloth((0.2, 0.34, 0.58)) + stains((0.08, 0.07, 0.07), 0.16, 2.5) + stitches((0.75, 0.6, 0.3), [0.15, 0.5]) + \
-        rect((0.16, 0.28, 0.48), 0.42, 0.58, 0.55, 0.75)
-    b = person(m, STOCKY, overalls, overalls, arms=cloth((0.82, 0.8, 0.76)) + stains((0.1, 0.1, 0.1), 0.2, 3) + bands((0.82, 0.8, 0.76), [(0.0, 0.1)]),
-               hands=skin(SKIN) + stains((0.08, 0.07, 0.07), 0.3, 5), eyes_kw=dict(iris=(0.4, 0.3, 0.2), lid=0.55, size=0.065),
-               mouth_kw=dict(kind="line"), brows_kw=dict(c=(0.3, 0.2, 0.12), tilt=0.2, thick=0.9), nose="big", arm_pose=("down", "akimbo"),
-               jaw_paint=skin(SKIN) + mouth("line") + stubble((0.3, 0.22, 0.15), 0.5))
-    cap(m, b, color((0.78, 0.15, 0.13)) + stains((0.1, 0.08, 0.08), 0.12, 4))
-    beard(m, b, hair((0.3, 0.2, 0.12)), length=0.0)
+    """Karl the Mechanic: stocky, in brown canvas bib overalls with straps, brass buttons and oil stains over a white
+    undershirt rolled up at the arms, greasy forearms and hands, heavy work boots, an olive trucker cap, a thick grey
+    walrus moustache and stubble, a big nose and a tired squint, a red rag hanging from his back pocket, a big adjustable
+    wrench in his right fist and a dented oil can with a long spout in his left. Rigged like the Butcher, with clips for
+    standing, walking, cranking up a car on his jack and slinging oil from his can, written as models/karl.glb too"""
+    from anatomy import human_joints, human_body, make_rig, grip_point, skin_paint, L
+    from rig import write_glb
+    m = Model("karl", size=1024, light=0.5, ao=1.3, detail=0.07)
+    J = human_joints(hips=(0, 1.75, 0), spine=(0, 2.22, 0.06), chest=(0, 2.8, 0.08), neck=(0, 3.25, 0.08), head=(0, 3.45, 0.12),
+                     shoulder_r=(0.74, 3.08, 0.0), elbow_r=(0.96, 2.4, -0.04), wrist_r=(1.04, 1.78, 0.12), hand_end_r=(1.07, 1.5, 0.2),
+                     hip_r=(0.34, 1.72, 0.0), knee_r=(0.38, 0.98, 0.08), ankle_r=(0.42, 0.3, -0.02), toe_r=(0.44, 0.08, 0.54))
+    m.rig = make_rig(J)
+    sk = (0.9, 0.68, 0.54)
+    grease = (0.08, 0.07, 0.06)
+    skin_p = skin_paint(sk)
+    blue = (0.55, 0.38, 0.2)        # Brown canvas
+    white = (0.86, 0.84, 0.8)
+    c_y = J["chest"][1]
+
+    def overalls_top(ctx):
+        # The bib over his chest and the straps over his shoulders are the overalls; the rest of his top is the undershirt
+        y, x, z = ctx.p[..., 0] * 0 + ctx.p[..., 1], ctx.p[..., 0], ctx.p[..., 2]
+        shirt = rgb(white) * (0.94 + 0.08 * fbm(ctx.p, 4, 2, 3))[..., None]
+        denim = rgb(blue) * (0.9 + 0.15 * fbm(ctx.p * np.array([1, 4, 1]), 6, 2, 8))[..., None]
+        below = smoothstep(J["spine"][1] + 0.12, J["spine"][1] + 0.08, y)
+        bib = smoothstep(0.34, 0.3, np.abs(x)) * smoothstep(c_y + 0.25, c_y + 0.2, y) * (z > 0)
+        strap = smoothstep(0.07, 0.05, np.abs(np.abs(x) - 0.3 + 0.08 * np.clip((y - c_y) / 0.5, 0, 1) * np.sign(z)))
+        cover = np.clip(np.maximum(np.maximum(below, bib), strap), 0, 1)
+        out = shirt * (1 - cover)[..., None] + denim * cover[..., None]
+        stains_ = smoothstep(0.7, 0.76, fbm(ctx.p, 3.5, 3, 41)) * 0.55
+        return out * (1 - stains_)[..., None] + np.array(grease) * stains_[..., None]
+    trousers = cloth(blue, folds=4) + stains(grease, 0.2, 2.5) + stitches((0.8, 0.62, 0.3), [0.2, 0.8], axis="u")
+    boots = leather((0.3, 0.2, 0.13)) + edges(0.25, 0.06, dark=True) + stains(grease, 0.2, 4)
+    hands = skin_paint(sk) + stains(grease, 0.35, 5)
+    pads = cloth((0.45, 0.3, 0.16), folds=2) + stitches((0.8, 0.62, 0.3), [0.1, 0.9], axis="u")
+    human_body(m, J, Paint(overalls_top), cloth(white, folds=3) + stains(grease, 0.12, 3), skin_p + stains(grease, 0.25, 4), trousers, hands, boots,
+               chest=1.12, hips=1.12, bust=0.0, arm=1.12, leg=1.1, cuff_p=cloth(white, folds=2), knee_p=pads)
+    h, c = J["hips"], J["chest"]
+    # Brass buttons on the bib, a pocket with a pencil, a belly over the belt
+    for x in (0.27, -0.27):
+        m.add(sphere(c + [x, 0.22, 0.38], 0.05, nu=8, nv=6), metal((0.85, 0.66, 0.25), 0.6), bones="chest")
+    m.add(blob(c + [0.0, 0.0, 0.42], (0.16, 0.12, 0.03), (0.4, 0.4)), cloth((0.45, 0.3, 0.16), folds=2) + edges(0.3, 0.1, dark=True), bones="chest")
+    m.add(tube([c + [0.06, 0.02, 0.44], c + [0.08, 0.2, 0.44]], 0.018), color((0.95, 0.75, 0.15)), bones="chest")
+    m.add(blob(J["spine"] + [0, -0.05, 0.14], (0.36, 0.28, 0.2), (0.85, 0.85)), trousers, bones=["spine", "hips"])
+    # A red rag hanging out of his back pocket
+    m.add(loft([h + [0.25, -0.15, -0.36], h + [0.3, -0.45, -0.4], h + [0.27, -0.7, -0.36]], [(0.1, 0.02, 3), (0.12, 0.02, 3), (0.09, 0.02, 3)],
+               facing=(0, 0, 1), nu=10, nv=10, caps="flat"), cloth((0.8, 0.18, 0.12), folds=3) + stains(grease, 0.3, 5), bones="hips")
+    # The head: tired eyes, a big nose, stubble
+    hd = J["head"] + np.array([0, 0.3, 0.1])
+    S = 1.05
+    P = human_face(m, hd, sk, m.rig, S=S, iris=(0.42, 0.3, 0.2), brow_c=(0.45, 0.42, 0.4), lips=(0.75, 0.5, 0.44), freckles=0.0, nose="button")
+    m.add(blob(P(0, -0.06, 0.39), (0.08 * S, 0.075 * S, 0.075 * S), (0.85, 0.85)), skin_paint((0.92, 0.62, 0.52)), bones="head", weight=4)
+    grey = (0.55, 0.52, 0.5)
+    m.mirror(m.add(loft([P(0.05, 0.13, 0.37), P(0.15, 0.15, 0.36), P(0.24, 0.12, 0.31)], [(0.025 * S, 0.03 * S, 2.2), (0.03 * S, 0.035 * S, 2.2), (0.02 * S, 0.02 * S, 2.2)],
+                        facing=(0, 0.3, 1), nu=10, nv=10), hair(grey), bones="brow_r"))
+    # The walrus moustache, drooping over his mouth
+    tash = hair(grey) + stripes((0.4, 0.38, 0.36), 10, 0.2, axis="u")
+    m.add(loft([P(-0.17, -0.2, 0.3), P(-0.09, -0.13, 0.38), P(0, -0.12, 0.41), P(0.09, -0.13, 0.38), P(0.17, -0.2, 0.3)],
+               [(0.03 * S, 0.035 * S, 2.2), (0.06 * S, 0.05 * S, 2.2), (0.065 * S, 0.055 * S, 2.2), (0.06 * S, 0.05 * S, 2.2), (0.03 * S, 0.035 * S, 2.2)],
+               facing=(0, 0, 1), nu=12, nv=20), tash, bones="head", weight=3)
+    stubble_p = skin_paint(sk) + stubble((0.35, 0.32, 0.3), 0.6, 0.62)
+    m.add(blob(P(0, -0.27, 0.16), (0.2 * S, 0.11 * S, 0.2 * S), (0.75, 0.75)), skin_paint(sk) + (lambda ctx, base: _over(base, (0.42, 0.38, 0.36),
+          smoothstep(0.5, 0.58, fbm(ctx.p, 160, 1, 5)) * 0.45)), bones="jaw", weight=4)
+    # Grey hair at the sides, under the cap, and the cap: red, with a bill
+    m.add(ellipsoid(P(0, 0.02, -0.06), (0.4 * S, 0.36 * S, 0.4 * S), vrange=(0.35, 0.7), nu=20, nv=8), hair(grey), bones="head", weight=2)
+    cap_p = color((0.36, 0.42, 0.22)) + stains(grease, 0.12, 4) + edges(0.2, 0.08, dark=True)
+    front = cap_p + (lambda ctx, base: _over(base, (0.9, 0.88, 0.82), smoothstep(0.1, 0.2, ctx.n[..., 2]) * smoothstep(0.55, 0.45, np.abs(ctx.n[..., 0]))))
+    m.add(ellipsoid(P(0, 0.16, -0.02), (0.42 * S, 0.33 * S, 0.43 * S), vrange=(0.5, 1.0), nu=24, nv=10), front, bones="head", weight=2)
+    m.add(loft([P(0, 0.17, 0.25), P(0, 0.15, 0.62)], [dict(w=0.32 * S, d=0.03, e=2.4), dict(w=0.26 * S, d=0.03, e=2.4)], facing=(0, 1, 0), nu=16, caps="flat"),
+          cap_p, bones="head")
+    m.add(sphere(P(0, 0.49, 0.0), 0.04 * S, nu=8, nv=6), cap_p, bones="head")
+    # The wrench in his right fist: a long handle, an open jaw with a thumb screw
+    g = grip_point(J)
+    along = np.array([0.0, -0.3, 1.0])
+    along /= np.linalg.norm(along)
+    steel = metal((0.7, 0.72, 0.76), 0.55) + edges(0.35, 0.06) + stains(grease, 0.12, 4)
+    end = g + along * 0.9
+    m.add(loft([g - along * 0.2, end], [(0.06, 0.035, 4.0), (0.07, 0.04, 4.0)], facing=(1, 0, 0), nu=12, caps="round"), steel, bones="hand_r")
+    up = np.array([0.0, 1.0, 0.3])
+    up /= np.linalg.norm(up)
+    m.add(loft([end - up * 0.2, end + up * 0.08], [(0.13, 0.06, 4.0), (0.13, 0.06, 4.0)], facing=(1, 0, 0), nu=12, caps="flat"), steel, bones="hand_r")
     for side in (1, -1):
-        m.add(tube([(side * 0.42, b.waist_y + 0.3, 0.5), (side * 0.42, b.chest_y + 0.2, 0.5), (side * 0.38, b.sh_y + 0.1, -0.1)], 0.08, flat=0.4),
-              cloth((0.16, 0.28, 0.5)))
-        m.add(sphere((side * 0.42, b.chest_y + 0.15, 0.56), 0.06), metal((0.8, 0.8, 0.82)))
-    belt(m, b, leather((0.25, 0.16, 0.1)))
-    m.add(tube([(0.5, b.waist_y - 0.15, 0.55), (0.6, b.waist_y - 0.55, 0.58), (0.55, b.waist_y - 0.8, 0.5)], 0.08, flat=0.3), cloth((0.85, 0.3, 0.2)) + stains((0.1, 0.1, 0.1), 0.3, 6))
-    hx, hy, hz = b.right
-    steel = metal((0.72, 0.74, 0.78), 0.5)
-    m.add(tube([(hx, hy + 0.1, hz), (hx, hy - 1.05, hz + 0.1)], 0.09), steel)
-    m.add(lathe([(0, 0.0), (0, 0.3), (0.15, 0.3), (0.15, 0.0)], (hx, hy - 1.2, hz + 0.1), rot=(90, 0, 0), smooth=False, nu=8), steel)
-    m.add(lathe([(0, 0.0), (0, 0.22), (0.12, 0.22), (0.12, 0.0)], (hx, hy + 0.15, hz), rot=(90, 0, 0), smooth=False, nu=8), steel)
+        m.add(loft([end + along * 0.05 + up * side * 0.12, end + along * 0.25 + up * side * 0.14], [(0.05, 0.05, 4.0), (0.04, 0.045, 4.0)], facing=(1, 0, 0), nu=10,
+                   caps="flat"), steel, bones="hand_r")
+    m.add(cylinder(end - up * 0.12 + along * 0.02, 0.05, 0.12, rot=(90, 0, 0)), metal((0.85, 0.7, 0.3), 0.5), bones="hand_r")
+    # The oil can in his left fist: dented, green, a handle, a long spout
+    gl = L(g)
+    can_p = color((0.2, 0.42, 0.2)) + edges(0.3, 0.08, dark=True) + stains(grease, 0.25, 4) + bands((0.85, 0.75, 0.2), [(0.45, 0.55)])
+    base = gl + np.array([0, -0.38, 0.12])
+    m.add(lathe([(0.0, 0.0), (0.0, 0.26), (0.32, 0.26), (0.42, 0.18), (0.48, 0.06), (0.5, 0.0)], base, smooth=False, nu=20), can_p, bones="hand_l")
+    m.add(tube([base + [0, 0.5, 0], base + [0.0, 0.62, 0.3], base + [0.0, 0.75, 0.75]], [0.06, 0.04, 0.025], nu=8), metal((0.6, 0.6, 0.62), 0.5), bones="hand_l")
+    m.add(tube([base + [0.0, 0.42, -0.2], gl + [0, 0.05, -0.02], base + [0.0, 0.42, 0.2]], 0.03, nu=8, caps=False), metal((0.4, 0.4, 0.42), 0.4), bones="hand_l")
+    m.clips = karl_clips()
     finish(m, "karl")
+    print(write_glb(m, fps=30))
+    return m
 
 
 def human_face(m, hd, sk, rig_, S=1.0, iris=(0.3, 0.52, 0.32), brow_c=(0.55, 0.3, 0.12), lips=(0.72, 0.42, 0.38),

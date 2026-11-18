@@ -99,6 +99,14 @@ OilDrips :: ParticleStyle{
     colors: [Color{12, 10, 8, 255}, Color{12, 10, 8, 255}, Color{12, 10, 8, 200}], fadeIn: 0,
 };
 
+// A splash of oil: thick black drops thrown up and out, that leave glossy spots where they land
+OilSplash :: ParticleStyle{
+    texture: .drop, lifetime: {0.4, 0.9}, speed: {3, 9}, direction: {0, 1, 0}, spread: 0.6, outward: false,
+    gravity: 24, drag: 0.3, size: {0.16, 0.38}, stretch: 0.04,
+    colors: [Color{30, 27, 24, 255}, Color{16, 14, 12, 255}, Color{12, 10, 8, 230}], fadeIn: 0,
+    ground: .stain, stainSize: {0.25, 0.7}, stainColor: {14, 12, 10, 225},
+};
+
 // A shove: a puff where the two heroes meet
 ShovePuff :: ParticleStyle{
     texture: .smoke, lifetime: {0.3, 0.6}, shape: .sphere, radius: 0.4, speed: {2, 5}, outward: true,
@@ -127,6 +135,7 @@ Fx :: enum {
     heal,
     wisps,
     oil,
+    oilSplash,
     shove,
     glow,
     flash,
@@ -153,6 +162,7 @@ styleOf :: (fx: Fx) -> *ParticleStyle {
         fxStyles[Fx.heal]     = Heal;
         fxStyles[Fx.wisps]    = Wisps;
         fxStyles[Fx.oil]      = OilDrips;
+        fxStyles[Fx.oilSplash] = OilSplash;
         fxStyles[Fx.shove]    = ShovePuff;
         fxStyles[Fx.glow]     = ItemGlow;
         fxStyles[Fx.flash]    = CameraFlash;

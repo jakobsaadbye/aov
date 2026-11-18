@@ -1059,6 +1059,27 @@ testHazards :: () {
     assert(forecast2.safeFor(Vector2{-30, 0}, 0) == 0);
     assert(forecast2.safeFor(Vector2{-30, 20}, 0) > 0);
 
+    // Karl slings a big splash of oil: it flies first, lands, and sends whoever walks onto it off twice as fast
+    clearRoad(game);
+    game.slicks.list.clear();
+    game.spawnHero(game.local, .karl);
+    you.hero.position = Vector3{-40, 0, 20};
+    game.cast(game.local, 1, {-30, 20});
+    assert(game.slicks.list.count == 1 && !game.slicks.list[0].hasLanded() && !game.slickAt({-30, 20}));
+    for 0..40 { game.simulate(Dt); }
+    assert(game.slicks.list[0].hasLanded() && game.slickAt({-30, 20}) && game.slickAt({-30 + 4.2, 20}));
+    game.spawnHero(game.local, .allan);
+    you.hero.position = Vector3{-30 - 6, 0, 20};
+    you.hero.moveTo(Vector3{-30 + 20, 0, 20});
+    walked := you.hero.speed();
+    for 0..30 { game.simulate(Dt); }
+    assert(you.hero.slideLeft > 0 && you.hero.slideVelocity.length() > walked * 1.9);
+    you.hero.moveTo(Vector3{-30, 0, 50});            // and no turning
+    z2 := you.hero.position.z;
+    for 0..10 { game.simulate(Dt); }
+    assert(near(you.hero.position.z, z2, 0.01));
+    game.slicks.list.clear();
+
     // A car that leaks leaves blobs of oil behind it, on its lane
     clearRoad(game);
     game.traffic.cars[0] = core.Car{isActive: true, kind: .car, lane: 6, z: -40, speed: 15};
