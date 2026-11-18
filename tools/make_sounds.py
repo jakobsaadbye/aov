@@ -15,7 +15,7 @@ cellos, horns, a choir, a harp and war drums.
 
 They are plain files: any .wav, .ogg or .mp3 dropped into data/sounds/<group>/ can be played by its name, without
 changing the game. The sounds of the spells, the items and the heroes, and the voices, are made with ElevenLabs by
-tools/make_audio.py instead, as .ogg files, which this leaves alone.
+tools/make_audio.sd instead, as .ogg files, which this leaves alone.
 """
 
 import os
@@ -242,10 +242,10 @@ def normalize(x, level=0.9):
 
 
 def save_sound(group, name, x, level=0.85, room=1.0, wet=0.22, damp=5000):
-    """Saves a mono sound, put in a room of `room` seconds of reverb, as a stereo wav. Not when tools/make_audio.py has
+    """Saves a mono sound, put in a room of `room` seconds of reverb, as a stereo wav. Not when tools/make_audio.sd has
     made the sound with ElevenLabs (an .ogg by the same name), which the game would then play as two variants of it"""
     if os.path.exists(os.path.join(DATA, "sounds", group, name + ".ogg")):
-        print(f"sounds/{group}/{name}: made by make_audio.py, kept")
+        print(f"sounds/{group}/{name}: made by make_audio.sd, kept")
         return
     x = highpass(x, 25)
     if room > 0:

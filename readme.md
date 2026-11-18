@@ -106,8 +106,8 @@ fades down to a murmur. M turns the music off and on.
 ### Made with ElevenLabs
 
 The sounds of the spells, the items and the heroes, and the voices, are made with [ElevenLabs](https://elevenlabs.io) by
-`tools/make_audio.py`: its sound effects API for the sounds, and text to speech for the voices. All of it is written in
-that file:
+`tools/make_audio.sd`, a tool in Saad (with `net.http`, `json` and `crypto` of its standard library, and ffmpeg): the
+sound effects API for the sounds, and text to speech for the voices. All of it is written in that file:
 
 * **Families.** Each spell belongs to a family (stealth, arcane, mind, time, ice, storm, traffic, motion, force, magnet,
   craft, care, tourist), whose words come into each of its prompts, so spells of a kind sound like each other: smoke and
@@ -118,13 +118,17 @@ that file:
   4 seconds, only a third of the times it casts, and the hero the camera follows is heard at full volume.
 
 Each file is trimmed, made as loud as the others (-16 LUFS), and written as an .ogg; a file that is there and was made
-from the same prompt isn't made again (`data/sounds/.elevenlabs.json`). It needs an API key in `ELEVENLABS_API_KEY`:
+from the same prompt isn't made again (`data/sounds/.elevenlabs.json`). It needs an API key in `ELEVENLABS_API_KEY`, and
+goes through the proxy of `https_proxy` when there is one. Run it from the folder of the repository:
 
 ```
-python3 tools/make_audio.py              what isn't there yet, or has changed
-python3 tools/make_audio.py --list       the prompts and the lines
-python3 tools/make_audio.py ability.hex voice.hugo_cast_1
+saad run tools/make_audio.sd                          what isn't there yet, or has changed
+saad run tools/make_audio.sd -- --list                the prompts and the lines
+saad run tools/make_audio.sd -- ability.hex voice.hugo_cast_1
 ```
+
+On Linux, build it with `saad build tools/make_audio.sd --elf` and link `tools/build/out.o` with `tools/linux/link.sh` of
+the Saad repository, which links OpenSSL for https.
 
 The music (`theme`) is a loop of a minute for a small orchestra in D minor: strings, cellos, horns, a choir, a harp and
 war drums. `tools/make_sounds.py` synthesizes all of it in layers (a low body, a sharp front and a tail of reverb), from

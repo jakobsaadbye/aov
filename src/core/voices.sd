@@ -1,7 +1,7 @@
 namespace core;
 
 // The voices of the heroes: a few lines each, for when it comes onto the field, casts, gets across, is run over, and
-// gets an enemy run over. They are sounds like the others, in data/sounds/voice/ (tools/make_audio.py): "voice.hugo_cast"
+// gets an enemy run over. They are sounds like the others, in data/sounds/voice/ (tools/make_audio.sd): "voice.hugo_cast"
 // is one of hugo_cast_1.ogg, hugo_cast_2.ogg, ... at random.
 //
 // So that the heroes don't talk over each other all the time, a hero says a line at most every few seconds, and only

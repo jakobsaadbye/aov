@@ -1,0 +1,659 @@
+// Makes the sounds of the spells, the items and the heroes, and the voices of the heroes, with ElevenLabs: the sound
+// effects API for the sounds, text to speech for the voices. Each is written as an .ogg to data/sounds/, where the game
+// plays it by its name (core/sound.sd), and the .wav of make_sounds.py that it replaces is removed.
+//
+//     make_audio                          what isn't there yet, or has changed
+//     make_audio --force                  all of it again
+//     make_audio sfx                      only the sounds (or: voices)
+//     make_audio ability.hex voice.hugo_cast_1        only these
+//     make_audio --list                   what it would make, with the prompts and the lines
+//     make_audio --adopt                  takes the files that are there as made from the prompts of now, without making
+//                                         anything, e.g after the prompts were made by another version of this
+//
+// Built like the game: saad run tools/make_audio.sd on Windows; on Linux, saad build tools/make_audio.sd --elf and the
+// link.sh of the Saad repository (it uses https, so OpenSSL). It needs an ElevenLabs API key in ELEVENLABS_API_KEY,
+// unless a proxy adds it (as in a Claude Code cloud session; net.http goes through the proxy of https_proxy), and ffmpeg.
+//
+// How it sounds is all in this file: every spell belongs to a family, whose words come into each of its prompts, so
+// spells of a kind sound like each other (smoke and shadows hiss and breathe, ice crackles, time ticks and runs
+// backwards), and every hero has a voice, with its lines for when it comes onto the field, casts, gets across, is run
+// over, and gets an enemy run over. The sounds are trimmed and made as loud as each other, and the voices are pitched and
+// put in a room for their hero, e.g a deeper ogre or a ghost in an echo.
+
+import net.http;
+import crypto;
+import json;
+import fmt;
+import os;
+import time;
+import math;
+
+Api       :: "https://api.elevenlabs.io/v1";
+Model     :: "eleven_multilingual_v2";
+Sounds    :: "data/sounds";                 // From the folder of the repository, where it is run
+CacheFile :: "data/sounds/.elevenlabs.json"; // What each file was made from, so one whose prompt changed is made again
+
+//
+// Sound effects
+//
+
+// The feel of a kind of spell, which comes into every prompt of the kind
+Family :: struct {
+    name:  string;
+    words: string;
+}
+
+Families :: [
+    Family{"stealth", "soft breathy whoosh of dark smoke and shadow, hissing vapor, muffled and mysterious"},
+    Family{"arcane", "witchy magic, sparkling arcane shimmer, fairy-tale fantasy"},
+    Family{"mind", "dreamy hypnotic shimmer, warbling chimes, slow and eerie"},
+    Family{"time", "clockwork ticking and a reversed swoosh, time bending, magical"},
+    Family{"ice", "crisp crackling ice and frost, glassy crystal tinkles, cold wind"},
+    Family{"storm", "electric crackle and rumbling thunder, wind"},
+    Family{"traffic", "street sounds, car horns, tyres and brakes"},
+    Family{"motion", "fast athletic movement, whoosh of air"},
+    Family{"force", "heavy physical impact, punchy and weighty"},
+    Family{"magnet", "deep magnetic hum and metallic resonance"},
+    Family{"craft", "workshop and tools, wood and metal"},
+    Family{"care", "gentle and soothing"},
+    Family{"tourist", "a cheerful tourist with a camera and a phone"},
+    Family{"item", "a cartoony game item, short and clear"},
+    Family{"game", "a fantasy game interface sound, short and polished"},
+];
+
+// A sound: its name in the game, its family, what it is, and how long
+Effect :: struct {
+    name:    string;
+    family:  string;
+    what:    string;
+    seconds: f32;
+}
+
+Effects :: [
+    Effect{"ability.sprint", "motion", "quick burst of running footsteps on asphalt speeding up with a rushing whoosh", 1.0},
+    Effect{"ability.hop_on", "motion", "a man jumps onto the metal roof of a moving car, a thud on sheet metal and wind rushing past", 1.2},
+    Effect{"ability.night_bus", "traffic", "a big old city bus honks a deep two-tone horn and its diesel engine roars away", 2.0},
+    Effect{"ability.footbridge", "craft", "quick hammering, wooden planks slapping into place and a creaking bridge going up", 1.6},
+    Effect{"ability.trampoline", "craft", "metal springs stretching and a bouncy trampoline boing", 1.0},
+    Effect{"ability.leap", "motion", "a heavy warrior launches into a mighty leap, armor rattling, big whoosh upwards", 1.0},
+    Effect{"ability.land", "force", "a heavy armored warrior lands hard on the ground, deep thud and rattle", 0.8},
+    Effect{"ability.shield_bash", "force", "a big wooden round shield slams into someone, deep thump with metal rim clang", 0.8},
+    Effect{"ability.hook", "force", "a heavy iron meat hook flung on a rattling chain, whirring through the air", 1.2},
+    Effect{"ability.hook_hit", "force", "a heavy iron hook bites into a car door, metal clank and crunch, chain snapping taut", 0.8},
+    Effect{"ability.heave", "force", "a huge brute grunts and heaves a car, metal groaning, then it crashes down", 1.5},
+    Effect{"ability.call_ambulance", "traffic", "a crackling radio call and an ambulance siren starting up in the distance", 2.0},
+    Effect{"ability.bandage", "care", "a bandage unrolling and wrapping with soft fabric rustle, and a warm healing chime", 1.4},
+    Effect{"ability.freeze", "ice", "a sudden snap of freezing, ice spreading fast over metal with a crackle", 1.4},
+    Effect{"ability.igloo", "ice", "snow blocks packed and stacked quickly, crunching snow, a dome closing", 1.5},
+    Effect{"ability.possess", "stealth", "a ghostly wail sweeping into a car, eerie spectral whoosh with a metallic shudder", 1.5},
+    Effect{"ability.grannys_crossing", "traffic", "a pedestrian crossing signal beeping and cars braking to a polite stop", 1.6},
+    Effect{"ability.yarn_leash", "craft", "knitting needles clicking and a ball of yarn whipping through the air", 1.2},
+    Effect{"ability.cane", "force", "a wooden walking cane hooks someone's ankle with a crack, and a body falls over", 0.9},
+    Effect{"ability.stop_sign", "traffic", "a sharp crossing guard whistle and cars screeching to a stop", 1.4},
+    Effect{"ability.wave_through", "traffic", "a short whistle and cars accelerating hard away with revving engines", 1.6},
+    Effect{"ability.trance_walk", "mind", "a hypnotic drone swelling into a smoky dreamlike haze", 1.8},
+    Effect{"ability.sleep", "mind", "a drowsy lullaby chime and a long sleepy sigh", 1.5},
+    Effect{"ability.berserk", "force", "a furious berserker battle roar with a pounding heartbeat", 1.6},
+    Effect{"ability.axe_throw", "force", "a heavy throwing axe spinning through the air, whum whum whum", 1.0},
+    Effect{"ability.axe_hit", "force", "an axe striking and knocking someone, a dull thunk", 0.6},
+    Effect{"ability.jack", "craft", "a car jack ratcheting quickly, click click click, and a car being lifted with a metal groan", 1.4},
+    Effect{"ability.oil_change", "craft", "thick motor oil glugging out of a can and splashing on asphalt", 1.2},
+    Effect{"ability.substitution", "stealth", "a puff of smoke bursting, and a wooden log thudding where a ninja stood", 1.0},
+    Effect{"ability.shadow_step", "stealth", "a ninja vanishes into a shadow with a swift dark swish", 0.8},
+    Effect{"ability.ollie", "motion", "a skateboard ollie: tail pop, wheels in the air, and landing on the board", 1.0},
+    Effect{"ability.grind", "motion", "a skateboard grinding along a metal rail at speed, scraping", 1.2},
+    Effect{"ability.repel", "magnet", "a powerful magnetic pulse pushing outwards, a deep whoom and metal rattling away", 1.4},
+    Effect{"ability.attract", "magnet", "a rising magnetic hum pulling something in fast, ending in a metal clank", 1.2},
+    Effect{"ability.reverse", "time", "cars rewinding backwards, a tape rewinding whoosh and engines running in reverse", 1.6},
+    Effect{"ability.rewind", "time", "a reversed whoosh sucking backwards and a clock ticking back", 1.2},
+    Effect{"ability.time_lock", "time", "a clock freezing with a deep clang and the ticking stopping", 1.2},
+    Effect{"ability.broom", "arcane", "a witch takes off on a broomstick, whooshing flight with a cackle", 1.4},
+    Effect{"ability.hex", "arcane", "a magical hex, a puff of green magic and a frog croaking", 1.2},
+    Effect{"ability.lightning_rod", "storm", "a metal rod hammered into the ground and starting to hum with electricity", 1.4},
+    Effect{"ability.lightning", "storm", "a lightning bolt striking down with a sharp crack and a thunder rumble", 1.2},
+    Effect{"ability.gust", "storm", "a powerful gust of wind blasting past", 1.2},
+    Effect{"ability.flash_photo", "tourist", "a big camera flash charging up with a whine and popping bright, shutter click", 1.0},
+    Effect{"ability.selfie", "tourist", "a phone camera shutter click and a quick magical swap whoosh", 1.0},
+    Effect{"ability.split", "motion", "two pairs of small feet running apart, a playful whoosh", 1.0},
+    Effect{"ability.swap", "arcane", "a quick sparkly zip of two people swapping places", 0.7},
+    Effect{"ability.blink", "arcane", "a quick bright teleport zap", 0.6},
+    Effect{"ability.fade", "stealth", "a ghostly fade away, airy whisper and shimmer", 1.0},
+    Effect{"item.banana_peel", "item", "a banana peel dropped with a squish", 0.6},
+    Effect{"item.banana", "item", "someone slipping on a banana peel, squeak and a tumble", 0.9},
+    Effect{"item.energy_drink", "item", "a soda can cracked open with a fizz and gulped down", 1.2},
+    Effect{"item.traffic_cone", "item", "a plastic traffic cone plonked down on asphalt", 0.6},
+    Effect{"item.megaphone", "item", "a megaphone squealing with feedback and a loud blast", 1.0},
+    Effect{"item.rubber_chicken", "item", "a rubber chicken squeaking loudly", 0.8},
+    Effect{"item.balloon", "item", "a balloon inflated quickly with a squeaky rubber stretch", 1.0},
+    Effect{"item.lucky_dice", "item", "dice rattling in a hand and rolling across a table", 1.0},
+    Effect{"item.remote_control", "item", "a car key remote beeping twice and a car horn answering", 1.0},
+    Effect{"item.stopwatch", "time", "a stopwatch clicked and ticking fast", 1.0},
+    Effect{"item.snow_globe", "ice", "a glass snow globe shaken with a sparkling jingle, and freezing", 1.2},
+    Effect{"item.portal_gun", "arcane", "a sci-fi portal gun firing and a swirling portal opening", 1.0},
+    Effect{"item.pickup", "item", "a sparkly magical pickup chime", 0.6},
+    Effect{"item.mirror", "item", "a shimmering glassy mirror ring", 0.8},
+    Effect{"hero.spawn", "game", "a magical appearance, a bright chime and a soft whoosh", 0.9},
+    Effect{"hero.crossed", "game", "a short triumphant fanfare for reaching the goal", 1.6},
+    Effect{"hero.death", "game", "a cartoonish car crash: a thump, a crunch and glass tinkling", 1.2},
+    Effect{"hero.hurt_1", "force", "a car bumper knocking into someone, a thump", 0.5},
+    Effect{"hero.hurt_2", "force", "a body bumped by a car, a dull smack", 0.5},
+    Effect{"ui.not_ready", "game", "a soft low error blip", 0.5},
+];
+
+//
+// Voices
+//
+
+VoiceEvent :: enum {
+    spawn,
+    cast,
+    crossed,
+    death,
+    kill,
+}
+
+// A hero's voice: the ElevenLabs voice, how much higher or lower it is made (semitones), its speed, a room (none, echo,
+// cave), and how steady it is (lower is more expressive)
+Voice :: struct {
+    hero:      string;
+    id:        string;
+    pitch:     f32;
+    speed:     f32 = 1;
+    stability: f32 = 0.4;
+    room:      string;
+}
+
+Voices :: [
+    Voice{hero: "allan", id: "TX3LPaxmHKxFdv7VOQHJ", pitch: 0.0, speed: 1.0, stability: 0.35, room: ""},
+    Voice{hero: "bent", id: "iP95p4xoKVk53GoZ742B", pitch: -1.0, speed: 1.0, stability: 0.45, room: ""},
+    Voice{hero: "birgit", id: "XrExE9yKIg1WjnnlVkGX", pitch: 0.0, speed: 1.0, stability: 0.4, room: ""},
+    Voice{hero: "bjorn", id: "pNInz6obpgDQGcFmaJgB", pitch: -2.0, speed: 1.0, stability: 0.45, room: "echo"},
+    Voice{hero: "butcher", id: "SOYHLrjzK2X1ezoPC6cr", pitch: -6.0, speed: 0.92, stability: 0.35, room: ""},
+    Voice{hero: "ditte", id: "hpp4J3VqNfWAUOO0d1Us", pitch: 0.0, speed: 1.0, stability: 0.45, room: ""},
+    Voice{hero: "frosty", id: "N2lVS1w4EtoT3dr4eOWO", pitch: 1.0, speed: 1.0, stability: 0.35, room: ""},
+    Voice{hero: "ghosty", id: "SAz9YHcvj6GT2YYXdXww", pitch: -1.0, speed: 0.9, stability: 0.3, room: "cave"},
+    Voice{hero: "gudrun", id: "pFZP5JQG7iQjIQuC4Bku", pitch: 1.0, speed: 0.88, stability: 0.4, room: ""},
+    Voice{hero: "hilda", id: "Xb7hH8MSUJpSbSDYk0k2", pitch: 0.0, speed: 1.0, stability: 0.4, room: ""},
+    Voice{hero: "hugo", id: "nPczCjzI2devNBz1zQrb", pitch: -1.0, speed: 0.9, stability: 0.35, room: "echo"},
+    Voice{hero: "ivar", id: "SOYHLrjzK2X1ezoPC6cr", pitch: -2.0, speed: 1.0, stability: 0.3, room: ""},
+    Voice{hero: "karl", id: "pqHfZKP75CvOlQylNhV4", pitch: 0.0, speed: 1.0, stability: 0.45, room: ""},
+    Voice{hero: "kenji", id: "onwK4e9ZLuTAKqWW03F9", pitch: 0.0, speed: 0.95, stability: 0.5, room: ""},
+    Voice{hero: "mads", id: "bIHbv24MWmeRgasZH58o", pitch: 1.0, speed: 1.0, stability: 0.35, room: ""},
+    Voice{hero: "magnus", id: "nPczCjzI2devNBz1zQrb", pitch: -3.0, speed: 1.0, stability: 0.45, room: "echo"},
+    Voice{hero: "mira", id: "EXAVITQu4vr4xnSDxMaL", pitch: 0.0, speed: 1.0, stability: 0.45, room: "echo"},
+    Voice{hero: "sigrid", id: "FGY2WhTYpPnrIDTdsKH5", pitch: -1.0, speed: 1.0, stability: 0.3, room: ""},
+    Voice{hero: "stormy", id: "cgSgspJ2msm6clMCkdW9", pitch: 0.0, speed: 1.0, stability: 0.35, room: ""},
+    Voice{hero: "tobias", id: "IKne3meq5aSn9XLyUdCD", pitch: 0.0, speed: 1.0, stability: 0.35, room: ""},
+    Voice{hero: "twins", id: "TX3LPaxmHKxFdv7VOQHJ", pitch: 5.0, speed: 1.0, stability: 0.3, room: ""},
+];
+
+// What a hero says at an event. The lines of an event are hero_event_1, hero_event_2, ... of data/sounds/voice/
+Line :: struct {
+    hero:  string;
+    event: VoiceEvent;
+    text:  string;
+}
+
+Lines :: [
+    Line{"allan", .spawn, "Let's go, let's go!"},
+    Line{"allan", .spawn, "On your marks!"},
+    Line{"allan", .cast, "Catch me if you can!"},
+    Line{"allan", .cast, "Full speed!"},
+    Line{"allan", .cast, "Too slow!"},
+    Line{"allan", .crossed, "Personal best!"},
+    Line{"allan", .crossed, "Easy!"},
+    Line{"allan", .death, "Not fast enough!"},
+    Line{"allan", .death, "Oof!"},
+    Line{"allan", .kill, "Should have run!"},
+    Line{"allan", .kill, "Lapped you!"},
+    Line{"bent", .spawn, "Next stop: the other side."},
+    Line{"bent", .spawn, "All aboard."},
+    Line{"bent", .cast, "Mind the gap!"},
+    Line{"bent", .cast, "Hold on to something."},
+    Line{"bent", .cast, "Right on schedule."},
+    Line{"bent", .crossed, "End of the line."},
+    Line{"bent", .crossed, "On time, as always."},
+    Line{"bent", .death, "Missed my stop!"},
+    Line{"bent", .death, "That's not on the timetable!"},
+    Line{"bent", .kill, "Tickets, please."},
+    Line{"bent", .kill, "Should've waited for the next one."},
+    Line{"birgit", .spawn, "Hard hats on!"},
+    Line{"birgit", .spawn, "Let's build something."},
+    Line{"birgit", .cast, "Up she goes!"},
+    Line{"birgit", .cast, "Built to last!"},
+    Line{"birgit", .cast, "Watch your step!"},
+    Line{"birgit", .crossed, "Job done."},
+    Line{"birgit", .crossed, "On budget and on time!"},
+    Line{"birgit", .death, "That wasn't up to code!"},
+    Line{"birgit", .death, "My back!"},
+    Line{"birgit", .kill, "Should've used the bridge."},
+    Line{"birgit", .kill, "Demolished!"},
+    Line{"bjorn", .spawn, "Shields up!"},
+    Line{"bjorn", .spawn, "For the clan!"},
+    Line{"bjorn", .cast, "Stand aside!"},
+    Line{"bjorn", .cast, "Hah!"},
+    Line{"bjorn", .cast, "Feel the shield!"},
+    Line{"bjorn", .crossed, "Victory!"},
+    Line{"bjorn", .crossed, "The road is conquered!"},
+    Line{"bjorn", .death, "Not like this!"},
+    Line{"bjorn", .death, "Valhalla awaits!"},
+    Line{"bjorn", .kill, "Another one falls!"},
+    Line{"bjorn", .kill, "Too weak!"},
+    Line{"butcher", .spawn, "Fresh meat!"},
+    Line{"butcher", .spawn, "Butcher's open!"},
+    Line{"butcher", .cast, "Come here!"},
+    Line{"butcher", .cast, "Get over here!"},
+    Line{"butcher", .cast, "Hungry!"},
+    Line{"butcher", .crossed, "Hah! Butcher wins!"},
+    Line{"butcher", .crossed, "More meat over here!"},
+    Line{"butcher", .death, "Butcher... falls..."},
+    Line{"butcher", .death, "Ugh, tough meat!"},
+    Line{"butcher", .kill, "Tenderized!"},
+    Line{"butcher", .kill, "Ha ha! Mince!"},
+    Line{"ditte", .spawn, "Paramedic on scene."},
+    Line{"ditte", .spawn, "Stay calm, everyone."},
+    Line{"ditte", .cast, "I'm calling it in!"},
+    Line{"ditte", .cast, "Hold still!"},
+    Line{"ditte", .cast, "Clear!"},
+    Line{"ditte", .crossed, "Patient stable."},
+    Line{"ditte", .crossed, "Made it, safe and sound."},
+    Line{"ditte", .death, "Somebody call... me!"},
+    Line{"ditte", .death, "Medic!"},
+    Line{"ditte", .kill, "I'll call you a ride."},
+    Line{"ditte", .kill, "That'll need stitches."},
+    Line{"frosty", .spawn, "Chill out, I'm here."},
+    Line{"frosty", .spawn, "Brr, let's go."},
+    Line{"frosty", .cast, "Freeze!"},
+    Line{"frosty", .cast, "Cool it!"},
+    Line{"frosty", .cast, "Snow way!"},
+    Line{"frosty", .crossed, "Ice and easy."},
+    Line{"frosty", .crossed, "Still frosty!"},
+    Line{"frosty", .death, "I'm melting!"},
+    Line{"frosty", .death, "Slush!"},
+    Line{"frosty", .kill, "Put on ice!"},
+    Line{"frosty", .kill, "Cold as ice."},
+    Line{"ghosty", .spawn, "I have returned..."},
+    Line{"ghosty", .spawn, "Boo."},
+    Line{"ghosty", .cast, "Through the walls..."},
+    Line{"ghosty", .cast, "Mine now..."},
+    Line{"ghosty", .cast, "Whooo..."},
+    Line{"ghosty", .crossed, "Rest at last..."},
+    Line{"ghosty", .crossed, "Haunting the other side..."},
+    Line{"ghosty", .death, "Again?"},
+    Line{"ghosty", .death, "I was already dead..."},
+    Line{"ghosty", .kill, "Join me..."},
+    Line{"ghosty", .kill, "Welcome to the other side..."},
+    Line{"gudrun", .spawn, "Now where are my glasses?"},
+    Line{"gudrun", .spawn, "In my day, roads were smaller."},
+    Line{"gudrun", .cast, "Let granny through, dear."},
+    Line{"gudrun", .cast, "Mind your manners!"},
+    Line{"gudrun", .cast, "Wait your turn!"},
+    Line{"gudrun", .crossed, "There, that wasn't so hard."},
+    Line{"gudrun", .crossed, "I'll have a cup of tea now."},
+    Line{"gudrun", .death, "Oh, my hip!"},
+    Line{"gudrun", .death, "Young drivers these days!"},
+    Line{"gudrun", .kill, "Serves you right, dear."},
+    Line{"gudrun", .kill, "Should have helped granny across."},
+    Line{"hilda", .spawn, "Everybody, single file!"},
+    Line{"hilda", .spawn, "Look both ways!"},
+    Line{"hilda", .cast, "Stop!"},
+    Line{"hilda", .cast, "Go, go, go!"},
+    Line{"hilda", .cast, "Hold it right there!"},
+    Line{"hilda", .crossed, "Safely across."},
+    Line{"hilda", .crossed, "That's how it's done."},
+    Line{"hilda", .death, "I had the right of way!"},
+    Line{"hilda", .death, "Didn't you see the sign?"},
+    Line{"hilda", .kill, "You should have waited."},
+    Line{"hilda", .kill, "Ticket!"},
+    Line{"hugo", .spawn, "Look into my eyes..."},
+    Line{"hugo", .spawn, "You are getting sleepy..."},
+    Line{"hugo", .cast, "The cars are not real..."},
+    Line{"hugo", .cast, "Sleep now..."},
+    Line{"hugo", .cast, "Relax..."},
+    Line{"hugo", .crossed, "Just as I foresaw."},
+    Line{"hugo", .crossed, "And... awake."},
+    Line{"hugo", .death, "That was... real?"},
+    Line{"hugo", .death, "I didn't see that coming..."},
+    Line{"hugo", .kill, "Sweet dreams."},
+    Line{"hugo", .kill, "You will remember nothing."},
+    Line{"ivar", .spawn, "Blood and glory!"},
+    Line{"ivar", .spawn, "Who wants to fight?"},
+    Line{"ivar", .cast, "Raaagh!"},
+    Line{"ivar", .cast, "Out of my way!"},
+    Line{"ivar", .cast, "Catch this!"},
+    Line{"ivar", .crossed, "Another road conquered!"},
+    Line{"ivar", .crossed, "Ha! Next!"},
+    Line{"ivar", .death, "A worthy... car..."},
+    Line{"ivar", .death, "I'll be back!"},
+    Line{"ivar", .kill, "Who's next?"},
+    Line{"ivar", .kill, "Ha! Too easy!"},
+    Line{"karl", .spawn, "Right, let's have a look."},
+    Line{"karl", .spawn, "Tools ready."},
+    Line{"karl", .cast, "Up she goes."},
+    Line{"karl", .cast, "Needs an oil change."},
+    Line{"karl", .cast, "There's your problem."},
+    Line{"karl", .crossed, "All fixed up."},
+    Line{"karl", .crossed, "Running smooth."},
+    Line{"karl", .death, "That'll cost extra!"},
+    Line{"karl", .death, "My wrench!"},
+    Line{"karl", .kill, "You've sprung a leak."},
+    Line{"karl", .kill, "Total write-off."},
+    Line{"kenji", .spawn, "I am the shadow."},
+    Line{"kenji", .spawn, "Silent. Swift."},
+    Line{"kenji", .cast, "Now you see me..."},
+    Line{"kenji", .cast, "Too slow."},
+    Line{"kenji", .cast, "Hm."},
+    Line{"kenji", .crossed, "The path is clear."},
+    Line{"kenji", .crossed, "Unseen, as always."},
+    Line{"kenji", .death, "A log... I needed a log..."},
+    Line{"kenji", .death, "Dishonor..."},
+    Line{"kenji", .kill, "You never saw me."},
+    Line{"kenji", .kill, "Strike from the shadows."},
+    Line{"mads", .spawn, "Let's shred!"},
+    Line{"mads", .spawn, "Sick road, dude."},
+    Line{"mads", .cast, "Kickflip!"},
+    Line{"mads", .cast, "Grinding!"},
+    Line{"mads", .cast, "Woo!"},
+    Line{"mads", .crossed, "Nailed it!"},
+    Line{"mads", .crossed, "Gnarly!"},
+    Line{"mads", .death, "Bail!"},
+    Line{"mads", .death, "Not the board!"},
+    Line{"mads", .kill, "Get wrecked!"},
+    Line{"mads", .kill, "Totally bodied."},
+    Line{"magnus", .spawn, "Magnus is here."},
+    Line{"magnus", .spawn, "Nothing moves me."},
+    Line{"magnus", .cast, "Get back!"},
+    Line{"magnus", .cast, "Come to me!"},
+    Line{"magnus", .cast, "Opposites attract."},
+    Line{"magnus", .crossed, "Unstoppable."},
+    Line{"magnus", .crossed, "Steel wins."},
+    Line{"magnus", .death, "Demagnetized..."},
+    Line{"magnus", .death, "Not... possible..."},
+    Line{"magnus", .kill, "Pulled you in."},
+    Line{"magnus", .kill, "Drawn to your doom."},
+    Line{"mira", .spawn, "Right on time."},
+    Line{"mira", .spawn, "Time is on my side."},
+    Line{"mira", .cast, "Back we go."},
+    Line{"mira", .cast, "Stop!"},
+    Line{"mira", .cast, "Let's try that again."},
+    Line{"mira", .crossed, "Perfectly timed."},
+    Line{"mira", .crossed, "Exactly as planned."},
+    Line{"mira", .death, "Out of time!"},
+    Line{"mira", .death, "I'll rewind that."},
+    Line{"mira", .kill, "Your time is up."},
+    Line{"mira", .kill, "Late again."},
+    Line{"sigrid", .spawn, "Double, double, toil and traffic!"},
+    Line{"sigrid", .spawn, "Hee hee hee!"},
+    Line{"sigrid", .cast, "Ribbit!"},
+    Line{"sigrid", .cast, "Up, up and away!"},
+    Line{"sigrid", .cast, "A little hex!"},
+    Line{"sigrid", .crossed, "Hee hee! Made it!"},
+    Line{"sigrid", .crossed, "Magic always wins."},
+    Line{"sigrid", .death, "My broom!"},
+    Line{"sigrid", .death, "There goes a life..."},
+    Line{"sigrid", .kill, "Enjoy being a toad!"},
+    Line{"sigrid", .kill, "Hexed and wrecked!"},
+    Line{"stormy", .spawn, "Today's forecast: chaos!"},
+    Line{"stormy", .spawn, "Storm's coming!"},
+    Line{"stormy", .cast, "Lightning!"},
+    Line{"stormy", .cast, "Gusts up to a hundred!"},
+    Line{"stormy", .cast, "Brace yourself!"},
+    Line{"stormy", .crossed, "Clear skies ahead!"},
+    Line{"stormy", .crossed, "Sunny on this side!"},
+    Line{"stormy", .death, "Didn't see that in the forecast!"},
+    Line{"stormy", .death, "Cloudy..."},
+    Line{"stormy", .kill, "Blown away!"},
+    Line{"stormy", .kill, "Struck down!"},
+    Line{"tobias", .spawn, "Ooh, what a view!"},
+    Line{"tobias", .spawn, "Is this the way to the beach?"},
+    Line{"tobias", .cast, "Say cheese!"},
+    Line{"tobias", .cast, "Selfie time!"},
+    Line{"tobias", .cast, "Smile!"},
+    Line{"tobias", .crossed, "Gotta post this!"},
+    Line{"tobias", .crossed, "What a trip!"},
+    Line{"tobias", .death, "My camera!"},
+    Line{"tobias", .death, "Not in the brochure!"},
+    Line{"tobias", .kill, "That's going in the album."},
+    Line{"tobias", .kill, "Great shot!"},
+    Line{"twins", .spawn, "We're here!"},
+    Line{"twins", .spawn, "Two of us!"},
+    Line{"twins", .cast, "Over here!"},
+    Line{"twins", .cast, "Switch!"},
+    Line{"twins", .cast, "Bet you can't tell!"},
+    Line{"twins", .crossed, "We made it!"},
+    Line{"twins", .crossed, "Twin power!"},
+    Line{"twins", .death, "Tom!"},
+    Line{"twins", .death, "Tim!"},
+    Line{"twins", .kill, "Double trouble!"},
+    Line{"twins", .kill, "Ha! Fooled you!"},
+];
+
+//
+// Making them
+//
+
+// A file to make: a sound or a line
+Job :: struct {
+    name:   string;         // e.g ability.hex, voice.hugo_cast_1
+    effect: int = -1;       // In Effects, or
+    line:   int = -1;       // in Lines
+}
+
+SoundRequest :: struct {
+    text:            string;
+    durationSeconds: f32;
+    promptInfluence: f32;
+}
+
+VoiceSettings :: struct {
+    stability:       f32;
+    similarityBoost: f32;
+    style:           f32;
+    useSpeakerBoost: bool;
+}
+
+SpeechRequest :: struct {
+    text:          string;
+    modelId:       string;
+    voiceSettings: VoiceSettings;
+}
+
+familyWords :: (name: string) -> string {
+    for family in Families {
+        if family.name == name { return family.words; }
+    }
+    return "";
+}
+
+voiceOf :: (hero: string) -> Voice {
+    for voice in Voices {
+        if voice.hero == hero { return voice; }
+    }
+    assert(false);
+    return Voices[0];
+}
+
+prompt :: (effect: Effect) -> string {
+    return fmt.sprint("%. %. Clean game sound effect, no music, no voices", effect.what, familyWords(effect.family));
+}
+
+// The lines of a hero for an event are numbered from 1
+lineName :: (index: int) -> string {
+    line := Lines[index];
+    number := 1;
+    for i in 0..index {
+        if Lines[i].hero == line.hero && Lines[i].event == line.event { number += 1; }
+    }
+    return fmt.sprint("voice.%_%_%", line.hero, VoiceEvent.names[line.event], number);
+}
+
+// What a file is made from: when it changes, the file is made again
+recipe :: (job: Job) -> string {
+    if job.effect >= 0 {
+        effect := Effects[job.effect];
+        return fmt.sprint("% | % | %", prompt(effect), effect.seconds, Model);
+    }
+    line := Lines[job.line];
+    voice := voiceOf(line.hero);
+    return fmt.sprint("% | % % % % % | % | %", voice.id, voice.pitch, voice.speed, voice.stability, voice.room, Model, line.text, Model);
+}
+
+apiKey :: () -> string {
+    key, found := os.getEnv("ELEVENLABS_API_KEY");
+    if found && key.len > 0 { return key; }
+    return "proxy-injected";      // A proxy that knows the key puts it in
+}
+
+// Posts JSON to the API and returns the audio it answers with, trying again a few times when it is busy
+post :: (path: string, body: string) -> string, string {
+    headers := [http.Header{"Content-Type", "application/json"}, http.Header{"xi-api-key", apiKey()}];
+    for attempt in 0..4 {
+        response, err := http.request("POST", fmt.sprint("%%", Api, path), headers, body);
+        if err != null { return "", err.message; }
+        defer response.free();
+        if response.status == 200 { return response.body.copy(), ""; }
+        if (response.status == 429 || response.status >= 500) && attempt < 3 {
+            time.sleep(4000 * (attempt + 1));
+            continue;
+        }
+        return "", fmt.sprint("HTTP %: %", response.status, response.body.slice(0, math.min(response.body.len, 300)));
+    }
+    return "", "gave up";
+}
+
+makeAudio :: (job: Job) -> string, string {
+    if job.effect >= 0 {
+        effect := Effects[job.effect];
+        body := json.encode(SoundRequest{prompt(effect), effect.seconds, 0.6}, json.SnakeCase);
+        return post("/sound-generation?output_format=mp3_44100_128", body);
+    }
+    line := Lines[job.line];
+    voice := voiceOf(line.hero);
+    settings := VoiceSettings{stability: voice.stability, similarityBoost: 0.8, style: 0.45, useSpeakerBoost: true};
+    body := json.encode(SpeechRequest{line.text, Model, settings}, json.SnakeCase);
+    return post(fmt.sprint("/text-to-speech/%?output_format=mp3_44100_128", voice.id), body);
+}
+
+// The mp3 from ElevenLabs as the .ogg of the game, with ffmpeg: trimmed, as loud as the others, and pitched and put in a
+// room for the voice of its hero. The .wav of make_sounds.py by the same name goes
+finish :: (audio: string, job: Job) -> bool {
+    dot := job.name.indexOf(".");
+    group := job.name.slice(0, dot);
+    base := job.name.slice(dot + 1);
+    folder := fmt.sprint("%/%", Sounds, group);
+    _ := os.makeDir(folder);
+    out := fmt.sprint("%/%.ogg", folder, base);
+    source := fmt.sprint("%.mp3", out);
+    if os.writeFile(source, audio) != null { return false; }
+    defer os.removeFile(source);
+
+    filters := fmt.newStringBuilder(256);
+    defer filters.free();
+    filters.addString("silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse");
+    channels := 2;
+    if job.line >= 0 {
+        channels = 1;
+        voice := voiceOf(Lines[job.line].hero);
+        rate := math.powf(2, voice.pitch / 12);
+        tempo := voice.speed / rate;
+        if rate != 1 || tempo != 1 {
+            filters.add(",asetrate=%,aresample=44100,atempo=%", (44100 * rate) as int, fmt.fixed(tempo, 4));
+        }
+        if voice.room == "echo" { filters.addString(",aecho=0.8:0.6:60|120:0.25|0.15"); }
+        if voice.room == "cave" { filters.addString(",aecho=0.8:0.7:180|400|700:0.35|0.25|0.15"); }
+    }
+    filters.addString(",loudnorm=I=-16:TP=-1.5:LRA=11");
+    command := fmt.sprint("ffmpeg -y -loglevel error -i \"%\" -af \"%\" -ar 44100 -ac % -c:a libvorbis -q:a 5 \"%\"",
+        source, filters.toString(), channels, out);
+    if os.run(command) != 0 { return false; }
+    old := fmt.sprint("%/%.wav", folder, base);
+    if os.fileExists(old) { os.removeFile(old); }
+    return true;
+}
+
+// The jobs the arguments ask for: all, sfx, voices, or names
+jobsFor :: (args: []string) -> [..]Job {
+    jobs: [..]Job;
+    names := 0;
+    for arg in args { if !arg.startsWith("--") && arg != "sfx" && arg != "voices" { names += 1; } }
+    wants :: (args: []string, name: string, group: string, names: int) -> bool {
+        all := true;
+        for arg in args {
+            if arg.startsWith("--") { continue; }
+            all = false;
+            if arg == group || arg == name { return true; }
+        }
+        return all;
+    };
+    for effect, i in Effects {
+        if wants(args, effect.name, "sfx", names) { jobs.add(Job{name: effect.name, effect: i as int}); }
+    }
+    for line, i in Lines {
+        name := lineName(i as int);
+        if wants(args, name, "voices", names) { jobs.add(Job{name: name, line: i as int}); }
+    }
+    return jobs;
+}
+
+main :: () {
+    all := os.args();
+    args := all.slice(1);
+    force := false;
+    list := false;
+    adopt := false;
+    for arg in args {
+        if arg == "--force" { force = true; }
+        if arg == "--list"  { list = true; }
+        if arg == "--adopt" { adopt = true; }
+    }
+    jobs := jobsFor(args);
+    defer jobs.free();
+
+    if list {
+        for job in jobs {
+            if job.effect >= 0 { fmt.print("% | %", job.name, prompt(Effects[job.effect])); }
+            else               { fmt.print("% | %", job.name, Lines[job.line].text); }
+        }
+        fmt.print("% files", jobs.count);
+        return;
+    }
+
+    cache: Map<string, string>;
+    if os.fileExists(CacheFile) {
+        text, err := os.readFile(CacheFile);
+        if err == null {
+            read, decodeErr := json.decode<Map<string, string>>(text);
+            if decodeErr == null { cache = read; }
+        }
+    }
+
+    made := 0;
+    for job in jobs {
+        dot := job.name.indexOf(".");
+        out := fmt.sprint("%/%/%.ogg", Sounds, job.name.slice(0, dot), job.name.slice(dot + 1));
+        digest := crypto.sha256(recipe(job)).hex();
+        if adopt {
+            if os.fileExists(out) { cache[job.name] = digest; }
+            continue;
+        }
+        if !force && os.fileExists(out) && cache.has(job.name) && cache[job.name] == digest { continue; }
+
+        audio, problem := makeAudio(job);
+        if problem.len > 0 {
+            fmt.print("FAILED % %", job.name, problem);
+            if problem.indexOf("quota") >= 0 || problem.indexOf("HTTP 401") >= 0 { break; }
+            continue;
+        }
+        if !finish(audio, job) {
+            fmt.print("FAILED % ffmpeg", job.name);
+            continue;
+        }
+        cache[job.name] = digest;
+        os.writeFile(CacheFile, json.encode(cache, json.Pretty));
+        made += 1;
+        if job.effect >= 0 { fmt.print("% | %", job.name, prompt(Effects[job.effect])); }
+        else               { fmt.print("% | %", job.name, Lines[job.line].text); }
+    }
+    if adopt { os.writeFile(CacheFile, json.encode(cache, json.Pretty)); }
+    fmt.print("Made % of %", made, jobs.count);
+}
