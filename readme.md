@@ -62,7 +62,7 @@ bends), poses and keyframed clips, and writes it as `models/<name>.glb` with its
 walk, and one for each ability, named by its icon. The game plays a hero's
 GLB when it has one (`core/hero_animation.sd`): the clip of an ability right after it is cast (the Butcher swings his
 hook arm when he throws the hook, and heaves with both arms), the walk while it walks, timed by how far it went, and
-else idle. The Butcher, Birgit and Frosty have one so far; the others are still OBJ.
+else idle. The Butcher, Birgit, Frosty and Mira have one so far; the others are still OBJ.
 
 The Butcher's face has bones of its own: a jaw, two brows and two eyelids, over sculpted eyeballs, lips, teeth and
 tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks, chews and sneers while he stands,
@@ -91,6 +91,18 @@ and a scarf whose pompom and tail are on bones of their own, so they bounce and 
 waddles, claps his mittens over his head and flings them out for his cold snap, blowing, and crouches and hugs himself
 as his igloo goes up round him. The igloo is a model too (`models/igloo.obj`): rows of snow blocks, a tunnel to a dark
 door on the side he is going, icicles. It grows up out of the snow round him, crouching in it, and slumps as it melts.
+
+Mira is a tall, slender person on the same skeleton, in a long robe of deep violet scattered with gold stars: its skirt
+is bound to her hips and legs, so it follows her steps and swings out when she turns. She has wide bell sleeves, long
+silver hair on two bones of its own, and a tall pointed hat with a gold crescent whose tip is on a bone too, so both
+swing after her. There is a clock brooch at her collar and a pocket watch on a chain at her sash. In her right hand is a
+staff with an hourglass on top, its sand seen through the glass, and her left hand is open (`anatomy.open_hand`), for
+casting. She stands and now and then glances up at the hourglass, walks with long unhurried steps, sweeps her left hand
+in a circle backwards and pushes it out for Reverse, twirls once as she comes back from a Rewind, and swings the staff
+back over her shoulder and thrusts the hourglass at her enemy for Time lock. She turns to what she casts at. The clock
+over a hero she locks in time is a model (`models/time_lock_clock.obj`, and its hands `models/clock_hand.obj`): it pops
+up over the hero's head, turned and tilted to the camera, its hands running backwards, and shrinks away when the lock
+is over.
 
 **Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape
 as a layer, and paints them like raised objects: a bevel lit from the top left, lighter at the top, a shine, a little

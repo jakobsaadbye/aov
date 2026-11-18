@@ -253,9 +253,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     // Stunned: stars going round over the head. Locked in time: a clock face over it
     top := hero.position + Vector3{0, info.height + 0.6, 0};
     if hero.has(.timeLock) {
-        DrawCylinderEx(top, top + Vector3{0, 0.1, 0}, 1.2, 1.2, 20, {230, 210, 255, 200});
-        angle := -GetTime() as f32 * 6;
-        DrawCylinderEx(top + Vector3{0, 0.12, 0}, top + Vector3{math.sinf(angle) * 0.9, 0.12, math.cosf(angle) * 0.9}, 0.08, 0.08, 4, {60, 30, 90, 255});
+        drawTimeLockClock(assets, game, hero, top);
     } else if hero.has(.stun) {
         for k in 0..3 {
             angle := GetTime() as f32 * 5 + k as f32 * Pi * 2 / 3;

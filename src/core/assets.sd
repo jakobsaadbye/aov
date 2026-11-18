@@ -34,6 +34,8 @@ Assets :: struct {
     trampoline:     Model;
     trampolineMat:  Model;
     igloo:          Model;             // Frosty's
+    timeLockClock:  Model;             // Mira's clock over a hero locked in time, and its hands
+    clockHand:      Model;
 
     icons: Map<string, Texture>;       // The icon of each ability, by its name in heroes.sd
 
@@ -128,6 +130,8 @@ loadAssets :: () -> Assets {
     assets.trampoline     = assets.lighting.loadModel("models/trampoline.obj");
     assets.trampolineMat  = assets.lighting.loadModel("models/trampoline_mat.obj");
     assets.igloo          = assets.lighting.loadModel("models/igloo.obj");
+    assets.timeLockClock  = assets.lighting.loadModel("models/time_lock_clock.obj");
+    assets.clockHand      = assets.lighting.loadModel("models/clock_hand.obj");
     assets.portrait = LoadRenderTexture(PortraitResolution, PortraitResolution);
     SetTextureFilter(assets.portrait.texture, .bilinear);
 
@@ -166,6 +170,8 @@ unload :: method (assets: *Assets) {
     UnloadModel(assets.trampoline);
     UnloadModel(assets.trampolineMat);
     UnloadModel(assets.igloo);
+    UnloadModel(assets.timeLockClock);
+    UnloadModel(assets.clockHand);
     UnloadRenderTexture(assets.portrait);
     for model in assets.sceneryModels { UnloadModel(model); }
     assets.scenery.free();

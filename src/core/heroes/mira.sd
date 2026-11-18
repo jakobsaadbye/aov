@@ -30,6 +30,7 @@ castReverse :: (game: *Game, caster: int, ability: *Ability, target: Vector2) ->
     hero := &game.players[caster].hero;
     point := towards(hero.ground(), target, hero.reach(ability.range)) ?? hero.ground();
     if math.fabsf(point.x) > RoadHalfWidth { return false; }
+    faceTowards(hero, point);         // She turns to the lanes she reverses
     lane := laneAt(point.x);
     game.traffic.setPace(lane - ability.count, lane + ability.count, ability.power, ability.duration + hero.stats.coldBlooded);
     game.effects.addRing(point, 1, LaneWidth * (ability.count as f32 + 0.5), {190, 140, 255, 255}, 0.6);
@@ -57,8 +58,41 @@ castTimeLock :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -
     victim := game.spellTarget(caster, ability, target);
     if victim < 0 { return spent(victim); }
     enemy := &game.players[victim].hero;
+    faceTowards(&player.hero, enemy.ground());     // and thrusts her staff at the enemy
     enemy.addStatus(.timeLock, ability.duration, source: caster, time: game.time);
     game.effects.addRing(enemy.ground(), 4, 1, {190, 140, 255, 255}, 0.5);
     game.announce(victim, {200, 160, 255, 255}, "% was locked in time by % (%)!", enemy.info().name, player.hero.info().name, player.name);
     return true;
 }
+
+// The clock over a hero she has locked in time (tools/make_heroes.py): it pops up over its head, turned to the camera
+// and tilted back to it, its hands running backwards, and shrinks away when the lock is over
+drawTimeLockClock :: (assets: *Assets, game: *Game, hero: *Hero, top: Vector3) {
+    lock := hero.status(.timeLock);
+    age := lock.duration - lock.timeLeft;
+    grow := math.min(age / ClockPopTime, 1);
+    pop := grow + math.sinf(grow * Pi) * 0.3;
+    size := ClockScale * pop * math.min(lock.timeLeft / ClockPopTime, 1);
+    if size < 0.01 { return; }
+    eye := game.camera.view.position;
+    yaw := math.atan2f(eye.x - top.x, eye.z - top.z) * Rad2Deg;
+    center := top + Vector3{0, 1.3 + ClockScale * 1.1, 0};      // Over its name and its health
+    rlPushMatrix();
+    rlTranslatef(center.x, center.y, center.z);
+    rlRotatef(yaw, 0, 1, 0);
+    rlRotatef(-35, 1, 0, 0);
+    DrawModel(assets.timeLockClock, {0, 0, 0}, size, White);
+    // The hands turn anticlockwise: the minute hand twice round a second, the hour hand slowly
+    rlPushMatrix();
+    rlRotatef(age * 720, 0, 0, 1);
+    DrawModel(assets.clockHand, {0, 0, 0}, size, White);
+    rlPopMatrix();
+    rlPushMatrix();
+    rlRotatef(120 + age * 90, 0, 0, 1);
+    DrawModel(assets.clockHand, {0, 0, 0}, size * 0.65, White);
+    rlPopMatrix();
+    rlPopMatrix();
+}
+
+ClockScale   :: 0.65;      // Of the model, which is 2.2 across
+ClockPopTime :: 0.18;      // Seconds it takes to pop up, and to shrink away
