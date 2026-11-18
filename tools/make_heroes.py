@@ -673,7 +673,7 @@ def face_clips():
         "idle": clip(2.0, (0.0, calm), (0.5, chew), (0.8, calm), (1.3, sneer), (1.6, calm), (1.72, calm), (1.77, blink), (1.84, calm)),
         "walk": clip(1.0, (0.0, pant0), (0.25, pant1), (0.5, pant0), (0.75, pant1)),
         "cast": once(0.9, (0.0, calm), (0.3, scowl), (0.5, roar), (0.75, face_pose(jaw=20, brow=20, lid=12)), (0.9, calm)),
-        "hook": once(0.8, (0.0, calm), (0.1, scowl), (0.24, roar), (0.5, face_pose(jaw=22, brow=22, lid=10)), (0.8, calm)),
+        "hook": once(0.75, (0.0, scowl), (0.1, roar), (0.4, face_pose(jaw=22, brow=22, lid=10)), (0.75, calm)),
         "heave": once(0.9, (0.0, calm), (0.2, grimace), (0.42, roar), (0.6, face_pose(jaw=24, brow=22, lid=10)), (0.9, calm)),
     }
 
@@ -753,6 +753,142 @@ def swamp_face(m, hd, sk, rig_, S=1.3):
     m.detail = detail
 
 
+def ogre_face(m, hd, sk, rig_, style="brute", S=1.3):
+    """An ogre's head with bones for its face: a low, sloping skull; small eyes deep under a heavy shelf of a brow; a
+    broad nose; a massive underbite of a jaw with tusks. style: brute (a bony brow, beady eyes, a flat nose, big tusks),
+    boar (a pig's snout, small red eyes, curved tusks, pointed ears), scarred (a scar over a milky eye, a broken nose,
+    a chipped tusk, stubble) or warlord (old: deep wrinkles, jowls, warts, bushy grey brows, gaps in his teeth)"""
+    from anatomy import skin_paint
+    h = np.asarray(hd, float)
+
+    def P(x, y, z):
+        return h + S * np.array([x, y, z], float)
+
+    def R(*r):
+        return tuple(S * v for v in r)
+    E = 0.19
+    eye_r = P(E, 0.05, 0.372)
+    eye_size = 0.078 if style != "warlord" else 0.08
+    rig_.bone("jaw", P(0, -0.1, -0.1), P(0, -0.28, 0.5), "head")
+    rig_.bone("brow_r", P(0.02, 0.18, 0.46), P(0.4, 0.2, 0.32), "head")
+    rig_.bone("lid_r", eye_r, eye_r + S * np.array([0, 0, 0.1]), "head")
+    rig_.mirror()
+    detail = m.detail
+    m.detail = 0.03
+    warts = {"brute": 0.3, "boar": 0.4, "scarred": 0.2, "warlord": 0.9}[style]
+    sp = skin_paint(sk, warts=warts) + flush(h, S, 0.12)
+    dark_sk = tuple(c * 0.6 for c in sk)
+    W = 4
+    wr = wrinkles(h, eyes_x=E * S, eye_y=0.05 * S, eye_z=0.355 * S, brow_y=0.19 * S, furrows=4 if style == "warlord" else 2,
+                  depth=0.5 if style == "warlord" else 0.35)
+    scar = None
+    if style == "scarred":
+        def scar(ctx, base):
+            p = (ctx.p - h) / S
+            d = np.abs((p[..., 0] + 0.19) * 0.8 + (p[..., 1] - 0.05) * 0.6)
+            a = smoothstep(0.018, 0.006, d) * (np.abs(p[..., 1] - 0.05) < 0.22) * (ctx.n[..., 2] > 0.2)
+            return _over(base, (0.62, 0.42, 0.38), a)
+    face_p = sp + wr + (scar if scar else (lambda ctx, b: b))
+    # The skull: low and sloping back, the forehead pushed back over the brow
+    m.add(blob(P(0, 0.02, -0.08), R(0.52, 0.37, 0.48), (0.65, 0.7)).deform(lumps(0.012, 4, 3), push(P(0, 0.3, 0.3), 0.3 * S, (0, -0.04 * S, -0.06 * S))),
+          face_p, bones="head", weight=W)
+    # Small eyes, deep: dirty whites, small irises, a tight lid with a dark crease, a pouch under each
+    irises = {"brute": (1.0, 0.82, 0.15), "boar": (1.0, 0.3, 0.1), "scarred": (1.0, 0.78, 0.2), "warlord": (0.95, 0.9, 0.55)}
+    for side in (1, -1):
+        c = eye_r if side > 0 else eye_r * np.array([-1, 1, 1]) + np.array([2 * h[0], 0, 0])
+        milky = style == "scarred" and side < 0
+        iris = (0.7, 0.72, 0.7) if milky else irises[style]
+        m.add(sphere(c, eye_size * S, nu=16, nv=12), eyeball(c, look=(0, -0.05, 1), iris=iris, sclera=(0.74, 0.66, 0.44), iris_size=40,
+                                                            pupil_size=0 if milky else 11), bones="head", weight=W)
+    crease = lash_line(True, c=dark_sk, width=0.1)
+    m.mirror(m.add(ellipsoid(eye_r, R(eye_size * 1.12, eye_size * 1.12, eye_size * 1.12), vrange=(0.55, 1.0), nu=16, nv=6), sp + crease,
+                   bones="lid_r", weight=W))
+    bag = 1.25 if style == "warlord" else 1.0
+    m.mirror(m.add(ellipsoid(eye_r + S * np.array([0, -0.045 * bag, 0.02]), R(0.1, 0.045 * bag, 0.07)), sp + wr, bones="head", weight=W))
+    # The brow: two heavy wedges of bone that meet over the nose, a shelf the eyes sit in the shadow of
+    if style == "warlord":
+        brow = skin_paint(sk, warts=0.3) + bristles((0.72, 0.72, 0.68))
+    elif style == "boar":
+        brow = skin_paint(sk, warts=0.3) + bristles((0.12, 0.1, 0.07))
+    else:
+        brow = skin_paint(sk, warts=0.2) + wr + (scar if scar else (lambda ctx, b: b))
+    m.mirror(m.add(loft([P(0.0, 0.16, 0.45), P(0.13, 0.18, 0.46), P(0.27, 0.19, 0.42), P(0.4, 0.16, 0.3)],
+                        [(0.07, 0.11, 2.6), (0.09, 0.125, 2.6), (0.08, 0.11, 2.6), (0.05, 0.07, 2.4)], facing=(0, 0.35, 1), nu=12, nv=12).deform(lumps(0.008, 7, 9)),
+                   brow, bones="brow_r", weight=W))
+    # Cheeks: flat and hard
+    m.mirror(m.add(blob(P(0.3, -0.07, 0.27), R(0.15, 0.1, 0.12), (0.7, 0.7)), sp + wr, bones="head", weight=W))
+    # The nose
+    nostril = color((0.07, 0.05, 0.04))
+    if style == "boar":
+        snout = P(0, -0.02, 0.48)
+        m.add(loft([snout, snout + S * np.array([0, 0.03, 0.17])], [(0.15, 0.11, 2.6), (0.14, 0.1, 2.8)], facing=(0, 1, 0), nu=16, caps="flat"),
+              sp + patch((0.5, 0.36, 0.3), 0.5, 0.95, 0.12, 0.08), bones="head", weight=W)
+        for side in (1, -1):
+            m.add(ellipsoid(snout + S * np.array([side * 0.055, 0.03, 0.172]), R(0.03, 0.04, 0.01)), nostril, bones="head")
+    elif style == "scarred":
+        m.add(blob(P(0.02, 0.0, 0.5), R(0.16, 0.1, 0.11), (0.7, 0.7), rot=(0, 0, 14)), sp + wr, bones="head", weight=W)
+        m.add(ellipsoid(P(-0.01, 0.1, 0.47), R(0.06, 0.05, 0.05)), sp, bones="head", weight=W)
+        for side in (1, -1):
+            m.add(ellipsoid(P(side * 0.07 + 0.02, -0.05, 0.585), R(0.03, 0.02, 0.012)), nostril, bones="head")
+    elif style == "warlord":
+        m.add(blob(P(0, -0.03, 0.5), R(0.15, 0.13, 0.13), (0.85, 0.85)), sp + patch(dark_sk, 0.6, 0.6, 0.02, 0.02), bones="head", weight=W)
+        for side in (1, -1):
+            m.add(ellipsoid(P(side * 0.07, -0.09, 0.58), R(0.03, 0.02, 0.012)), nostril, bones="head")
+    else:
+        m.add(blob(P(0, -0.01, 0.48), R(0.2, 0.09, 0.11), (0.65, 0.7)), sp, bones="head", weight=W)
+        for side in (1, -1):
+            m.add(torus(P(side * 0.09, -0.04, 0.575), 0.036 * S, 0.016 * S, rot=(75, 0, 0)), color(tuple(c * 0.85 for c in sk)), bones="head")
+            m.add(ellipsoid(P(side * 0.09, -0.04, 0.573), R(0.03, 0.02, 0.012)), nostril, bones="head")
+    # The mouth: a dark inside, a thick upper lip over it, fangs down from it
+    m.add(ellipsoid(P(0, -0.17, 0.26), R(0.36, 0.08, 0.24)), color((0.2, 0.04, 0.04)), bones="head")
+    lip_c = skin_paint((sk[0] * 0.85, sk[1] * 0.75, sk[2] * 0.68)) + wr
+    m.add(loft([P(-0.36, -0.18, 0.22), P(-0.21, -0.14, 0.42), P(0, -0.13, 0.49), P(0.21, -0.14, 0.42), P(0.36, -0.18, 0.22)],
+               [(0.03, 0.04, 2.4), (0.06, 0.08, 2.4), (0.07, 0.09, 2.4), (0.06, 0.08, 2.4), (0.03, 0.04, 2.4)], facing=(0, 0, 1), nu=14, nv=20),
+          lip_c, bones="head", weight=W)
+    tooth = color((0.8, 0.72, 0.48)) + bands((0.5, 0.4, 0.26), [(0.0, 0.3)]) + stains((0.45, 0.35, 0.2), 0.15, 8)
+    for x in (0.13, -0.15):
+        m.add(horn(P(x, -0.15, 0.47 - abs(x) * 0.3), (0, -1, 0.1), 0.06 * S, 0.024 * S), tooth, bones="head")
+    # The jaw: wide and jutting, its thick lower lip, its teeth and its tusks
+    m.add(blob(P(0, -0.28, 0.13), R(0.5, 0.18, 0.44), (0.5, 0.6)).deform(push(P(0, -0.33, 0.52), 0.32 * S, (0, -0.02 * S, 0.06 * S))),
+          skin_paint(sk, warts=warts) + wr, bones="jaw", weight=W)
+    if style == "warlord":
+        for side in (1, -1):
+            m.add(ellipsoid(P(side * 0.36, -0.33, 0.12), R(0.16, 0.14, 0.2)), skin_paint(sk, warts=0.9) + wr, bones="jaw", weight=W)
+    m.add(loft([P(-0.36, -0.21, 0.23), P(-0.2, -0.19, 0.45), P(0, -0.185, 0.53), P(0.2, -0.19, 0.45), P(0.36, -0.21, 0.23)],
+               [(0.03, 0.04, 2.4), (0.06, 0.08, 2.4), (0.07, 0.09, 2.4), (0.06, 0.08, 2.4), (0.03, 0.04, 2.4)], facing=(0, 0, 1), nu=14, nv=20),
+          lip_c, bones="jaw", weight=W)
+    m.add(ellipsoid(P(0, -0.21, 0.3), R(0.22, 0.035, 0.18)), color((0.5, 0.2, 0.2)), bones="jaw")
+    gaps = style == "warlord"
+    for k, (x, length, lean) in enumerate(((-0.24, 0.07, -0.15), (-0.12, 0.055, 0.1), (-0.02, 0.06, -0.05), (0.08, 0.05, 0.12))):
+        if gaps and k % 2:
+            continue
+        m.add(horn(P(x, -0.185, 0.52 - abs(x) * 0.35), (lean, 1, 0.05), length * S, 0.026 * S), tooth, bones="jaw")
+    tusks = {"brute": ((0.22, 0.3, 0.06), (-0.22, 0.28, 0.06)), "boar": ((0.24, 0.4, 0.055), (-0.24, 0.4, 0.055)),
+             "scarred": ((0.22, 0.3, 0.06), (-0.22, 0.12, 0.06)), "warlord": ((0.22, 0.2, 0.05), (-0.25, 0.16, 0.05))}[style]
+    for x, length, r in tusks:
+        sx = np.sign(x)
+        curl = (0.25 * sx, 0, 0.0) if style == "boar" else (0.05 * sx, 0, 0.06)
+        m.add(horn(P(x, -0.18, 0.47 - abs(x) * 0.22), (0.1 * sx, 1, 0.2), length * S, r * S, curl=curl, tip=0.012 if length > 0.15 else 0.04),
+              tooth, bones="jaw")
+    # Warts
+    n_warts = {"brute": 3, "boar": 4, "scarred": 2, "warlord": 9}[style]
+    spots_at = ((0.32, -0.01, 0.38), (-0.33, -0.09, 0.34), (0.09, 0.06, 0.52), (-0.1, -0.33, 0.46), (0.4, 0.15, 0.22),
+                (-0.25, 0.1, 0.38), (0.2, -0.36, 0.42), (-0.4, -0.2, 0.25), (0.05, 0.26, 0.38))
+    for p_ in spots_at[:n_warts]:
+        m.add(sphere(P(*p_), 0.026 * S, nu=6, nv=4), color(tuple(c * 0.8 for c in sk)), bones="jaw" if p_[1] < -0.25 else "head")
+    # Ears
+    for side in (1, -1):
+        if style == "boar":
+            m.add(loft([P(side * 0.4, 0.2, -0.08), P(side * 0.58, 0.42, -0.12), P(side * 0.66, 0.62, -0.18)],
+                       [(0.12, 0.05, 2.4), (0.1, 0.045, 2.4), (0.02, 0.02, 2)], facing=(0, 0, 1), nu=10, nv=10), skin_paint(sk) + patch(dark_sk, 0.5, 0.5, 0.05, 0.08),
+                  bones="head")
+        else:
+            m.add(loft([P(side * 0.43, 0.1, -0.05), P(side * 0.8, 0.03, -0.07), P(side * 1.08, -0.22, -0.07)],
+                       [(0.18, 0.06, 2.4), (0.2, 0.06, 2.4), (0.06, 0.035, 2)], facing=(0, 1, 0), nu=10, nv=10),
+                  skin_paint(sk) + patch(dark_sk, 0.5, 0.62, 0.04, 0.04), bones="head")
+    m.detail = detail
+
+
 def flush(hd, S=1.0, amount=0.18):
     """Warmer, redder skin on the snout, the cheeks and the lips, where the blood is near"""
     h = np.asarray(hd, float)
@@ -769,15 +905,16 @@ def flush(hd, S=1.0, amount=0.18):
 
 
 def bristles(c):
-    """Coarse hairs along a brow: dark, in streaks"""
+    """Coarse hairs along a brow: fine streaks that run its length, thickest on its top"""
     def fn(ctx, base):
-        hairs = fbm(np.stack([ctx.v * 60, ctx.u * 6, ctx.u * 0], -1), 1, 2, 17)
-        a = smoothstep(0.45, 0.6, hairs) * smoothstep(0.15, 0.4, ctx.u % 1.0) * smoothstep(0.85, 0.6, ctx.u % 1.0)
-        return _over(base, rgb(c), a * 0.85)
+        hairs = fbm(np.stack([ctx.u * 90, ctx.v * 5, ctx.u * 0], -1), 1, 3, 17)
+        top = smoothstep(-0.1, 0.6, ctx.n[..., 1])
+        a = (0.55 + 0.45 * smoothstep(0.4, 0.65, hairs)) * top
+        return _over(base, rgb(c) * (0.8 + 0.4 * hairs)[..., None], a * 0.9)
     return fn
 
 
-def make_butcher():
+def make_butcher(face="brute"):
     """The Butcher, a swamp brute of a butcher-monger: as wide as he is tall, olive skin, a wide frog mouth with a
     snaggletooth, drooping ears, a bloodied hide apron round his gut, a shell on one shoulder, a big fish on his belt,
     an iron meat hook for a right hand and a cleaver in his left. Simple, bold shapes, painted broadly. He is rigged,
@@ -794,7 +931,7 @@ def make_butcher():
     trousers = (0.3, 0.25, 0.2)
     brute_body(m, J, skin_p, cloth(trousers, folds=4), skin_p, gut=1.6, shoulders=1.1, forearm=1.15, legs_thick=1.15,
                chest_p=skin_p + bands(trousers, [(0.0, 0.2)]), right_hand=False)
-    swamp_face(m, J["head"] + np.array([0, 0.08, 0.18]), sk, m.rig)
+    ogre_face(m, J["head"] + np.array([0, 0.08, 0.18]), sk, m.rig, face)
     # The apron: hide, light and stained, wrapped round the gut, on a strap round his neck, and a thick belt
     apron = leather((0.6, 0.48, 0.34)) + stains((0.45, 0.07, 0.05), 0.32, 1.0) + stains((0.32, 0.26, 0.16), 0.2, 2.2, 21) + edges(0.35, 0.12, dark=True)
     wrap_apron(m, J, apron, gut=1.6, low=0.8, wide=1.15)
@@ -818,9 +955,7 @@ def make_butcher():
     # The hook: as long as his arm, a heavy collar where it goes into the socket. A part of its own, which the game
     # leaves out while he has thrown it
     base = w + (he - w) * 0.6
-    m.add(torus(base, 0.2, 0.07, rot=(20, 0, 0)), metal((0.42, 0.42, 0.46), 0.4), bones="fore_r", part="hook")
-    m.add(horn(base, (0, -1, 0.3), 1.75, 0.17, curl=(0, 2.1, 1.4), tip=0.03), metal((0.52, 0.52, 0.56), 0.5) + edges(0.35, 0.06) +
-          stains((0.42, 0.06, 0.05), 0.2, 2.5) + stains((0.35, 0.22, 0.12), 0.15, 4, 9), bones="fore_r", part="hook")
+    meat_hook(m, base, (0, -1, 0.25), (0, 0, 1), 0.95, hook_steel(), bones="fore_r", part="hook")
     # The cleaver in his left hand
     gp = L(J["hand_end_r"])
     m.add(loft([gp + [0, -0.25, 0], gp + [0, 0.45, 0.05]], [(0.08, 0.08, 2), (0.08, 0.08, 2)], nu=10), wood((0.35, 0.22, 0.12)), bones="hand_l")
@@ -840,6 +975,74 @@ def make_butcher():
         m.clips[name + "_face"] = layered(stand, face[name])
     finish(m, "butcher")
     print(write_glb(m, fps=30))
+
+
+def meat_hook(m, origin, along, side, s, paint, bones=None, part=None):
+    """A heavy meat hook: a collar, a thick shank along along, a broad belly that bends round towards side, and a point
+    that comes back towards the collar with a barb on it, s long-ish units big. It lies in the plane of along and side,
+    blade-like: wider in that plane than across it, so it reads as a hook from above"""
+    o = np.asarray(origin, float)
+    a = np.asarray(along, float)
+    a /= np.linalg.norm(a)
+    b = np.asarray(side, float)
+    b = b - a * (b @ a)
+    b /= np.linalg.norm(b)
+    across = np.cross(a, b)
+    P = lambda x, y: o + (a * x + b * y) * s
+    # The shank, round the belly, and back up to the point
+    path, secs = [P(0.2, 0), P(0.75, 0), P(1.3, 0)], [(0.17, 0.15, 2.5), (0.19, 0.16, 2.5), (0.22, 0.17, 2.5)]
+    R, cy = 0.56, 0.56
+    for k in range(1, 9):
+        t = math.pi * k / 8
+        path.append(P(1.3 + R * math.sin(t), cy - R * math.cos(t)))
+        w = 0.22 + 0.06 * math.sin(t) - 0.06 * k / 8
+        secs.append((w, 0.17 - 0.03 * k / 8, 2.3))
+    path += [P(1.08, 1.14), P(0.82, 1.06), P(0.58, 0.92)]
+    secs += [(0.17, 0.11, 1.8), (0.1, 0.06, 1.5), (0.015, 0.015, 1.4)]
+    m.add(loft(path, [(w * s, d * s, e) for w, d, e in secs], facing=across, nu=14, nv=40, caps="round"),
+          paint, bones=bones, part=part)
+    # A heavy collar where the chain or the socket holds it, and a barb on the inside of the point
+    m.add(loft([P(-0.05, 0), P(0.12, 0), P(0.28, 0)], [(0.24 * s, 0.22 * s, 3), (0.27 * s, 0.25 * s, 3), (0.2 * s, 0.19 * s, 3)],
+               facing=across, nu=14, caps="flat"), metal((0.3, 0.3, 0.33), 0.3) + edges(0.4, 0.08), bones=bones, part=part)
+    m.add(horn(P(0.98, 1.0), b * -0.7 + a * 0.5, 0.45 * s, 0.12 * s, curl=tuple(a * 0.2), e=1.6, tip=0.012 * s, facing=across),
+          paint, bones=bones, part=part)
+
+
+def hook_steel():
+    return metal((0.36, 0.36, 0.4), 0.35) + edges(0.35, 0.06) + stains((0.32, 0.05, 0.04), 0.12, 2.0) + stains((0.33, 0.2, 0.1), 0.12, 4, 9)
+
+
+def make_meat_hook():
+    """The Butcher's hook as it flies: the same hook as on his arm, big. The chain is tied on at the origin, and it
+    points along +z, bending round towards +x"""
+    m = Model("meat_hook", size=512, ground_ao=False, light=0.35, ao=0.6, detail=0.08)
+    m.add(chain_link_shape((0, 0, -0.45), upright=True), metal((0.3, 0.3, 0.33), 0.3) + edges(0.3, 0.1))
+    meat_hook(m, (0, 0, 0), (0, 0, 1), (1, 0, 0), 2.1, hook_steel())
+    tris = m.write()
+    print(f"models/meat_hook.obj  {tris} triangles")
+
+
+def chain_link_shape(c, upright=False, r=0.22, straight=0.2, t=0.12):
+    """An oval link round c, along z: a ring r round, t thick, pulled out by straight at each end. Flat in the xz
+    plane, or upright in the yz plane"""
+    c = np.asarray(c, float)
+
+    def stretch(p):
+        z = p[..., 2] - c[2]
+        out = p.copy()
+        out[..., 2] += straight * np.clip(z / (0.5 * r), -1, 1)
+        return out
+    return torus(c, r, t, rot=(0, 0, 90) if upright else (0, 0, 0), nu=28, nv=10).deform(stretch)
+
+
+def make_chain_link():
+    """A link of the hook's chain: a heavy oval of dark iron, along z, flat in the xz plane. The game turns every other
+    one a quarter round, so they hang in each other"""
+    m = Model("chain_link", size=256, ground_ao=False, light=0.35, ao=0.0, detail=0.06)
+    m.add(chain_link_shape((0, 0, 0)),
+          metal((0.3, 0.29, 0.31), 0.45) + stains((0.4, 0.22, 0.1), 0.2, 6, 3))
+    tris = m.write()
+    print(f"models/chain_link.obj  {tris} triangles")
 
 
 def make_frosty():

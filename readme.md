@@ -68,7 +68,9 @@ tusks. Each clip of the body has a layer for the face (`rig.layered`): he blinks
 scowls as he winds up a throw and roars as the hook flies, grimaces under a car and bellows as he heaves it. The
 portrait of the HUD looks at his head bone, close up, and plays the face of the clip he is in (`<clip>_face`, the
 same face on a body that stands still, so his arm never swings in front of it). His hook is a part of its own in the
-GLB (`part="hook"`), which the game leaves out while the hook is thrown; the chain comes from his hand bone. `tools/make_butcher_concepts.py` draws the
+GLB (`part="hook"`), which the game leaves out while the hook is thrown. The thrown hook and the links of its chain
+are models of their own (`models/meat_hook.obj` and `models/chain_link.obj`, the same hook as on his arm), and the chain
+comes from his hand bone: the throw clip starts wound up, so the arm is flung forward the moment the hook leaves. `tools/make_butcher_concepts.py` draws the
 directions he was picked from, as sketch sheets.
 
 **Iconkit** (`tools/iconkit.py`) takes the drawings of the icons, which are flat shapes drawn with PIL, keeps each shape

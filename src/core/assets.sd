@@ -27,6 +27,8 @@ Assets :: struct {
     heroAnimations: [HeroKind.count]HeroAnimations;    // The clips of the heroes whose models have skeletons (hero_animation.sd)
     portrait: RenderTexture;          // The hero of the HUD, drawn in 3D
     wall:     Model;                   // A segment of the wall, repeated along it
+    meatHook:  Model;                  // The Butcher's hook as it flies, and a link of its chain (tools/make_heroes.py)
+    chainLink: Model;
 
     icons: Map<string, Texture>;       // The icon of each ability, by its name in heroes.sd
 
@@ -114,6 +116,8 @@ loadAssets :: () -> Assets {
         assets.particleTextures[kind] = loadTexture(tprint("textures/particles/%.png", ParticleTexture.names[kind]));
     }
     assets.wall = assets.lighting.loadModel("models/wall.obj");
+    assets.meatHook  = assets.lighting.loadModel("models/meat_hook.obj");
+    assets.chainLink = assets.lighting.loadModel("models/chain_link.obj");
     assets.portrait = LoadRenderTexture(PortraitResolution, PortraitResolution);
     SetTextureFilter(assets.portrait.texture, .bilinear);
 
@@ -145,6 +149,8 @@ unload :: method (assets: *Assets) {
     for model in assets.heroes   { UnloadModel(model); }
     assets.unloadHeroAnimations();
     UnloadModel(assets.wall);
+    UnloadModel(assets.meatHook);
+    UnloadModel(assets.chainLink);
     UnloadRenderTexture(assets.portrait);
     for model in assets.sceneryModels { UnloadModel(model); }
     assets.scenery.free();
@@ -160,6 +166,20 @@ unload :: method (assets: *Assets) {
     UnloadMesh(assets.outside);
 
     assets.lighting.unload();
+}
+
+// Draws a model turned so its x, y and z go along side, up and forward, with its origin at position
+drawModelFacing :: (model: Model, position: Vector3, side: Vector3, up: Vector3, forward: Vector3) {
+    m: Matrix;
+    m.m0 = side.x;    m.m1 = side.y;    m.m2 = side.z;
+    m.m4 = up.x;      m.m5 = up.y;      m.m6 = up.z;
+    m.m8 = forward.x; m.m9 = forward.y; m.m10 = forward.z;
+    m.m12 = position.x; m.m13 = position.y; m.m14 = position.z;
+    m.m15 = 1;
+    transform := model.transform * m;
+    for i in 0..model.meshCount {
+        DrawMesh(model.meshes[i], model.materials[model.meshMaterial[i]], transform);
+    }
 }
 
 // Draws the unit cube scaled and moved, with the lit material in a color

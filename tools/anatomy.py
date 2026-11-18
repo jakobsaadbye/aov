@@ -76,7 +76,8 @@ def clips():
             "fore_l": (-30, 0, 0), "head": (5, -5, 0), "thigh_r": (-25, 0, 0), "shin_r": (20, 0, 0), "thigh_l": (15, 0, 0),
             "hips": {"rot": (0, 0, 0), "pos": (0, -0.12, 0.1)}}
     # Throwing the hook: a quick windup with the right arm back and the body turned away, then the arm flung forward
-    # with the whole body behind it, and back. It is cast at once, so the throw comes early
+    # with the whole body behind it, and back. The hook leaves the moment it is cast, so the clip starts wound up and
+    # the arm is flung forward at once, the hook going with it
     hook_back = {"upper_r": (40, 0, 75), "fore_r": (-70, 0, 0), "chest": (-4, 32, 0), "spine": (0, 14, 0), "head": (-6, -20, 0),
                  "upper_l": (-25, 0, -20), "fore_l": (-40, 0, 0), "thigh_r": (12, 0, 0), "thigh_l": (-14, 0, 0), "shin_l": (14, 0, 0),
                  "hips": {"rot": (0, 10, 0), "pos": (0, -0.05, 0)}}
@@ -96,7 +97,7 @@ def clips():
              "chest": (8, 0, 0), "thigh_r": (-24, 0, 0), "shin_r": (16, 0, 0), "thigh_l": (14, 0, 0), "hips": {"rot": (4, 0, 0), "pos": (0, -0.1, 0.15)}}
     return {"idle": clip(2.0, (0.0, idle0), (1.0, idle1)), "walk": clip(1.0, (0.0, walk(0)), (0.25, passing(1)), (0.5, walk(1)), (0.75, passing(-1))),
             "cast": clip(0.9, (0.0, idle0), (0.35, windup), (0.55, slam), (0.8, idle0)),
-            "hook": once(0.8, (0.0, idle0), (0.1, hook_back), (0.24, hook_throw), (0.45, hook_follow), (0.8, idle0)),
+            "hook": once(0.75, (0.0, hook_back), (0.1, hook_throw), (0.32, hook_follow), (0.75, idle0)),
             "heave": once(0.9, (0.0, idle0), (0.2, crouch), (0.42, lift), (0.58, shove), (0.9, idle0))}
 
 
