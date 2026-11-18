@@ -6,7 +6,7 @@
 //     make_audio                          what isn't there yet, or has changed
 //     make_audio --force                  all of it again
 //     make_audio sfx                      only the sounds (or: voices, music)
-//     make_audio music.folk               only the pieces of one soundtrack
+//     make_audio music.quiet              only the pieces of one soundtrack
 //     make_audio ability.hex voice.hugo_cast_1        only these
 //     make_audio --list                   what it would make, with the prompts and the lines
 //     make_audio --adopt                  takes the files that are there as made from the prompts of now, without making
@@ -515,7 +515,8 @@ Lines :: [
 //     build-ups, drops, climaxes or stingers, and the same level from start to end.
 //   - Light-hearted. Being run over is the joke of the game, so the music is never tense, sad or dark.
 //   - One small band for each soundtrack, in keys and tempos close to each other, so its pieces sound like one whole.
-//   - About a minute and a half a piece, played in a random order with silence between, and ending with a fade.
+//   - About a minute and a half a piece. The game mixes the pieces of all the soundtracks, shuffled anew every game, with
+//     silence between, so the pieces of one have to sit well next to those of another: the brief is what they share.
 MusicBrief :: "Background music for a light-hearted party video game, played quietly under the constant noise of traffic, sound effects and spoken character lines. Instrumental only, no vocals, no choir. A light low end and an uncluttered arrangement that stays out of the way. Even dynamics from start to end: no build-ups, drops, climaxes or sudden stops. Never tense, sad or dark. It starts right away and ends with a short, clean fade";
 
 // A soundtrack: the style its pieces share, the same little band in it. Its pieces are written to data/music/<name>/,
@@ -532,8 +533,6 @@ Soundtracks :: [
     SoundtrackStyle{"quiet", "Calm, sparse ambient piano music with a lot of space between the notes, like a quiet summer evening in a Nordic town. A soft felt piano plays slow, simple, slightly wistful phrases that drift and repeat, with a faint warm synth pad high up and a long, soft reverb. Around 70 BPM, unhurried and free, no drums. Gentle, peaceful, nostalgic and a little dreamy"},
     // A loop you stop noticing, like the music of a party board game (Mario Party): a short motif and a steady groove
     SoundtrackStyle{"board", "A light, loopable background groove for a party board game, friendly and unobtrusive, like menu music you soon stop noticing. A short, catchy motif repeats with small variations on marimba and vibraphone, over pizzicato strings, a soft plucked upright bass, light brushed drums and a shaker. Around 104 BPM with a relaxed swing. Simple, steady and tidy: it supports the play and never takes the lead"},
-    // A Scandinavian folk band at a village dance: the Danish setting and the vikings and witches among the heroes
-    SoundtrackStyle{"folk", "Playful Nordic folk music for a cheeky village game, like a small Scandinavian folk band playing a dance on a summer meadow. A fiddle and a nyckelharpa play a lively, mischievous tune, with a button accordion, a strummed acoustic guitar and a light frame drum with foot stomps. Warm, rustic and fun, with a wink"},
     // Toy instruments and slapstick, for the comedy of being run over
     SoundtrackStyle{"toybox", "Quirky, comedic cartoon music played on toy instruments, like a tiny orchestra in a toy box. A toy piano and a glockenspiel play a silly, bouncy tune, with a ukulele, a bassoon playing light staccato bass notes, playful clarinet accents, a few slide whistle swoops, woodblocks and a triangle. Around 116 BPM. Goofy, charming slapstick like a funny cartoon short, but kept gentle so it can play under a game"},
 ];
@@ -553,15 +552,15 @@ Pieces :: [
     Piece{"band", "far_side", "Triumphant and joyful, like making it across against the odds. In D major: a bright theme that comes back twice and grows each time, with strings and the whole little band joining in the middle", 110},
 
     Piece{"quiet", "dew", "Early morning, dew on the grass beside the road. In C major: a few slow piano notes, then a simple melody that rises, rests and comes back", 90},
+    Piece{"quiet", "drizzle", "Light rain on the asphalt, cosy and calm. In G major: soft repeated piano notes like falling drops, and a slow melody that wanders in the middle", 90},
     Piece{"quiet", "long_light", "The long, golden light of a Nordic summer evening. In F major with a lydian colour: warm piano chords that rock gently, and a high melody that comes and goes", 90},
 
     Piece{"board", "dice_roll", "Breezy and curious, like waiting for your turn. In F major: a marimba motif in thirds, with the vibraphone answering softly", 80},
+    Piece{"board", "town_square", "Pleasantly busy, like a sunny town square full of people. In B flat major: vibraphone chords on the off-beats and a marimba melody that hops between a few notes", 85},
     Piece{"board", "shortcut", "Sneaky and playful, like tiptoeing past the others, funny rather than dark. In D dorian: staccato pizzicato and muted plucks, with a woodblock ticking along", 80},
 
-    Piece{"folk", "midsummer", "A light, quick midsummer dance. In G major, a polska in 3/4 around 120 BPM: the fiddle leads and the nyckelharpa joins in harmony", 85},
-    Piece{"folk", "crossroads", "A cheeky reel at the crossroads. In D major, in 2/4 around 124 BPM: the accordion and the fiddle trade the tune back and forth", 85},
-
     Piece{"toybox", "wind_up", "A wind-up toy marching along, steady and silly. In C major: a toy piano melody over bassoon staccato, and a woodblock going tick-tock", 75},
+    Piece{"toybox", "toy_parade", "A tiny parade of toy soldiers, proud and silly. In G major: a glockenspiel melody, woodblock rolls like a little snare, and bassoon oom-pahs", 75},
     Piece{"toybox", "pratfall", "Clumsy and cheerful, like slipping on a banana peel and getting right back up. In F major: glockenspiel and ukulele, with little slide whistle swoops between the phrases", 75},
 ];
 
@@ -769,7 +768,7 @@ finish :: (audio: string, job: Job) -> bool {
     return true;
 }
 
-// The jobs the arguments ask for: all, sfx, voices, music, or names, or the start of names, e.g music.folk
+// The jobs the arguments ask for: all, sfx, voices, music, or names, or the start of names, e.g music.quiet
 jobsFor :: (args: []string) -> [..]Job {
     jobs: [..]Job;
     names := 0;

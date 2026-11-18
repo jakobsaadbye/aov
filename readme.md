@@ -31,7 +31,7 @@ It can be started from any folder: it finds `data/` next to `src/` from where th
 | `data/models/` | The vehicles (car, van, truck, bus), the heroes, the city and a segment of the wall, as OBJ, each with its hand-painted texture (`car.png` for `car.obj`) |
 | `data/icons/` | A 128x128 icon for each ability, item, perk and status, by the name in the code |
 | `data/sounds/` | The sound effects, by group: `hero/`, `car/`, `ability/`, `ui/` |
-| `data/music/` | The soundtracks, a folder each (`band/`, `quiet/`, `board/`, `folk/`, `toybox/`; the `soundtrack` command of the console picks one), whose pieces are played one at a time, and the hum of the traffic (`traffic.ogg`), looped |
+| `data/music/` | The soundtracks, a folder each (`band/`, `quiet/`, `board/`, `toybox/`), whose pieces the game shuffles together anew every game and plays one at a time (the `soundtrack` command of the console picks one alone), and the hum of the traffic (`traffic.ogg`), looped |
 | `data/fonts/` | Cinzel (titles) and Fira Sans (text), both under the SIL Open Font License |
 | `data/shaders/` | `lighting.vs` and `lighting.fs`: the warm sun, cool light from the sky and warm light from the ground, a rim light and the haze in the distance |
 | `data/window_icon.png` | |
