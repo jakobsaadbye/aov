@@ -8,7 +8,6 @@ namespace core;
 //     Up, Down       the lines typed before
 //     Page up, down  scrolls, and so does the wheel
 
-import console;
 import math;
 import mem;
 use raylib;
@@ -94,7 +93,7 @@ type :: method (view: *ConsoleView) {
     if pressed(.pageDown) { view.scroll -= rows / 2; }
     wheel := GetMouseWheelMove();
     if wheel != 0 { view.scroll += (wheel * 3) as int; }
-    view.scroll = math.clamp(view.scroll, 0, math.max(0, console.lines().count as int - rows));
+    view.scroll = math.clamp(view.scroll, 0, math.max(0, consoleLines().count as int - rows));
 
     if IsKeyPressed(.enter) || IsKeyPressed(.kpEnter) {
         line := view.text().copy(mem.heap());
@@ -104,7 +103,7 @@ type :: method (view: *ConsoleView) {
         view.browsing = -1;
         view.scroll = 0;
         view.edited();
-        console.execute(line);
+        consoleExecute(line);
     }
 }
 
@@ -137,7 +136,7 @@ edited :: method (view: *ConsoleView) {
 // Up and down: the lines typed before, the last one first
 @private
 browse :: method (view: *ConsoleView, step: int) {
-    history := console.history();
+    history := consoleHistory();
     if history.count == 0 { return; }
     if view.browsing < 0 {
         if step > 0 { return; }
@@ -163,7 +162,7 @@ complete :: method (view: *ConsoleView) {
     prefix: string;
     prefix.data = view.prefix.data;
     prefix.len = view.prefix.count;
-    matches := console.complete(prefix);
+    matches := consoleComplete(prefix);
     defer matches.free();
     if matches.count == 0 { return; }
     view.completing = (view.completing + 1) % matches.count as int;
@@ -191,7 +190,7 @@ drawConsole :: (view: *ConsoleView) {
 
     // The log, the last line at the bottom
     inputY := height - 30;
-    lines := console.lines();
+    lines := consoleLines();
     rows := view.rows();
     BeginScissorMode(0, 0, width, inputY - 4);
     last := lines.count as int - 1 - view.scroll;
@@ -236,20 +235,20 @@ drawMatches :: method (view: *ConsoleView, top: int) {
         space := word.indexOf(" ");
         if space >= 0 {
             // Typing the arguments of a command: only that command
-            entry := console.lookup(word.slice(0, space));
+            entry := consoleLookup(word.slice(0, space));
             if entry != null { view.drawMatchRows(top, [entry], -1); }
             return;
         }
     }
     if word.len == 0 && selected < 0 { return; }
-    matches := console.complete(word);
+    matches := consoleComplete(word);
     if matches.count > 0 { view.drawMatchRows(top, matches, selected); }
 }
 
 MaxMatches :: 8;
 
 @private
-drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*console.Entry, selected: int) {
+drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*ConsoleEntry, selected: int) {
     // A window of the matches that has the selected one in it
     first := 0;
     if selected >= MaxMatches { first = selected - MaxMatches + 1; }
@@ -258,7 +257,7 @@ drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*console.Entry
     width := 0;
     for i in first..first + shown {
         entry := matches[i];
-        width = math.max(width, textWidth(console.usage(entry), ConsoleFontSize) + textWidth(entry.help, ConsoleFontSize) + 60);
+        width = math.max(width, textWidth(consoleUsage(entry), ConsoleFontSize) + textWidth(entry.help, ConsoleFontSize) + 60);
     }
     width = math.min(width, GetScreenWidth() - 28);
     rows := shown;
@@ -268,7 +267,7 @@ drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*console.Entry
         i := first + k as int;
         entry := matches[i];
         y := top + 10 + k as int * ConsoleLine;
-        usage := console.usage(entry);
+        usage := consoleUsage(entry);
         color := TextColor;
         if i == selected {
             DrawRectangle(16, y - 2, width - 4, ConsoleLine, ColorAlpha(InputColor, 0.25));
@@ -283,7 +282,7 @@ drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*console.Entry
 }
 
 @private
-lineColor :: (kind: console.LineKind) -> Color {
+lineColor :: (kind: ConsoleLineKind) -> Color {
     return switch kind {
         case .output  => TextColor;
         case .input   => InputColor;

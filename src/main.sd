@@ -12,7 +12,6 @@
 //
 // data/autoexec.cfg, when there is one, runs first: a command a line.
 
-import console;
 import core;
 import bots;
 import bots.DefaultBots;
@@ -63,7 +62,7 @@ ensureGame :: method (session: *Session) {
     if session.replayFile.hasValue() {
         recording, err := core.loadRecording(session.replayFile.value());
         if err != null {
-            console.fail("Couldn't read the recording %: %", session.replayFile.value(), err.message);
+            core.consoleFail("Couldn't read the recording %: %", session.replayFile.value(), err.message);
             session.replayFile = null;
         } else {
             game = bots.newReplay(recording);
@@ -98,8 +97,8 @@ ensureGame :: method (session: *Session) {
 saveRecording :: method (session: *Session, game: *core.Game) {
     if !session.recordFile.hasValue() || game.replay != null { return; }
     err := game.saveRecording(session.recordFile.value());
-    if err != null { console.fail("Couldn't save the recording to %: %", session.recordFile.value(), err.message); }
-    else           { console.print("Saved the recording to %", session.recordFile.value()); }
+    if err != null { core.consoleFail("Couldn't save the recording to %: %", session.recordFile.value(), err.message); }
+    else           { core.consolePrint("Saved the recording to %", session.recordFile.value()); }
 }
 
 loadSounds :: method (session: *Session) {
@@ -115,76 +114,76 @@ loadSounds :: method (session: *Session) {
 // The commands of the session
 //
 
-@console.command("Runs the game this many times as fast, e.g 4 to see a lot quickly, or 0.25 to see it slowly")
+@core.consoleCommand("Runs the game this many times as fast, e.g 4 to see a lot quickly, or 0.25 to see it slowly")
 setSpeed :: (session: *Session, speed: f32) {
     session.speed = math.clamp(speed, 0.05, 32);
 }
 
-@console.command("Turns all sound off or on")
+@core.consoleCommand("Turns all sound off or on")
 toggleMute :: (session: *Session) {
     session.muted = !session.muted;
     if !session.muted { session.loadSounds(); }
     if session.muted { SetMasterVolume(0); } else { SetMasterVolume(1); }
 }
 
-@console.command("How many bots there are, 0 to 5. Starts a new game")
+@core.consoleCommand("How many bots there are, 0 to 5. Starts a new game")
 setBots :: (session: *Session, count: int) {
     session.bots = math.clamp(count, 0, core.MaxPlayers - 1);
     newGame(session);
 }
 
-@console.command("The seed of the next games: the same seed gives the same game. Starts a new game")
+@core.consoleCommand("The seed of the next games: the same seed gives the same game. Starts a new game")
 setSeed :: (session: *Session, seed: int) {
     session.seed = seed as u64;
     newGame(session);
 }
 
-@console.command("How good the bots are. Starts a new game")
+@core.consoleCommand("How good the bots are. Starts a new game")
 setDifficulty :: (session: *Session, difficulty: core.Difficulty) {
     session.difficulty = difficulty;
     newGame(session);
 }
 
-@console.command("How many crossings win: short (5), medium (10) or long (15). Starts a new game")
+@core.consoleCommand("How many crossings win: short (5), medium (10) or long (15). Starts a new game")
 setGameLength :: (session: *Session, length: core.GameLength) {
     session.length = length;
     newGame(session);
 }
 
-@console.command("No hero of your own: the camera follows the first bot (or on, off). Starts a new game")
+@core.consoleCommand("No hero of your own: the camera follows the first bot (or on, off). Starts a new game")
 spectate :: (session: *Session, on: ?bool) {
     session.spectate = on ?? !session.spectate;
     newGame(session);
 }
 
-@console.command("A new game, with the settings")
+@core.consoleCommand("A new game, with the settings")
 newGame :: (session: *Session) {
     session.replayFile = null;
     session.isStale = true;
 }
 
-@console.command("Plays a recording back (made with record, F8 or writeRecording)")
+@core.consoleCommand("Plays a recording back (made with record, F8 or writeRecording)")
 replay :: (session: *Session, file: string) {
     session.replayFile = file.copy();
     session.isStale = true;
 }
 
-@console.command("Saves the recording of the game to the file when the game is over or the window closes")
+@core.consoleCommand("Saves the recording of the game to the file when the game is over or the window closes")
 record :: (session: *Session, file: string) {
     session.recordFile = file.copy();
 }
 
-@console.command("Saves a picture of the screen to the file, at the end of the frame. raylib saves it in the folder of the game")
+@core.consoleCommand("Saves a picture of the screen to the file, at the end of the frame. raylib saves it in the folder of the game")
 screenshot :: (session: *Session, file: string) {
     session.screenshot = file.copy();
 }
 
-@console.command("Opens or closes the console, over half of the screen or all of it (F1, twice for all)")
+@core.consoleCommand("Opens or closes the console, over half of the screen or all of it (F1, twice for all)")
 toggleConsole :: (session: *Session, full: ?bool) {
     session.view.toggle(full ?? false);
 }
 
-@console.command("Closes the game")
+@core.consoleCommand("Closes the game")
 quit :: (session: *Session) {
     session.quit = true;
 }
@@ -199,11 +198,11 @@ main :: () {
     assets := core.loadAssets();
     defer assets.unload();
 
-    console.provide(currentGame);
-    console.provide(currentSession);
+    core.consoleProvide(currentGame);
+    core.consoleProvide(currentSession);
     autoexec := core.tprint("%autoexec.cfg", core.dataFolder());
-    if os.fileExists(autoexec) { console.exec(autoexec); }
-    console.runArguments(os.args());
+    if os.fileExists(autoexec) { core.consoleExec(autoexec); }
+    core.consoleRunArguments(os.args());
     session.ensureGame();
     if !session.muted { session.loadSounds(); }
     defer {
@@ -219,7 +218,7 @@ main :: () {
         // steps that are no longer. A replay plays its recorded frames as fast as they were played, times the speed
         dt := math.min(GetFrameTime(), 0.05);
         keyboardTaken := view.update(dt);           // May run commands
-        console.update(session.game.time);          // The commands of at
+        core.updateConsole(session.game.time);          // The commands of at
         session.ensureGame();
         game := session.game;
         game.keyboardTaken = keyboardTaken;

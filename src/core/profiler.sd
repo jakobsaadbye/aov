@@ -7,7 +7,6 @@ namespace core;
 //     game.traffic.update(...);
 //     profileEnd(.traffic);
 
-import console;
 import fmt;
 import math;
 import time;
@@ -79,12 +78,12 @@ profileLines :: () -> [..]string {
     return lines;
 }
 
-@console.command("What each part of a frame costs, in milliseconds: on average, and at the worst of the last 2 seconds")
-profile :: () {
+// The body of the console command profile (console_commands.sd)
+printProfile :: () {
     lines := profileLines();
     defer lines.free();
     fps := 0;
     if profiler.average[ProfileSection.frame] > 0 { fps = (1 / profiler.average[ProfileSection.frame]) as int; }
-    console.print("About % frames a second", fps);
-    for line in lines { console.print("    %", line); }
+    consolePrint("About % frames a second", fps);
+    for line in lines { consolePrint("    %", line); }
 }

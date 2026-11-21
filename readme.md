@@ -242,18 +242,20 @@ F1 drops down the developer console, like the one of Counter-Strike: a command a
 completes a name, up and down go through what was typed, and the commands that match what is typed are shown under the
 console with how they are used.
 
-A command is any function with the attribute `@console.command`, in any namespace, and its parameters are what is typed
+A command is any function with the attribute `@consoleCommand`, in any namespace, and its parameters are what is typed
 after its name: numbers, `on`/`off`, text, and enums by the names of their values. A parameter with a default or a `?T`
-can be left out, and a parameter the program gives (`console.provide`), e.g the `*Game`, isn't typed at all:
+can be left out, and a parameter the program gives (`consoleProvide`), e.g the `*Game`, isn't typed at all:
 
 ```odin
-@console.command("Your hero becomes another one, e.g setHero butcher")
+@consoleCommand("Your hero becomes another one, e.g setHero butcher")
 setHero :: (game: *Game, hero: HeroKind) { ... }
 ```
 
-The console itself is in `src/console/` (namespace `console`) and knows nothing of the game. The commands of the game
-are in `core/commands.sd`, and the ones that start a new game (`setBots`, `setSeed`, `spectate`, `setDifficulty`,
-`replay`, ...) in `main.sd`.
+The console itself is `core/console.sd` and knows nothing of the game. Every command of core is in
+`core/console_commands.sd`, so that file lists them all: a command whose work belongs to a part of the game calls a
+function of that part (`spawnSlick` calls `spawnSlickAt` in `slicks.sd`). The ones that start a new game (`setBots`,
+`setSeed`, `spectate`, `setDifficulty`, `replay`, ...) are in `main.sd`, and the two of the bots in `bots/`, as core can't
+see the session or the bots.
 
 Commands can also be given on the command line, each after a `+`, and run before the game starts. `at <seconds>
 <command>` runs one at a time of the game, so the game can be run and looked at without playing it, e.g by an agent:
@@ -638,9 +640,9 @@ window and runs the loop.
 | `traffic_events.sd`, `slicks.sd` | Rush hour and the ambulances, and the oil slicks |
 | `ui.sd` | The pieces every part of the UI is drawn with, in the style of Warcraft 3 |
 | `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
-| `commands.sd`, `console_view.sd` | The console commands of the game, and the console on the screen (F1) |
+| `console.sd`, `console_commands.sd`, `console_view.sd` | The console, every console command of core, and the console on the screen (F1) |
 
-`src/console/console.sd` (namespace `console`) is the console itself: it finds the commands, reads what is typed into their
+`core/console.sd` is the console itself: it finds the commands, reads what is typed into their
 parameters, and keeps the lines and the history.
 
 | `src/bots/` | |

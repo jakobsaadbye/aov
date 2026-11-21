@@ -12,7 +12,6 @@ use core;
 // as the bot's own forecast is made again while it searches.
 
 import allocators;
-import console;
 import mem;
 import thread;
 import time;
@@ -109,9 +108,9 @@ stop :: method (job: *SearchJob) {
     job.arena.free();
 }
 
-@console.command("The bots search for their ways on threads of their own (or on, off), so a frame never waits for them. Off: on the thread of the game, one search a frame, like the tests")
+@consoleCommand("The bots search for their ways on threads of their own (or on, off), so a frame never waits for them. Off: on the thread of the game, one search a frame, like the tests")
 toggleAsyncBots :: (game: *Game, on: ?bool) {
     game.asyncBots = on ?? !game.asyncBots;
-    if game.asyncBots { console.print("The bots search on threads of their own"); }
-    else              { console.print("The bots search on the thread of the game"); }
+    if game.asyncBots { consolePrint("The bots search on threads of their own"); }
+    else              { consolePrint("The bots search on the thread of the game"); }
 }

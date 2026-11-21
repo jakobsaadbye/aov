@@ -8,7 +8,6 @@ namespace core;
 // it is in the backpack, and an item that is used has an Ability, like a hero's, cast with 1, 2 or 3
 // (item_abilities.sd).
 
-import console;
 import fmt;
 import math;
 import random;
@@ -361,32 +360,32 @@ drawItem :: (game: *Game, assets: *Assets) {
 // Console commands, e.g to try an item out
 //
 
-@console.command("Puts an item on the road, a random one without a name, at z along the road or anywhere")
-spawnItem :: (game: *Game, kind: ?ItemKind, z: ?f32) {
+// The body of the console command spawnItem (console_commands.sd)
+spawnItemAt :: (game: *Game, kind: ?ItemKind, z: ?f32) {
     item := kind ?? game.items.rng.between(0, ItemKind.count as int - 1) as ItemKind;
     at := z ?? game.items.rng.uniform(-ItemRoadLength, ItemRoadLength) as f32;
     game.placeItem(item, Vector2{0, at});
 }
 
-@console.command("Puts an item in the backpack of a player, you when no player is given. In a full backpack it takes the place of the oldest that isn't locked")
-giveItem :: (game: *Game, kind: ItemKind, player: ?int) {
+// The body of the console command giveItem (console_commands.sd)
+giveItemTo :: (game: *Game, kind: ItemKind, player: ?int) {
     index := player ?? game.watched;
     if index < 0 || index >= game.players.count {
-        console.fail("There is no player %. status lists them", index);
+        consoleFail("There is no player %. status lists them", index);
         return;
     }
     if !game.players[index].backpack.canTake() {
-        console.fail("The backpack of % is full of locked items", game.players[index].name);
+        consoleFail("The backpack of % is full of locked items", game.players[index].name);
         return;
     }
     game.pickUp(index, kind);
 }
 
-@console.command("The items there are, and what is in each backpack")
-items :: (game: *Game) {
+// The body of the console command items (console_commands.sd)
+printItems :: (game: *Game) {
     for kind in ItemKind.values {
         definition := kind.itemDefinition();
-        console.print("    %  -  %: %", ItemKind.names[kind], definition.name, definition.description);
+        consolePrint("    %  -  %: %", ItemKind.names[kind], definition.name, definition.description);
     }
     for player, i in game.players {
         names := "empty";
@@ -394,8 +393,8 @@ items :: (game: *Game) {
             if k == 0 { names = item.itemDefinition().name; }
             else      { names = tprint("%, %", names, item.itemDefinition().name); }
         }
-        console.print("    %. %: %", i, player.name, names);
+        consolePrint("    %. %: %", i, player.name, names);
     }
-    if game.items.onRoad.hasValue() { console.print("On the road: %", game.items.onRoad.value().kind.itemDefinition().name); }
-    else                            { console.print("The next item in % s", fmt.fixed(game.items.nextIn, 1)); }
+    if game.items.onRoad.hasValue() { consolePrint("On the road: %", game.items.onRoad.value().kind.itemDefinition().name); }
+    else                            { consolePrint("The next item in % s", fmt.fixed(game.items.nextIn, 1)); }
 }
