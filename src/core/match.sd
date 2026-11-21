@@ -4,7 +4,6 @@ namespace core;
 // round: the others stop where they are and start again from the side it got to, so everyone always races from the
 // same side. And heroes can shove each other: one that walks into an enemy pushes it away, further when it is heavier.
 
-import console;
 import fmt;
 import math;
 use raylib;
@@ -164,14 +163,14 @@ drawResults :: (game: *Game) {
     drawText(note, x + (width - textWidth(note, 17)) / 2, y + height - 34, 17, DimColor);
 }
 
-@console.command("Ends the game now, with a player as the winner, the one ahead when none is given")
-winGame :: (game: *Game, player: ?int) {
+// The body of the console command winGame (console_commands.sd)
+winGameNow :: (game: *Game, player: ?int) {
     index := player ?? 0;
     if !player.hasValue() {
         for p, i in game.players { if isAhead(p, game.players[index]) { index = i as int; } }
     }
     if index < 0 || index >= game.players.count {
-        console.fail("There is no player %", index);
+        consoleFail("There is no player %", index);
         return;
     }
     game.win(index);
