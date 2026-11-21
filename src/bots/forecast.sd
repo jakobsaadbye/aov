@@ -47,13 +47,13 @@ MaxHitsPerCell :: 48;
 // Where a car will be along its lane, as straight pieces in order of time. Before the first piece the car isn't there
 // yet, e.g the next car of a lane
 Trajectory :: struct {
-    pieces:     [MaxPieces]TrajectoryPiece;
-    count:      int;
-    halfLength: f32;
-    leaveWith:  int = -1;       // A car that isn't spawned yet: when it leaves a cell is by the slowest it could be, in
-                                // Forecast.slowSpawns
+    pieces:        [MaxPieces]TrajectoryPiece;
+    count:         int;
+    halfLength:    f32;
+    leaveWith:     int = -1;    // A car that isn't spawned yet: when it leaves a cell is by the slowest it could be, in
+    // Forecast.slowSpawns
     harmlessUntil: f32;         // Up on Karl's jack until then: it hits nobody
-    ambulance:  bool;           // That Ditte's ambulance proof heroes needn't keep out of the way of
+    ambulance:     bool;        // That Ditte's ambulance proof heroes needn't keep out of the way of
 
     add :: method * (start: f32, z: f32, speed: f32) {
         assert(self.count < MaxPieces);
@@ -84,7 +84,7 @@ ForecastOptions :: struct {
     throughWalls: bool;
     margin:       f32 = 0.4;    // Room kept to the cars, besides the radius
     leadTime:     f32 = 0.5;    // Seconds before a car gets to a cell that it isn't taken to be safe any more. Long, so a
-                                // hero never runs just in front of a car, with no time left to step aside
+    // hero never runs just in front of a car, with no time left to step aside
     trailTime:    f32 = 0.1;    // Seconds after a car has left a cell that it is safe again: right behind a car is safe
 
     // A cell isn't safe from when a car that hasn't been spawned yet could get to it at the earliest: that is where what
@@ -115,21 +115,21 @@ SafeZone :: struct {
 }
 
 Forecast :: struct {
-    options:    ForecastOptions;
-    blocked:    []bool;                 // For each cell: a wall, or the edge of the field. Never safe. Shared (blockedCells)
-    slicks:     [..]Slick;              // The oil slicks, where a hero can't turn. Never safe either
-    safeZones:  [..]SafeZone;           // Footbridges
-    others:     [..]OtherHero;
-    firstSafe:  [..]int;                // For each cell: where its safe intervals start in safe, -1 until asked for
-    safeCount:  [..]int;
-    known:      [..]f32;                // For each cell: when what is known of its cars ends (a car that isn't spawned yet
-                                        // could come then), Forever off the road. Worked out with its intervals
-    safe:       [..]TimeInterval;
-    lanes:      [LaneCount][..]Trajectory;
+    options:     ForecastOptions;
+    blocked:     []bool;                // For each cell: a wall, or the edge of the field. Never safe. Shared (blockedCells)
+    slicks:      [..]Slick;             // The oil slicks, where a hero can't turn. Never safe either
+    safeZones:   [..]SafeZone;          // Footbridges
+    others:      [..]OtherHero;
+    firstSafe:   [..]int;               // For each cell: where its safe intervals start in safe, -1 until asked for
+    safeCount:   [..]int;
+    known:       [..]f32;               // For each cell: when what is known of its cars ends (a car that isn't spawned yet
+    // could come then), Forever off the road. Worked out with its intervals
+    safe:        [..]TimeInterval;
+    lanes:       [LaneCount][..]Trajectory;
     slowSpawns:  [..]Trajectory;
     unknownFrom: [LaneCount]f32;        // When a car that isn't predicted could be spawned in a lane at the earliest
     fastest:     [LaneCount]f32;        // and how fast it could drive
-    reachX:     f32;                    // How far from the middle of a lane its cars reach a hero
+    reachX:      f32;                   // How far from the middle of a lane its cars reach a hero
 
     // The safe intervals of a cell, in order of time, as indexes into safe: from first, count of them
     intervalsOf :: method * (cell: int) -> int, int {
@@ -430,7 +430,7 @@ TrafficSnapshot :: struct {
     serial:      u64;               // Of the game,
     time:        f32;               // the time of the game, it was made at,
     checksum:    f64;               // and what the cars were like: something can change them in the middle of a frame,
-                                    // e.g a bot that freezes them after another bot has looked
+    // e.g a bot that freezes them after another bot has looked
     lanes:       [LaneCount][..]Trajectory;
     slowSpawns:  [..]Trajectory;
     unknownFrom: [LaneCount]f32;
@@ -515,7 +515,7 @@ trafficChecksum :: (game: *Game) -> f64 {
         if !car.isActive { continue; }
         k := (i + 1) as f64;
         sum += k * (car.z as f64 + 3.1 * car.speed + 5.3 * car.frozenLeft + 7.7 * car.liftedLeft + 11.3 * car.shift
-            + 13.1 * car.lane as f64 + 17.9 * car.fromLane as f64 + 19.7 * (car.kind as int) as f64);
+            +13.1 * car.lane as f64 + 17.9 * car.fromLane as f64 + 19.7 * (car.kind as int) as f64);
     }
     for lane, l in game.traffic.lanes {
         k := (l + 1000) as f64;

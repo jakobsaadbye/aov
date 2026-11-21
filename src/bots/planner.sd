@@ -26,7 +26,7 @@ Waypoint :: struct {
 }
 
 PlanResult :: struct {
-    waypoints: [..]Waypoint;
+    waypoints:   [..]Waypoint;
     reachesGoal: bool;      // Else it ends at the place nearest the goal that it can wait at safely
     expanded:    int;       // States looked at, for the debug overlay and the tests
     lives:       f32;       // How long from the forecast the way it ends with keeps it alive, as far as is known
@@ -45,13 +45,13 @@ PlanRequest :: struct {
     maxExpanded: int = 6000;
     lanes:       int = SearchLanes;     // How many lanes to either side of where it starts the search looks at
     survive:     f32 = 3;                   // How long from now a plan that doesn't get across must keep it alive: by
-                                            // getting to where it ends then, or a way on from there that does
+    // getting to where it ends then, or a way on from there that does
     stay:        f32 = 0.5;                 // and how long it can stand there, until it plans again
     trust:       f32 = 2;                   // Seconds more it counts on living where no car that is known can come, only
-                                            // one that isn't spawned yet
+    // one that isn't spawned yet
     safety:      f32 = 1;                   // Meters across that a second more that the way on lives is worth
     laneWeight:  f32 = 1;                   // How much more a meter across the road is worth than a meter along it, for
-                                            // where a plan that doesn't get across ends: lanes are what is hard
+    // where a plan that doesn't get across ends: lanes are what is hard
 }
 
 @private
@@ -74,7 +74,6 @@ operator < :: (a: OpenEntry, b: OpenEntry) -> bool {
     if a.cost != b.cost { return a.cost < b.cost; }
     return a.arrive > b.arrive;
 }
-
 
 EdgeRoom    :: 14.0;     // How near the top or the bottom of the field it starts to count against where a plan ends
 EdgePenalty :: 4.0;      // and how much, for each meter nearer

@@ -153,7 +153,7 @@ Bridge :: struct {
     owner:      int;
 }
 
-BridgeHeight   :: 3.0;
+BridgeHeight :: 3.0;
 BridgeRaiseTime :: 0.35;    // Seconds it takes to go up, before it is safe
 
 bridgeRect :: method (bridge: Bridge) -> Rectangle {

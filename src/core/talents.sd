@@ -112,7 +112,7 @@ chooseTalent :: method (game: *Game, index: int, choice: int) {
     player.refreshStats();
     kind := offer.talents[choice];
     if index == game.watched { game.showBanner(UiGold, "Talent: %", kind.talentDefinition().name); }
-    else                      { game.announce(index, player.color, "% picked %", player.name, kind.talentDefinition().name); }
+    else { game.announce(index, player.color, "% picked %", player.name, kind.talentDefinition().name); }
 }
 
 // Picks a talent at random for whoever didn't pick in time

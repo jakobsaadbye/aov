@@ -15,7 +15,6 @@ safetyColor :: (seconds: f32, alpha: f32) -> Color {
     return ColorAlpha(ColorLerp({250, 220, 60, 255}, {80, 220, 90, 255}, math.min((seconds - 1.5) / 2.5, 1)), alpha);
 }
 
-
 InspectRadius :: 16.0;      // How far around its hero the inspector shows where it is safe
 
 drawInspection :: method (bot: *Bot, game: *Game, me: int) {

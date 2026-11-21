@@ -532,7 +532,7 @@ joinWords :: (words: []string, from: int) -> string {
         word := words[i];
         if i > from { sb.add(" "); }
         if word.indexOf(" ") >= 0 || word.indexOf(";") >= 0 { sb.add("\"%\"", word); }
-        else                                                 { sb.add("%", word); }
+        else { sb.add("%", word); }
     }
     return sb.toString();
 }
@@ -598,4 +598,3 @@ compareText :: (a: string, b: string) -> int {
     }
     return (a.len - b.len) as int;
 }
-

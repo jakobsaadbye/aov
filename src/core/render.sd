@@ -5,7 +5,7 @@ use raylib;
 
 // The 3D scene: the ground, the road, the walls, the cars, the hero and the effects
 
-SkyColor  :: Color{106, 138, 112, 255};
+SkyColor :: Color{106, 138, 112, 255};
 ShadowColor :: Color{0, 0, 0, 70};
 FrozenColor :: Color{170, 230, 255, 255};
 
@@ -210,10 +210,10 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
     // Bobbing while walking, jumping when across
     bob: f32 = 0;
     if (hero.isMoving || hero.hook.hasValue()) && !animated { bob = math.fabsf(math.sinf(hero.walkCycle)) * 0.35; }
-    if player.phase.kind == .crossed         { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
-    if hero.walksThroughWalls()             { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
-    if hero.leap.hasValue()                 { bob = math.sinf(hero.leap.value().flight * Pi) * hero.leap.value().height; }
-    if hero.isStopped()                     { bob = 0; }
+    if player.phase.kind == .crossed { bob = math.fabsf(math.sinf(hero.walkCycle)) * 2.2; }
+    if hero.walksThroughWalls() { bob = 0.6 + math.sinf(GetTime() as f32 * 3) * 0.25; }
+    if hero.leap.hasValue()     { bob = math.sinf(hero.leap.value().flight * Pi) * hero.leap.value().height; }
+    if hero.isStopped()         { bob = 0; }
     bob += game.rideHeight(hero) + game.bridgeHeightAt(hero.ground());
 
     // A shadow that stays on the ground, and a circle in the color of the player. Yours is thicker
@@ -263,7 +263,7 @@ drawHero :: (assets: *Assets, game: *Game, index: int) {
         hook := hero.hook.value();
         forward := Vector3{math.sinf(hero.facing), 0, math.cosf(hero.facing)};
         right   := Vector3{forward.z, 0, -forward.x};
-        hand := assets.heroHand(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing) ?? (hero.position + Vector3{0, 1.5 + bob, 0} + forward * 1.3 - right * 1.45);
+        hand := assets.heroHand(hero.kind, hero.position + Vector3{0, bob, 0}, hero.facing) ?? (hero.position + Vector3{0, 1.5 + bob, 0} +forward * 1.3 - right * 1.45);
         head := game.hookHead(hook, hand);
         // Flying out and back, it is drawn from the hand that throws it rather than from where he stood when he threw it
         if hook.car < 0 { head = hand.lerp(hook.point + Vector3{0, 1.2, 0}, hook.flight); }
@@ -302,7 +302,6 @@ drawMeatHook :: (assets: *Assets, hand: Vector3, head: Vector3, caught: bool) {
     drawModelFacing(assets.meatHook, head, side, up, forward);
     if caught { DrawSphere(head + forward * 1.3 + side * 1.85 - up * 0.1, 0.22, {150, 15, 20, 255}); }
 }
-
 
 // The reach of an ability while the mouse is on its icon, and the chill aura all the time
 drawAbilityHints :: (game: *Game) {

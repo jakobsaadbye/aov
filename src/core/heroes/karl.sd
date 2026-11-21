@@ -8,14 +8,14 @@ use raylib;
 defineKarl :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Karl", title: "the Mechanic", color: {60, 110, 170, 255}, width: 2.8, height: 4.4, moveSpeed: 7.8, hitRadius: 0.85, maxHealth: 45};
     hero.abilities.add(Ability{
-        name: "Jack", icon: "jack", sound: "ability.jack", cooldown: 9, targeting: .point, cast: castJack, bot: .stopCarsAhead,
+        name:        "Jack", icon: "jack", sound: "ability.jack", cooldown: 9, targeting: .point, cast: castJack, bot: .stopCarsAhead,
         description: "Jacks up the car nearest the cursor, up to 28 away, for 3 seconds: it stands still, and anyone can walk under it",
-        range: 28, duration: LiftTime,
+        range:       28, duration: LiftTime,
     });
     hero.abilities.add(Ability{
-        name: "Oil change", icon: "oil_change", sound: "ability.oil_change", cooldown: 8, targeting: .point, cast: castOilChange, bot: .dropTrap,
+        name:        "Oil change", icon: "oil_change", sound: "ability.oil_change", cooldown: 8, targeting: .point, cast: castOilChange, bot: .dropTrap,
         description: "Slings a big splash of oil from his can at the cursor, up to 24 away, for 20 seconds. Whoever walks onto it shoots off twice as fast the way it was going, and can't turn until it is off",
-        range: 24, radius: 5.0, power: 2.0, duration: 20,
+        range:       24, radius: 5.0, power: 2.0, duration: 20,
     });
     hero.abilities.add(passive("Grease monkey", "grease_monkey", "Oil is nothing new to him: he doesn't slide on it, he runs on it, 60% faster, and turns as he likes, and he keeps the speed for 1.5 seconds after he is off it",
         Trait{greaseMonkey: GreaseSpeed}));

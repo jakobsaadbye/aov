@@ -9,14 +9,14 @@ use raylib;
 defineIvar :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Ivar", title: "the Berserker", color: {190, 70, 30, 255}, width: 3.9, height: 6.0, moveSpeed: 7.5, hitRadius: 0.95, maxHealth: 50};
     hero.abilities.add(Ability{
-        name: "Berserk", icon: "berserk", sound: "ability.berserk", cooldown: 12, cast: castBerserk, bot: .untouchable,
+        name:        "Berserk", icon: "berserk", sound: "ability.berserk", cooldown: 12, cast: castBerserk, bot: .untouchable,
         description: "Goes berserk for 3 seconds: a car that hits him is thrown a lane aside instead of running him over, and he loses a little health",
-        duration: 3, power: BerserkToll,
+        duration:    3, power: BerserkToll,
     });
     hero.abilities.add(Ability{
-        name: "Axe throw", icon: "axe_throw", sound: "ability.axe_throw", cooldown: 8, targeting: .point, cast: castAxeThrow, bot: .disableEnemy,
+        name:        "Axe throw", icon: "axe_throw", sound: "ability.axe_throw", cooldown: 8, targeting: .point, cast: castAxeThrow, bot: .disableEnemy,
         description: "Throws his axe towards the cursor, 22 far: the first enemy it hits is stunned for 1.3 seconds",
-        range: 22, power: 1.3,
+        range:       22, power: 1.3,
     });
     hero.abilities.add(passive("Bloodlust", "bloodlust", "An enemy run over within 20 of him makes his abilities ready again, and heals him a fifth of his health", .bloodlust));
     return hero;

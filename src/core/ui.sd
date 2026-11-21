@@ -9,8 +9,8 @@ import math;
 use raylib;
 
 // The colors of the UI
-UiGold    :: Color{255, 210, 110, 255};    // Titles, and what is chosen
-UiGoldDim   :: Color{190, 150, 80, 255};     // Headers
+UiGold :: Color{255, 210, 110, 255};       // Titles, and what is chosen
+UiGoldDim :: Color{190, 150, 80, 255};       // Headers
 Parchment :: Color{238, 228, 205, 255};    // Text
 
 UiPart :: enum {

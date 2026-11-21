@@ -187,7 +187,7 @@ isSilenced :: method (hero: Hero) -> bool {
 
 // Walking by itself, to a point: to what taunts it. Or nothing
 steeredTo :: method (hero: Hero) -> ?Vector2 {
-    if hero.has(.taunt)  { return hero.status(.taunt).point; }
+    if hero.has(.taunt) { return hero.status(.taunt).point; }
     return null;
 }
 

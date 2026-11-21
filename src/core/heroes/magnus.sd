@@ -9,14 +9,14 @@ use raylib;
 defineMagnus :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Magnus", title: "the Magnet", color: {150, 155, 170, 255}, width: 3.6, height: 5.6, moveSpeed: 7.2, hitRadius: 0.9, maxHealth: 65};
     hero.abilities.add(Ability{
-        name: "Repel", icon: "repel", sound: "ability.repel", cooldown: 12, cast: castRepel, bot: .stopCars,
+        name:        "Repel", icon: "repel", sound: "ability.repel", cooldown: 12, cast: castRepel, bot: .stopCars,
         description: "Turns his poles round for 2.5 seconds: the cars that come within 8 of him are pushed out of his way, into the lanes beside his. Whoever is there had better watch out",
-        duration: 2.5, radius: RepelRadius,
+        duration:    2.5, radius: RepelRadius,
     });
     hero.abilities.add(Ability{
-        name: "Attract", icon: "attract", sound: "ability.attract", cooldown: 12, targeting: .enemy, cast: castAttract, bot: .pullEnemy,
+        name:        "Attract", icon: "attract", sound: "ability.attract", cooldown: 12, targeting: .enemy, cast: castAttract, bot: .pullEnemy,
         description: "Pulls the enemy nearest the cursor, up to 32 away, right up to him, through whatever is in the way",
-        range: 32,
+        range:       32,
     });
     hero.abilities.add(passive("Scrap armor", "scrap_armor",
         "The cars that rush past close to him leave scraps of metal stuck to him, up to 3, which circle him. A car that would hit him knocks one off instead, and is flung a lane aside",

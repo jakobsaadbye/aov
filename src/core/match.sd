@@ -22,8 +22,8 @@ crossingsToWin :: method (length: GameLength) -> int {
     };
 }
 
-EndTime      :: 8.0;    // Seconds the results are shown before the next game starts
-RegroupTime  :: 1.6;    // Seconds the others stand still after a crossing, before they start from the other side
+EndTime     :: 8.0;     // Seconds the results are shown before the next game starts
+RegroupTime :: 1.6;     // Seconds the others stand still after a crossing, before they start from the other side
 
 // Somebody crossed: they win when it was their last crossing, and otherwise everyone starts again from that side
 endRound :: method (game: *Game, index: int) {

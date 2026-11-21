@@ -9,13 +9,13 @@ import math;
 use raylib;
 
 HeroAnimations :: struct {
-    clips: *ModelAnimation;
-    count: int;
-    idle:  int = -1;
-    walk:  int = -1;
-    hookMesh: int = -1;     // The mesh of a part that is left out while the hero has thrown it: the Butcher's hook
-    handBone: int = -1;     // The bone of the hand the hook is thrown from
-    headBone: int = -1;     // The bone of the head, that the portrait looks at
+    clips:     *ModelAnimation;
+    count:     int;
+    idle:      int = -1;
+    walk:      int = -1;
+    hookMesh:  int = -1;    // The mesh of a part that is left out while the hero has thrown it: the Butcher's hook
+    handBone:  int = -1;    // The bone of the hand the hook is thrown from
+    headBone:  int = -1;    // The bone of the head, that the portrait looks at
     lastClip:  int = -1;    // The pose the model was last put in, for where its hand is
     lastFrame: int;
 }

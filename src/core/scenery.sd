@@ -54,10 +54,10 @@ bounds :: method (decoration: Decoration) -> Vector3, f32 {
     return decoration.position + Vector3{0, height * 0.5, 0}, radius;
 }
 
-BlockSize      :: 40.0;     // A block of the city: four buildings with room between them
-StreetWidth    :: 14.0;
-CityReach      :: 280.0;    // How far across the city goes
-CityLength     :: 260.0;    // and along the road
+BlockSize   :: 40.0;        // A block of the city: four buildings with room between them
+StreetWidth :: 14.0;
+CityReach   :: 280.0;       // How far across the city goes
+CityLength  :: 260.0;       // and along the road
 
 newScenery :: (seed: u64) -> [..]Decoration {
     rng := random.newRandom(seed);
@@ -81,7 +81,7 @@ newScenery :: (seed: u64) -> [..]Decoration {
         // Trees in planters along the far edge, with benches between some of them
         z = -MapHalfLength + 4;
         while z < MapHalfLength {
-            add(&scenery, .tree, side * (MapHalfWidth - 3), z, rng.uniform(0, 360) as f32, {1, 1, 1} * rng.uniform(0.85, 1.2) as f32);
+            add(&scenery, .tree, side * (MapHalfWidth - 3), z, rng.uniform(0, 360) as f32, {1, 1, 1} *rng.uniform(0.85, 1.2) as f32);
             if rng.chance(0.5) { add(&scenery, .bench, side * (MapHalfWidth - 3), z + 7, 90 * -side, {1, 1, 1}); }
             z += 14;
         }

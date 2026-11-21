@@ -19,14 +19,14 @@ RoadHalfWidth :: LaneWidth * LaneCount * 0.5;     // 96: the road covers x from 
 RoadOverhang  :: 40.0;                            // How far the road goes on past the field, where the cars come from
 
 // The walls along both sides of the road, each with one opening to get on and off it
-WallWidth       :: 3.0;
-WallHeight      :: 4.0;
-OpeningLength   :: 18.0;
-OpeningInset    :: 10.0;    // From the end of the field to the opening
+WallWidth     :: 3.0;
+WallHeight    :: 4.0;
+OpeningLength :: 18.0;
+OpeningInset  :: 10.0;      // From the end of the field to the opening
 
 // Where heroes start on the left side, and how far past the middle they have to get. Mirrored on the right side
-SpawnX    :: -MapHalfWidth + 8;
-GoalX     :: RoadHalfWidth + WallWidth + 4;   // Past the wall on the far side
+SpawnX :: -MapHalfWidth + 8;
+GoalX  :: RoadHalfWidth + WallWidth + 4;      // Past the wall on the far side
 
 WallSegmentLength :: 5.0;     // The length of data/models/wall.obj, which is repeated along each wall
 

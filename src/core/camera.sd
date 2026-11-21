@@ -76,7 +76,7 @@ update :: method (camera: *RtsCamera, dt: f32, hero: Vector3, recenter: bool) {
 
 // Puts the camera where it looks at its focus from
 place :: method (camera: *RtsCamera, dt: f32) {
-    offset := Vector3{0, math.sinf(CameraPitch), math.cosf(CameraPitch)} * camera.distance;
+    offset := Vector3{0, math.sinf(CameraPitch), math.cosf(CameraPitch)} *camera.distance;
 
     shake := Vector3{0, 0, 0};
     if camera.shake > 0 {

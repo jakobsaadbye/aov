@@ -50,15 +50,15 @@ Checksum :: struct {
 }
 
 Recording :: struct {
-    version:   int = RecordingVersion;
-    seed:      u64;
-    bots:      int;
-    humans:    int;
+    version:    int = RecordingVersion;
+    seed:       u64;
+    bots:       int;
+    humans:     int;
     difficulty: Difficulty = .normal;
-    length:    GameLength = .medium;
-    firstHero: int = -1;        // The hero the player at the keyboard started with (--hero), or -1 for a random one
-    frames:    [..]RecordedFrame;
-    checksums: [..]Checksum;
+    length:     GameLength = .medium;
+    firstHero:  int = -1;       // The hero the player at the keyboard started with (--hero), or -1 for a random one
+    frames:     [..]RecordedFrame;
+    checksums:  [..]Checksum;
 }
 
 // Playing a recording back

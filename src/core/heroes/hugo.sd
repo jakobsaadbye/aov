@@ -8,14 +8,14 @@ use raylib;
 defineHugo :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Hugo", title: "the Hypnotist", color: {120, 50, 140, 255}, width: 2.2, height: 5.2, moveSpeed: 8, hitRadius: 0.75, maxHealth: 26};
     hero.abilities.add(Ability{
-        name: "Trance walk", icon: "trance_walk", sound: "ability.trance_walk", cooldown: 13, cast: castTranceWalk, bot: .untouchable,
+        name:        "Trance walk", icon: "trance_walk", sound: "ability.trance_walk", cooldown: 13, cast: castTranceWalk, bot: .untouchable,
         description: "Talks himself into a trance for 2.2 seconds: the cars aren't real to him, and go through him as he walks, slowly",
-        duration: 2.2,
+        duration:    2.2,
     });
     hero.abilities.add(Ability{
-        name: "Sleep", icon: "sleep", sound: "ability.sleep", cooldown: 15, targeting: .enemy, cast: castSleep, bot: .disableEnemy,
+        name:        "Sleep", icon: "sleep", sound: "ability.sleep", cooldown: 15, targeting: .enemy, cast: castSleep, bot: .disableEnemy,
         description: "The enemy nearest the cursor, up to 24 away, falls asleep for 4 seconds, until it is shoved or hit",
-        range: 24, duration: 4,
+        range:       24, duration: 4,
     });
     hero.abilities.add(passive("Calm mind", "calm_mind", "Stuns, sleep and the like hold him half as long", Trait{stunTaken: 0.5}));
     return hero;

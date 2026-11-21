@@ -8,14 +8,14 @@ use raylib;
 defineBirgit :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Birgit", title: "the Builder", color: {245, 160, 40, 255}, width: 2.4, height: 4.4, moveSpeed: 7.8, hitRadius: 0.8, maxHealth: 40};
     hero.abilities.add(Ability{
-        name: "Footbridge", icon: "footbridge", sound: "ability.footbridge", cooldown: 14, targeting: .point, cast: castFootbridge, bot: .stopCarsAhead,
+        name:        "Footbridge", icon: "footbridge", sound: "ability.footbridge", cooldown: 14, targeting: .point, cast: castFootbridge, bot: .stopCarsAhead,
         description: "Builds a footbridge over the three lanes at the cursor, up to 20 away, for 5 seconds. Anyone on it is safe from the cars. Enemies too",
-        range: 20, duration: 5, count: 3,
+        range:       20, duration: 5, count: 3,
     });
     hero.abilities.add(Ability{
-        name: "Trampoline", icon: "trampoline", sound: "ability.trampoline", cooldown: 9, targeting: .point, cast: castTrampoline, bot: .none,
+        name:        "Trampoline", icon: "trampoline", sound: "ability.trampoline", cooldown: 9, targeting: .point, cast: castTrampoline, bot: .none,
         description: "Puts a trampoline at the cursor, up to 24 away, for 8 seconds. Anyone that walks onto it is bounced 12 on the way it walks, high over the cars. Enemies too",
-        range: 24, duration: 8, power: 12,
+        range:       24, duration: 8, power: 12,
     });
     hero.abilities.add(passive("Overtime", "overtime", "She builds to last: what she builds stays up 50% longer", Trait{buildTime: 1.5}));
     return hero;

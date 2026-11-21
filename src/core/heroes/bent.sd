@@ -9,14 +9,14 @@ use raylib;
 defineBent :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Bent", title: "the Bus Driver", color: {40, 140, 90, 255}, width: 3.2, height: 4.8, moveSpeed: 7.5, hitRadius: 0.95, maxHealth: 55};
     hero.abilities.add(Ability{
-        name: "Hop on", icon: "hop_on", sound: "ability.hop_on", cooldown: 11, cast: castHopOn, bot: .untouchable,
+        name:        "Hop on", icon: "hop_on", sound: "ability.hop_on", cooldown: 11, cast: castHopOn, bot: .untouchable,
         description: "Climbs onto the roof of the nearest car, within 10, and rides it for up to 2.5 seconds. Then he jumps off towards the far side",
-        range: 10, duration: 2.5,
+        range:       10, duration: 2.5,
     });
     hero.abilities.add(Ability{
-        name: "Night bus", icon: "night_bus", sound: "ability.night_bus", cooldown: 16, targeting: .point, cast: castNightBus, bot: .none,
+        name:        "Night bus", icon: "night_bus", sound: "ability.night_bus", cooldown: 16, targeting: .point, cast: castNightBus, bot: .none,
         description: "Sends his bus down the lane at the cursor, from the far end of the road. It is slow, and the cars behind it can't get past, so the lane behind it is empty. In front of it, it is a bus",
-        range: 200, power: 5,
+        range:       200, power: 5,
     });
     hero.abilities.add(passive("Timetable", "timetable", "He knows when the next cars come: the lanes light up before a car comes onto the field", .timetable));
     return hero;

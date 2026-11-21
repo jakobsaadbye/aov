@@ -8,14 +8,14 @@ use raylib;
 defineButcher :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Butcher", title: "the Butcher", color: {150, 90, 70, 255}, width: 4.2, height: 6.4, moveSpeed: 6.5, hitRadius: 1.15, maxHealth: 100};
     hero.abilities.add(Ability{
-        name: "Meat hook", icon: "hook", sound: "ability.hook", cooldown: 7, targeting: .point, cast: castHook,
+        name:        "Meat hook", icon: "hook", sound: "ability.hook", cooldown: 7, targeting: .point, cast: castHook,
         description: "Throws the hook at the cursor, up to 34 away. It bites into the first car it meets, and he is pulled to the side of the car. He can walk while it flies",
-        range: 34,
+        range:       34,
     });
     hero.abilities.add(Ability{
-        name: "Heave", icon: "heave", sound: "ability.heave", cooldown: 9, targeting: .point, cast: castHeave, bot: .stopCarsAhead,
+        name:        "Heave", icon: "heave", sound: "ability.heave", cooldown: 9, targeting: .point, cast: castHeave, bot: .stopCarsAhead,
         description: "Grabs the car nearest the cursor, within 14 of him, and throws it two lanes over, away from him. Whoever is in the lane it lands in is in its way",
-        range: 14, count: 2,
+        range:       14, count: 2,
     });
     return hero;
 }
@@ -101,7 +101,7 @@ pullHook :: method (game: *Game, index: int, dt: f32) -> bool {
         car := game.traffic.carIndexHitting(head.xz(), HookBiteRadius);
         if car >= 0 {
             hook.car = car;
-            hook.bite = Vector3{head.x, 1.2, head.z} - game.traffic.cars[car].position();
+            hook.bite = Vector3{head.x, 1.2, head.z} -game.traffic.cars[car].position();
             game.sounds.playAt("ability.hook_hit", head, 1);
             game.effects.particles.emit(.sparks, head + Vector3{0, 1.2, 0}, 14);
             hero.stop();
@@ -151,4 +151,3 @@ pullHook :: method (game: *Game, index: int, dt: f32) -> bool {
     hero.hook = hook;
     return true;
 }
-

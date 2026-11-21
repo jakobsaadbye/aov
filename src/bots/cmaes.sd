@@ -20,23 +20,23 @@ import random;
 GeneCount :: Gene.count;
 
 Cmaes :: struct {
-    n:       int;
-    lambda:  int;                       // Genomes drawn each generation
-    mu:      int;                       // The better ones that move it
-    weights: [64]f64;                   // Of the mu best, the best first
-    muEff:   f64;
+    n:                            int;
+    lambda:                       int;     // Genomes drawn each generation
+    mu:                           int;     // The better ones that move it
+    weights:                      [64]f64; // Of the mu best, the best first
+    muEff:                        f64;
     cc, cs, c1, cmu, damps, chiN: f64;
 
-    mean:    [GeneCount]f64;            // 0..1 for each gene
-    sigma:   f64;
-    C:       [GeneCount][GeneCount]f64;
-    B:       [GeneCount][GeneCount]f64; // The eigenvectors of C, in its columns
-    D:       [GeneCount]f64;            // and the square roots of its eigenvalues
-    pc:      [GeneCount]f64;            // The ways it has gone lately: for the shape
-    ps:      [GeneCount]f64;            // and for the size
+    mean:       [GeneCount]f64;         // 0..1 for each gene
+    sigma:      f64;
+    C:          [GeneCount][GeneCount]f64;
+    B:          [GeneCount][GeneCount]f64; // The eigenvectors of C, in its columns
+    D:          [GeneCount]f64;            // and the square roots of its eigenvalues
+    pc:         [GeneCount]f64;            // The ways it has gone lately: for the shape
+    ps:         [GeneCount]f64;            // and for the size
     generation: int;
 
-    drawn:   [64][GeneCount]f64;        // The genomes of this generation, scaled
+    drawn: [64][GeneCount]f64;          // The genomes of this generation, scaled
 }
 
 newCmaes :: (start: Genome, lambda: int, sigma: f64) -> Cmaes {
@@ -161,8 +161,8 @@ learn :: method (es: *Cmaes, fitness: []f32) {
                 ranked += es.weights[k] * (x[i] - old[i]) * (x[j] - old[j]) / (es.sigma * es.sigma);
             }
             value := (1 - es.c1 - es.cmu) * es.C[i][j]
-                + es.c1 * (es.pc[i] * es.pc[j] + (1 - hsig) * es.cc * (2 - es.cc) * es.C[i][j])
-                + es.cmu * ranked;
+                +es.c1 * (es.pc[i] * es.pc[j] + (1 - hsig) * es.cc * (2 - es.cc) * es.C[i][j])
+                +es.cmu * ranked;
             es.C[i][j] = value;
             es.C[j][i] = value;
         }

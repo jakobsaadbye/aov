@@ -68,8 +68,6 @@ buffsOf :: (game: *Game, index: int) -> [..]Buff {
     return buffs;
 }
 
-
-
 // Over the middle of the hero card, as in Dota: the good ones to the left of the middle, the bad ones to the right of it,
 // each side growing outwards from the middle
 drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
@@ -82,7 +80,7 @@ drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
     left := middle - BuffMiddleGap / 2 - BuffSize;          // The good ones, from the middle leftwards
     right := middle + BuffMiddleGap / 2;                    // and the bad ones rightwards
     if goods == buffs.count { left = middle - BuffSize / 2 + (goods - 1) * (BuffSize + BuffGap) / 2; }
-    else if goods == 0     { right = middle - BuffSize / 2 - (buffs.count as int - 1) * (BuffSize + BuffGap) / 2; }
+    else if goods == 0 { right = middle - BuffSize / 2 - (buffs.count as int - 1) * (BuffSize + BuffGap) / 2; }
     mouse := GetMousePosition();
     hovered := -1;
     hoveredBox: Rectangle;
@@ -106,7 +104,7 @@ drawBuffs :: (game: *Game, assets: *Assets, panel: Rectangle) {
         lines := wrapText(buff.description, 16, 300);
         defer lines.free();
         sub := "";
-        if buff.meter            { sub = tprint("%% faster", buff.count, "%"); }
+        if buff.meter { sub = tprint("%% faster", buff.count, "%"); }
         else if buff.timeLeft > 0 { sub = tprint("% s left", fmt.fixed(buff.timeLeft, 1)); }
         color := GoodBuffColor;
         if !buff.good { color = BadBuffColor; }
@@ -169,7 +167,6 @@ drawRoundTexture :: (texture: Texture, center: Vector2, radius: f32) {
     rlEnd();
     rlSetTexture(0);
 }
-
 
 extern "raylib.dll" {
     rlVertex2f :: (x: f32, y: f32) -> void;

@@ -252,7 +252,6 @@ at :: (seconds: f32, line: string) {
     consoleAt(seconds, line);
 }
 
-
 //
 // Particles (effect_styles.sd)
 //
@@ -271,7 +270,6 @@ particles :: (game: *Game) {
 particleStorm :: (game: *Game, count: int = 5000) {
     makeParticleStorm(game, count);
 }
-
 
 //
 // Items (items.sd)
@@ -292,7 +290,6 @@ items :: (game: *Game) {
     printItems(game);
 }
 
-
 //
 // The match (match.sd)
 //
@@ -302,7 +299,6 @@ winGame :: (game: *Game, player: ?int) {
     winGameNow(game, player);
 }
 
-
 //
 // The profiler (profiler.sd)
 //
@@ -311,7 +307,6 @@ winGame :: (game: *Game, player: ?int) {
 profile :: () {
     printProfile();
 }
-
 
 //
 // Oil and traffic events (slicks.sd)

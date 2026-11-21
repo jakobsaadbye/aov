@@ -23,7 +23,6 @@ import time;
 import fmt;
 use raylib;
 
-
 // What a bot is doing this frame, for the inspector
 BotMode :: enum {
     waiting,            // For a gap, before it leaves for the next point of its plan
@@ -52,7 +51,6 @@ BotPersonality :: struct {
     label:  string;
     genome: Genome;
 }
-
 
 Bot :: struct {
     personality: BotPersonality;
@@ -321,7 +319,7 @@ dodge :: method (bot: *Bot, game: *Game, me: int) -> bool {
     for k in 0..16 {
         angle := k as f32 * Pi / 8;
         for reach in [1.5, 3.0, 4.5, 6.0] {
-            point := here + Vector2{math.cosf(angle), math.sinf(angle)} * reach;
+            point := here + Vector2{math.cosf(angle), math.sinf(angle)} *reach;
             cell := cellAt(point);
             if cell < 0 || bot.forecast.blocked[cell] { continue; }
             arrive := now + reach / speed;
@@ -372,7 +370,6 @@ wayIsFree :: method (bot: *Bot, from: Vector2, to: Vector2, start: f32, speed: f
     return true;
 }
 
-
 // Makes a new forecast of the cars. When the plan doesn't hold up against it, or it is time to look for a better one,
 // it searches for a new plan through them
 replan :: method (bot: *Bot, game: *Game, me: int) {
@@ -385,11 +382,11 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
 
     started := time.clock();
     options := ForecastOptions{
-        radius:       hero.info().hitRadius,
-        throughWalls: hero.walksThroughWalls(),
-        margin:       bot.gene(.margin),
-        leadTime:     bot.gene(.leadTime),
-        trailTime:    bot.gene(.trailTime),
+        radius:         hero.info().hitRadius,
+        throughWalls:   hero.walksThroughWalls(),
+        margin:         bot.gene(.margin),
+        leadTime:       bot.gene(.leadTime),
+        trailTime:      bot.gene(.trailTime),
         me:             me,
         heroMargin:     bot.gene(.heroMargin),
         heroPredict:    bot.gene(.heroPredict),
@@ -537,7 +534,6 @@ planHolds :: method (bot: *Bot) -> bool {
     return true;
 }
 
-
 // Late for the next point of the plan: the cars won't be where the plan thought
 isBehindPlan :: method (bot: *Bot, now: f32) -> bool {
     if bot.next >= bot.plan.count { return false; }
@@ -659,8 +655,8 @@ scoreAbility :: method (bot: *Bot, game: *Game, view: TacticsView, ability: *Abi
             return no;
         }
         case .speedUp {
-            if inDanger            { here.score = bot.gene(.speedUpDanger); }
-            else if view.nearRoad  { here.score = bot.gene(.speedUp); }
+            if inDanger           { here.score = bot.gene(.speedUpDanger); }
+            else if view.nearRoad { here.score = bot.gene(.speedUp); }
             return here;
         }
         case .stopCars {
@@ -745,7 +741,6 @@ punishScore :: method (bot: *Bot, game: *Game, view: TacticsView, enemy: int) ->
     if ahead > 0 { score += ahead * bot.gene(.punishAhead); }
     return math.min(score, 1);
 }
-
 
 // An enemy in reach worth casting on: on the road, where a stun or a drag can get it run over, or further across than
 // this bot. -1 when there is none

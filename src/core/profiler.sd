@@ -26,13 +26,13 @@ ProfileSection :: enum {
 }
 
 Profiler :: struct {
-    started: [ProfileSection.count]f64;
-    current: [ProfileSection.count]f64;     // Seconds of this frame so far
-    average: [ProfileSection.count]f64;     // Over the last frames
-    worst:   [ProfileSection.count]f64;     // The longest of the last WorstSeconds
+    started:    [ProfileSection.count]f64;
+    current:    [ProfileSection.count]f64;  // Seconds of this frame so far
+    average:    [ProfileSection.count]f64;  // Over the last frames
+    worst:      [ProfileSection.count]f64;  // The longest of the last WorstSeconds
     shownWorst: [ProfileSection.count]f64;
-    since:   f64;                            // When the worst were last shown and started again
-    frames:  int;
+    since:      f64;                         // When the worst were last shown and started again
+    frames:     int;
 }
 
 WorstSeconds :: 2.0;

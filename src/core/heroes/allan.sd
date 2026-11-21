@@ -5,9 +5,9 @@ namespace core;
 defineAllan :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Allan", title: "the Runner", color: {214, 48, 49, 255}, width: 2.2, height: 4.2, moveSpeed: 9, hitRadius: 0.75, maxHealth: 25};
     hero.abilities.add(Ability{
-        name: "Sprint", icon: "sprint", sound: "ability.sprint", cooldown: 6, cast: castSprint, bot: .speedUp,
+        name:        "Sprint", icon: "sprint", sound: "ability.sprint", cooldown: 6, cast: castSprint, bot: .speedUp,
         description: "Runs twice as fast for a moment",
-        power: 2.1, duration: 1.4,
+        power:       2.1, duration: 1.4,
     });
     hero.abilities.add(passive("Adrenaline", "adrenaline", "A car that misses him by a hair makes his abilities ready again", .adrenaline));
     return hero;

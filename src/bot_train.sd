@@ -87,7 +87,6 @@ Worker :: struct {
     queue: *Queue;
 }
 
-
 // Plays a game of a job, on a thread of its own
 playGame :: (job: *GameJob) {
     personalities: [..]bots.BotPersonality;

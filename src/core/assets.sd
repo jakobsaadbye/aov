@@ -11,32 +11,32 @@ Assets :: struct {
     lit:      Material;     // The lit material that the lane markings are drawn with
     cube:     Mesh;         // A 1x1x1 cube, scaled to make the walls and the lane markings
 
-    ground:          Mesh;  // The field
-    groundMaterial:  Material;
-    road:            Mesh;
-    laneMarkings:    Mesh;  // All of the lines on the road (render.sd)
+    ground:               Mesh; // The field
+    groundMaterial:       Material;
+    road:                 Mesh;
+    laneMarkings:         Mesh; // All of the lines on the road (render.sd)
     laneMarkingsMaterial: Material;
-    roadMaterial:    Material;
-    outside:         Mesh;  // The land around the field, to the horizon
-    outsideMaterial: Material;
+    roadMaterial:         Material;
+    outside:              Mesh; // The land around the field, to the horizon
+    outsideMaterial:      Material;
 
-    vehicles: [CarKind.count]Model;
+    vehicles:         [CarKind.count]Model;
     particleTextures: [ParticleTexture.count]Texture;
-    vehicleBody: [CarKind.count]int;   // The material of each vehicle that gets the color of the car
-    heroes:   [HeroKind.count]Model;
-    heroAnimations: [HeroKind.count]HeroAnimations;    // The clips of the heroes whose models have skeletons (hero_animation.sd)
-    portrait: RenderTexture;          // The hero of the HUD, drawn in 3D
-    wall:     Model;                   // A segment of the wall, repeated along it
-    meatHook:  Model;                  // The Butcher's hook as it flies, and a link of its chain (tools/make_heroes.py)
-    chainLink: Model;
-    footbridgeSpan: Model;             // Birgit's builds: a lane of her footbridge, its ramp, a trampoline and its mat
-    footbridgeRamp: Model;
-    trampoline:     Model;
-    trampolineMat:  Model;
-    igloo:          Model;             // Frosty's
-    carJack:        Model;             // Karl's
-    timeLockClock:  Model;             // Mira's clock over a hero locked in time, and its hands
-    clockHand:      Model;
+    vehicleBody:      [CarKind.count]int; // The material of each vehicle that gets the color of the car
+    heroes:           [HeroKind.count]Model;
+    heroAnimations:   [HeroKind.count]HeroAnimations;  // The clips of the heroes whose models have skeletons (hero_animation.sd)
+    portrait:         RenderTexture;  // The hero of the HUD, drawn in 3D
+    wall:             Model;           // A segment of the wall, repeated along it
+    meatHook:         Model;           // The Butcher's hook as it flies, and a link of its chain (tools/make_heroes.py)
+    chainLink:        Model;
+    footbridgeSpan:   Model;           // Birgit's builds: a lane of her footbridge, its ramp, a trampoline and its mat
+    footbridgeRamp:   Model;
+    trampoline:       Model;
+    trampolineMat:    Model;
+    igloo:            Model;           // Frosty's
+    carJack:          Model;           // Karl's
+    timeLockClock:    Model;           // Mira's clock over a hero locked in time, and its hands
+    clockHand:        Model;
 
     icons: Map<string, Texture>;       // The icon of each ability, by its name in heroes.sd
 
@@ -162,7 +162,7 @@ unload :: method (assets: *Assets) {
     UnloadTexture(assets.cursor);
 
     for model in assets.vehicles { UnloadModel(model); }
-    for model in assets.heroes   { UnloadModel(model); }
+    for model in assets.heroes { UnloadModel(model); }
     assets.unloadHeroAnimations();
     UnloadModel(assets.wall);
     UnloadModel(assets.meatHook);
@@ -181,7 +181,7 @@ unload :: method (assets: *Assets) {
     assets.cityBlocks.free();
     unloadFonts();
     unloadUi();
-    for _, icon in assets.icons  { UnloadTexture(icon); }
+    for _, icon in assets.icons { UnloadTexture(icon); }
 
     UnloadMesh(assets.cube);
     UnloadMesh(assets.laneMarkings);
@@ -195,8 +195,8 @@ unload :: method (assets: *Assets) {
 // Draws a model turned so its x, y and z go along side, up and forward, with its origin at position
 drawModelFacing :: (model: Model, position: Vector3, side: Vector3, up: Vector3, forward: Vector3) {
     m: Matrix;
-    m.m0 = side.x;    m.m1 = side.y;    m.m2 = side.z;
-    m.m4 = up.x;      m.m5 = up.y;      m.m6 = up.z;
+    m.m0 = side.x; m.m1 = side.y; m.m2 = side.z;
+    m.m4 = up.x; m.m5 = up.y; m.m6 = up.z;
     m.m8 = forward.x; m.m9 = forward.y; m.m10 = forward.z;
     m.m12 = position.x; m.m13 = position.y; m.m14 = position.z;
     m.m15 = 1;

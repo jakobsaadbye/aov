@@ -69,12 +69,12 @@ SoundEntry :: struct {
 }
 
 MusicTrack :: struct {
-    music:       Music;
-    volume:      f32;               // As asked for, before muting and pausing
-    isPlaying:   bool;
-    isMuted:     bool;
+    music:          Music;
+    volume:         f32;            // As asked for, before muting and pausing
+    isPlaying:      bool;
+    isMuted:        bool;
     pausesWithGame: bool;           // Stops while the game is paused, e.g the hum of the traffic, which has stopped too
-    fades:       bool;              // In at its start and out at its end, as the pieces of the soundtrack do
+    fades:          bool;           // In at its start and out at its end, as the pieces of the soundtrack do
 }
 
 SoundPlayer :: struct {
@@ -87,15 +87,15 @@ SoundPlayer :: struct {
     isPaused: bool;
     duck:     f32 = 1;              // 1 while playing, PausedVolume while paused, and in between while it fades
 
-    soundtrackName:  string;        // Of Soundtracks
-    soundtrack:      [..]string;    // The names of its pieces, which are tracks
-    order:           [..]int;       // The pieces still to come before they are shuffled again
-    musicRng:        random.Random; // Seeded from the clock, so every game plays them in an order of its own
-    piece:           int = -1;      // The one playing, or -1 in the silence between two
-    lastPiece:       int = -1;
-    silence:         f32;           // Seconds until the next one
+    soundtrackName:   string;        // Of Soundtracks
+    soundtrack:       [..]string;    // The names of its pieces, which are tracks
+    order:            [..]int;       // The pieces still to come before they are shuffled again
+    musicRng:         random.Random; // Seeded from the clock, so every game plays them in an order of its own
+    piece:            int = -1;      // The one playing, or -1 in the silence between two
+    lastPiece:        int = -1;
+    silence:          f32;          // Seconds until the next one
     soundtrackVolume: f32;
-    soundtrackMuted: bool;
+    soundtrackMuted:  bool;
 }
 
 // Opens the audio device, and loads every sound and piece of music of the data folder

@@ -8,19 +8,19 @@ use raylib;
 defineMira :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Mira", title: "the Timekeeper", color: {130, 90, 210, 255}, width: 2.2, height: 4.8, moveSpeed: 8.5, hitRadius: 0.7, maxHealth: 20};
     hero.abilities.add(Ability{
-        name: "Reverse", icon: "reverse", sound: "ability.reverse", cooldown: 12, targeting: .point, cast: castReverse, bot: .stopCarsAhead,
+        name:        "Reverse", icon: "reverse", sound: "ability.reverse", cooldown: 12, targeting: .point, cast: castReverse, bot: .stopCarsAhead,
         description: "Turns time back for the cars of the five lanes at the cursor, up to 40 away: they back up the road for 2 seconds",
-        range: 40, count: 2, power: -0.8, duration: 2,
+        range:       40, count: 2, power: -0.8, duration: 2,
     });
     hero.abilities.add(Ability{
-        name: "Rewind", icon: "rewind", sound: "ability.rewind", cooldown: 10, cast: castRewind, bot: .rewind,
+        name:        "Rewind", icon: "rewind", sound: "ability.rewind", cooldown: 10, cast: castRewind, bot: .rewind,
         description: "Goes back to where she was 3 seconds ago, with the health she had",
-        duration: 3,
+        duration:    3,
     });
     hero.abilities.add(Ability{
-        name: "Time lock", icon: "time_lock", sound: "ability.time_lock", cooldown: 12, targeting: .enemy, cast: castTimeLock, bot: .disableEnemy,
+        name:        "Time lock", icon: "time_lock", sound: "ability.time_lock", cooldown: 12, targeting: .enemy, cast: castTimeLock, bot: .disableEnemy,
         description: "Locks the enemy nearest the cursor, up to 36 away, in time: it can't move or cast for 2 seconds",
-        range: 36, duration: 2,
+        range:       36, duration: 2,
     });
     return hero;
 }

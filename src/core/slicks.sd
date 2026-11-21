@@ -37,16 +37,16 @@ Slick :: struct {
 
 SpreadTime :: 0.3;          // Seconds a blob takes to spread out
 
-MaxSlicks       :: 40;      // Blobs on the road at once. The oldest dries up when there are more
-LeakEveryLow    :: 12.0;    // Seconds between two cars that leak, at random between these
-LeakEveryHigh   :: 24.0;
-LeakTimeLow     :: 0.7;     // Seconds a car leaks
-LeakTimeHigh    :: 1.4;
-LeakDrop        :: 0.22;    // Seconds between two blobs of a leaking car
-SlickLifeLow    :: 45.0;    // Seconds a blob lies on the road
-SlickLifeHigh   :: 70.0;
-SlideTime       :: 0.6;     // Seconds a hero slides each time, again and again while it is on the oil
-SlideSpeedUp    :: 1.15;    // Times the speed it had
+MaxSlicks     :: 40;        // Blobs on the road at once. The oldest dries up when there are more
+LeakEveryLow  :: 12.0;      // Seconds between two cars that leak, at random between these
+LeakEveryHigh :: 24.0;
+LeakTimeLow   :: 0.7;       // Seconds a car leaks
+LeakTimeHigh  :: 1.4;
+LeakDrop      :: 0.22;      // Seconds between two blobs of a leaking car
+SlickLifeLow  :: 45.0;      // Seconds a blob lies on the road
+SlickLifeHigh :: 70.0;
+SlideTime     :: 0.6;       // Seconds a hero slides each time, again and again while it is on the oil
+SlideSpeedUp  :: 1.15;      // Times the speed it had
 
 Slicks :: struct {
     list:   [..]Slick;
@@ -121,7 +121,7 @@ throwSlick :: method (game: *Game, from: Vector3, center: Vector2, radius: f32, 
     slicks := &game.slicks;
     if slicks.list.count >= MaxSlicks { _ := slicks.list.removeAt(0); }
     slicks.list.add(Slick{center: center, radius: radius, seed: slicks.rng.uniform(0, 100) as f32, timeLeft: life + flight, age: -flight,
-                          boost: boost, from: from});
+        boost: boost, from: from});
 }
 
 // If there is oil under a point
@@ -169,9 +169,9 @@ slide :: method (game: *Game, hero: *Hero, dt: f32) -> bool {
 // Drawing
 //
 
-TarColor  :: Color{10, 9, 8, 255};
-TarEdge   :: Color{38, 32, 26, 255};     // A wet, brownish edge
-TarShine  :: Color{150, 155, 170, 255};  // Where the sky is mirrored in it
+TarColor :: Color{10, 9, 8, 255};
+TarEdge  :: Color{38, 32, 26, 255};      // A wet, brownish edge
+TarShine :: Color{150, 155, 170, 255};   // Where the sky is mirrored in it
 
 // The radius of a blob in a direction: its edge goes in and out a little
 @private

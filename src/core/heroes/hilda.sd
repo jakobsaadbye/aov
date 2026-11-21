@@ -9,14 +9,14 @@ use raylib;
 defineHilda :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Hilda", title: "the Crossing Guard", color: {240, 214, 40, 255}, width: 2.3, height: 4.2, moveSpeed: 8, hitRadius: 0.75, maxHealth: 30};
     hero.abilities.add(Ability{
-        name: "Stop!", icon: "stop_sign", sound: "ability.stop_sign", cooldown: 9, cast: castStopSign, bot: .stopCars,
+        name:        "Stop!", icon: "stop_sign", sound: "ability.stop_sign", cooldown: 9, cast: castStopSign, bot: .stopCars,
         description: "Raises her stop sign: the five lanes around her stop for 3 seconds, and their cars queue up",
-        count: 2, duration: 3,
+        count:       2, duration: 3,
     });
     hero.abilities.add(Ability{
-        name: "Wave through", icon: "wave_through", sound: "ability.wave_through", cooldown: 10, targeting: .point, cast: castWaveThrough,
+        name:        "Wave through", icon: "wave_through", sound: "ability.wave_through", cooldown: 10, targeting: .point, cast: castWaveThrough,
         description: "Waves the cars of the three lanes at the cursor, up to 32 away, on: they drive two and a half times as fast for 2.5 seconds. What is in their way has less time to get out of it, and the lane is soon empty behind them",
-        range: 32, count: 1, power: 2.5, duration: 2.5,
+        range:       32, count: 1, power: 2.5, duration: 2.5,
     });
     hero.abilities.add(passive("Lollipop lady", "lollipop", "Her stop sign stays up as long as she stands still by it, up to 8 seconds", .lollipop));
     return hero;

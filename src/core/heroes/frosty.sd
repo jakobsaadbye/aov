@@ -9,14 +9,14 @@ use raylib;
 defineFrosty :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Frosty", title: "the Snowman", color: {110, 220, 235, 255}, width: 2.6, height: 4.6, moveSpeed: 8, hitRadius: 0.7, maxHealth: 35};
     hero.abilities.add(Ability{
-        name: "Cold snap", icon: "freeze", sound: "ability.freeze", cooldown: 10, cast: castFreeze, bot: .stopCars,
+        name:        "Cold snap", icon: "freeze", sound: "ability.freeze", cooldown: 10, cast: castFreeze, bot: .stopCars,
         description: "Freezes the cars around him for 2.5 seconds, and the enemies for 1.2",
-        radius: 20, duration: 2.5, power: 1.2,
+        radius:      20, duration: 2.5, power: 1.2,
     });
     hero.abilities.add(Ability{
-        name: "Igloo", icon: "igloo", sound: "ability.igloo", cooldown: 20, cast: castIgloo, bot: .untouchable,
+        name:        "Igloo", icon: "igloo", sound: "ability.igloo", cooldown: 20, cast: castIgloo, bot: .untouchable,
         description: "Hides in an igloo for up to 10 seconds, healing 10% of his health a second. Nothing gets in: the cars drive through it, and no spell finds him. W again, or a move, and he comes out",
-        duration: 10, radius: IglooRadius, power: 0.1, endsEarly: .igloo,
+        duration:    10, radius: IglooRadius, power: 0.1, endsEarly: .igloo,
     });
     hero.abilities.add(passive("Chill aura", "chill", "Cars near him drive 40% slower", Trait{chillAura: {radius: 12, slow: 0.4}}));
     return hero;

@@ -11,22 +11,22 @@ use raylib;
 
 Trait :: union {
     none;
-    speed:        f32;          // Times the speed, e.g 1.1 is 10% faster
-    damageTaken:  f32;          // Times the damage of the cars, e.g 0.5 takes half
-    cooldown:     f32;          // Times the cooldowns, e.g 0.7 cools down 30% faster
-    reach:        f32;          // Times the range of the abilities
-    maxHealth:    f32;          // Times the most health
-    regen:        f32;          // The share of the most health it heals a second, a while after a car. Nothing else heals
-    saves:        int;          // Times a car that would run it over leaves it alive instead, each hero
-    chillAura:    ChillAura;    // Cars near it drive slower
-    stench:       f32;          // The radius of an aura that slows enemy heroes
+    speed:       f32;           // Times the speed, e.g 1.1 is 10% faster
+    damageTaken: f32;           // Times the damage of the cars, e.g 0.5 takes half
+    cooldown:    f32;           // Times the cooldowns, e.g 0.7 cools down 30% faster
+    reach:       f32;           // Times the range of the abilities
+    maxHealth:   f32;           // Times the most health
+    regen:       f32;           // The share of the most health it heals a second, a while after a car. Nothing else heals
+    saves:       int;           // Times a car that would run it over leaves it alive instead, each hero
+    chillAura:   ChillAura;     // Cars near it drive slower
+    stench:      f32;           // The radius of an aura that slows enemy heroes
     bounce;                     // A car that hits it bounces it over the car, now and then (Spring Shoes)
     throughWalls;               // Walks through the walls
     oilProof;                   // Doesn't slide on oil
     greaseMonkey: f32;          // Doesn't slide on oil, and runs this many times as fast on it (Karl)
     unshovable;                 // Isn't pushed by heroes that walk into it, or by abilities that knock it away
     ambulanceProof;             // The ambulances drive round it
-    stunTaken:    f32;          // Times how long stuns and the like hold it
+    stunTaken: f32;             // Times how long stuns and the like hold it
     momentum;                   // Faster the longer it walks straight on, slower when it turns (Mads)
     timetable;                  // Sees where the next cars come from, before they are there (Bent)
     decoysFirst;                // Spells cast on it hit its decoy instead, while it has one (Tim & Tom)
@@ -37,21 +37,21 @@ Trait :: union {
     staticCharge;               // Every third spell it casts doesn't cool down (Stormy)
     tripsShovers;               // Can't be shoved: who walks into it trips (Gudrun)
     lollipop;                   // Its stop sign stays up as long as it stands still (Hilda)
-    buildTime:    f32;          // Times how long what it builds stays (Birgit)
-    shoveTaken:   f32;          // Times how far the enemies it shoves go (the talent Scrapper)
+    buildTime:  f32;            // Times how long what it builds stays (Birgit)
+    shoveTaken: f32;            // Times how far the enemies it shoves go (the talent Scrapper)
     hitAndRun;                  // An enemy it gets run over makes its abilities ready (the talent Hit and Run)
     slipProof;                  // Doesn't slip on banana peels, nor slide on oil (the talent Thick Soles)
-    revenge:      f32;          // Seconds added to the cooldowns of whoever ran it over
+    revenge: f32;               // Seconds added to the cooldowns of whoever ran it over
     pocket;                     // One more slot in the backpack
     nimble;                     // Steps aside by itself when a car is about to hit it, now and then
-    itemReach:    f32;          // Picks items up from this much further away
-    coldBlooded:  f32;          // Seconds longer the cars it froze or slowed stay so
+    itemReach:   f32;           // Picks items up from this much further away
+    coldBlooded: f32;           // Seconds longer the cars it froze or slowed stay so
     hotPotato;                  // Shoving an enemy swaps an item with it
     mirror;                     // The next spell cast on it goes back to its caster, now and then (a mirror)
-    airTime:      f32;          // Times how long its leaps and flights stay up (an umbrella)
-    knockTaken:   f32;          // Times how far it is knocked away
-    scrapArmor:   int;          // The cars that rush past close leave scraps of metal on it, up to this many, and a car
-                                // that would hit it knocks one off instead (Magnus)
+    airTime:    f32;            // Times how long its leaps and flights stay up (an umbrella)
+    knockTaken: f32;            // Times how far it is knocked away
+    scrapArmor: int;            // The cars that rush past close leave scraps of metal on it, up to this many, and a car
+    // that would hit it knocks one off instead (Magnus)
 }
 
 ChillAura :: struct {
@@ -61,58 +61,58 @@ ChillAura :: struct {
 
 // What the traits of a hero add up to
 HeroStats :: struct {
-    speed:       f32 = 1;
-    damageTaken: f32 = 1;
-    cooldown:    f32 = 1;
-    reach:       f32 = 1;
-    maxHealth:   f32 = 1;
-    regen:       f32;
-    saves:       int;
-    chill:       ?ChillAura;
-    stench:      f32;
-    bounces:     bool;
-    throughWalls: bool;
-    oilProof:    bool;
-    oilSpeed:    f32 = 1;       // Times the speed while it is on oil
-    unshovable:  bool;
-    scrapArmor:  int;
+    speed:          f32 = 1;
+    damageTaken:    f32 = 1;
+    cooldown:       f32 = 1;
+    reach:          f32 = 1;
+    maxHealth:      f32 = 1;
+    regen:          f32;
+    saves:          int;
+    chill:          ?ChillAura;
+    stench:         f32;
+    bounces:        bool;
+    throughWalls:   bool;
+    oilProof:       bool;
+    oilSpeed:       f32 = 1;    // Times the speed while it is on oil
+    unshovable:     bool;
+    scrapArmor:     int;
     ambulanceProof: bool;
-    stunTaken:   f32 = 1;
-    momentum:    bool;
-    timetable:   bool;
-    decoysFirst: bool;
-    adrenaline:  bool;
-    blendIn:     bool;
-    shadowed:    bool;
-    bloodlust:   bool;
-    staticCharge: bool;
-    tripsShovers: bool;
-    lollipop:    bool;
-    buildTime:   f32 = 1;
-    shoveTaken:  f32 = 1;
-    hitAndRun:   bool;
-    slipProof:   bool;
-    revenge:     f32;
-    pockets:     int;
-    nimble:      bool;
-    itemReach:   f32;
-    coldBlooded: f32;
-    hotPotato:   bool;
-    mirror:      bool;
-    airTime:     f32 = 1;
-    knockTaken:  f32 = 1;
+    stunTaken:      f32 = 1;
+    momentum:       bool;
+    timetable:      bool;
+    decoysFirst:    bool;
+    adrenaline:     bool;
+    blendIn:        bool;
+    shadowed:       bool;
+    bloodlust:      bool;
+    staticCharge:   bool;
+    tripsShovers:   bool;
+    lollipop:       bool;
+    buildTime:      f32 = 1;
+    shoveTaken:     f32 = 1;
+    hitAndRun:      bool;
+    slipProof:      bool;
+    revenge:        f32;
+    pockets:        int;
+    nimble:         bool;
+    itemReach:      f32;
+    coldBlooded:    f32;
+    hotPotato:      bool;
+    mirror:         bool;
+    airTime:        f32 = 1;
+    knockTaken:     f32 = 1;
 }
 
 addTrait :: method (stats: *HeroStats, trait: Trait) {
     switch v in trait {
-        case .none         { }
-        case .speed        { stats.speed *= v; }
-        case .damageTaken  { stats.damageTaken *= v; }
-        case .cooldown     { stats.cooldown *= v; }
-        case .reach        { stats.reach *= v; }
-        case .maxHealth    { stats.maxHealth *= v; }
-        case .regen        { stats.regen += v; }
-        case .saves        { stats.saves += v; }
+        case .none        { }
+        case .speed       { stats.speed *= v; }
+        case .damageTaken { stats.damageTaken *= v; }
+        case .cooldown    { stats.cooldown *= v; }
+        case .reach       { stats.reach *= v; }
+        case .maxHealth   { stats.maxHealth *= v; }
+        case .regen       { stats.regen += v; }
+        case .saves       { stats.saves += v; }
         case .chillAura {
             // Two auras: the bigger and the stronger of each
             if stats.chill.hasValue() {

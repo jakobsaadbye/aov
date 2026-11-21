@@ -21,7 +21,7 @@ center :: method (rect: Rectangle) -> Vector2 {
 // The walls on both sides of the road. Each side has one opening: the near one at the far end of the road, the one on
 // the other side at the near end, so a hero has to cross the road at an angle
 World :: struct {
-    walls: [4]Rectangle;        // The footprints of the walls on the ground: x and z
+    walls:    [4]Rectangle;     // The footprints of the walls on the ground: x and z
     entrance: Vector2;          // The middle of the opening on the start side
     exit:     Vector2;          // and on the goal side
 }

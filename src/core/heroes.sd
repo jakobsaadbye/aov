@@ -41,15 +41,15 @@ AbilityKeyNames :: ["Q", "W", "E", "R", "D", "F"];
 MaxAbilities    :: 8;
 
 HeroDefinition :: struct {
-    name:      string;
-    title:     string;          // What kind of hero it is, e.g "the Mechanic"
-    color:     Color;           // Of the portrait and the bits flying when run over
-    width:     f32;             // Of the model, for its shadow and the circle under it
-    height:    f32;
-    moveSpeed: f32;
-    hitRadius: f32;             // The circle on the ground that the cars hit
-    maxHealth: f32;             // A car takes CarDamagePerSecond, so a tanky hero survives a car for a moment
-    abilities: [..]Ability;
+    name:       string;
+    title:      string;         // What kind of hero it is, e.g "the Mechanic"
+    color:      Color;          // Of the portrait and the bits flying when run over
+    width:      f32;            // Of the model, for its shadow and the circle under it
+    height:     f32;
+    moveSpeed:  f32;
+    hitRadius:  f32;            // The circle on the ground that the cars hit
+    maxHealth:  f32;            // A car takes CarDamagePerSecond, so a tanky hero survives a car for a moment
+    abilities:  [..]Ability;
     drawExtras: HeroDrawFunction;   // What is drawn of it besides its model, e.g Mads's skateboard. Can be null
 }
 
@@ -132,7 +132,6 @@ LeapState :: struct {
     height:   f32 = LeapHeight;
 }
 
-
 // Where the hero was, for Mira's rewind: a sample every RewindInterval seconds, the last RewindSamples of them
 RewindInterval :: 0.1;
 RewindSamples  :: 32;
@@ -151,13 +150,13 @@ Hero :: struct {
     walkCycle: f32;         // Drives the bobbing while walking
     timeAlive: f32;
 
-    cooldowns: [MaxAbilities]f32;   // Seconds before each ability can be cast again, in the order of the abilities
-    variants:  [MaxAbilities]int;   // Which cast of each ability the last was, for which of its clips plays: Mads' tricks
-    health:    f32;
-    hurtFor:   f32;                 // Seconds since a car last hurt the hero. With a First Aid Kit it heals after a while
-    stats:     HeroStats;               // Of its passives, the items and the talents of its player (traits.sd)
-    statuses:  Statuses;            // Stunned, faded, hasted, ... (status.sd)
-    savesLeft: int;                 // Of the clovers: times it still gets away from a car
+    cooldowns:     [MaxAbilities]f32; // Seconds before each ability can be cast again, in the order of the abilities
+    variants:      [MaxAbilities]int; // Which cast of each ability the last was, for which of its clips plays: Mads' tricks
+    health:        f32;
+    hurtFor:       f32;             // Seconds since a car last hurt the hero. With a First Aid Kit it heals after a while
+    stats:         HeroStats;           // Of its passives, the items and the talents of its player (traits.sd)
+    statuses:      Statuses;        // Stunned, faded, hasted, ... (status.sd)
+    savesLeft:     int;             // Of the clovers: times it still gets away from a car
     slideLeft:     f32;             // On an oil slick: seconds it slides on before it may turn (slicks.sd)
     slowedBy:      f32;             // By the Garlic of an enemy near it: 0.3 is 30% slower
     bounceLeft:    f32;             // Seconds until Spring Shoes bounce it again
@@ -165,27 +164,27 @@ Hero :: struct {
     slideVelocity: Vector2;
 
     // What the abilities are doing right now
-    hook:             ?HookState;
-    leap:             ?LeapState;
-    ride:             ?RideState;
-    dash:             ?DashState;
-    momentum:         f32;          // 0 to 1, how long it has walked straight on (the trait momentum)
-    possess:          ?PossessState;    // In a car, steering it (Ghosty)
-    goalSign:         f32 = 1;      // Which way across is the way to the goal: 1 is +x
-    stillFor:         f32;          // Seconds it has stood still (the trait blendIn)
-    inShadow:         bool;         // Right next to a car (the trait shadowed)
-    nearMissLeft:     f32;          // Seconds until a near miss makes its abilities ready again (the trait adrenaline)
-    castCount:        int;          // Spells it has cast (the trait staticCharge)
-    nimbleLeft:       f32;          // Seconds until it steps aside by itself again (the trait nimble)
-    shrugged:         int = -1;     // The car it threw aside last, berserk (Ivar), which doesn't hit it while it slides over
-    shruggedLeft:     f32;
-    onOil:            bool;         // On a slick of oil, as of this frame
-    scrap:            int;          // Scraps of metal stuck to it (the trait scrapArmor, Magnus)
-    scrapLeft:        f32;          // Seconds until a car that rushes past leaves another
-    scrapCar:         int = -1;     // The car that knocked one off last, which doesn't hit it while it is flung aside
-    scrapCarLeft:     f32;
-    mirrorLeft:       f32;          // Seconds until its mirror sends a spell back again
-    portalLeft:       f32;          // Seconds until it can go through a portal again
+    hook:         ?HookState;
+    leap:         ?LeapState;
+    ride:         ?RideState;
+    dash:         ?DashState;
+    momentum:     f32;              // 0 to 1, how long it has walked straight on (the trait momentum)
+    possess:      ?PossessState;        // In a car, steering it (Ghosty)
+    goalSign:     f32 = 1;          // Which way across is the way to the goal: 1 is +x
+    stillFor:     f32;              // Seconds it has stood still (the trait blendIn)
+    inShadow:     bool;             // Right next to a car (the trait shadowed)
+    nearMissLeft: f32;              // Seconds until a near miss makes its abilities ready again (the trait adrenaline)
+    castCount:    int;              // Spells it has cast (the trait staticCharge)
+    nimbleLeft:   f32;              // Seconds until it steps aside by itself again (the trait nimble)
+    shrugged:     int = -1;         // The car it threw aside last, berserk (Ivar), which doesn't hit it while it slides over
+    shruggedLeft: f32;
+    onOil:        bool;             // On a slick of oil, as of this frame
+    scrap:        int;              // Scraps of metal stuck to it (the trait scrapArmor, Magnus)
+    scrapLeft:    f32;              // Seconds until a car that rushes past leaves another
+    scrapCar:     int = -1;         // The car that knocked one off last, which doesn't hit it while it is flung aside
+    scrapCarLeft: f32;
+    mirrorLeft:   f32;              // Seconds until its mirror sends a spell back again
+    portalLeft:   f32;              // Seconds until it can go through a portal again
 
     // What the enemies did to the hero
     harmedBy:     int = -1;             // The player that last hooked, bashed or locked it, who gets the kill if a car

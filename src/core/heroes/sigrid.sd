@@ -8,14 +8,14 @@ use raylib;
 defineSigrid :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Sigrid", title: "the Witch", color: {70, 50, 90, 255}, width: 2.3, height: 5.0, moveSpeed: 7.8, hitRadius: 0.7, maxHealth: 22, drawExtras: drawSigrid};
     hero.abilities.add(Ability{
-        name: "Broom", icon: "broom", sound: "ability.broom", cooldown: 13, targeting: .point, cast: castBroom, bot: .escape,
+        name:        "Broom", icon: "broom", sound: "ability.broom", cooldown: 13, targeting: .point, cast: castBroom, bot: .escape,
         description: "Flies on her broom to the cursor, up to 24 away, over the cars, but she can't turn on the way",
-        range: 24, power: BroomSpeed, delay: 0.9,
+        range:       24, power: BroomSpeed, delay: 0.9,
     });
     hero.abilities.add(Ability{
-        name: "Hex", icon: "hex", sound: "ability.hex", cooldown: 12, targeting: .enemy, cast: castHex, bot: .disableEnemy,
+        name:        "Hex", icon: "hex", sound: "ability.hex", cooldown: 12, targeting: .enemy, cast: castHex, bot: .disableEnemy,
         description: "Turns the enemy nearest the cursor, up to 28 away, into a toad for 2.5 seconds: slow, and it can't cast",
-        range: 28, duration: 2.5,
+        range:       28, duration: 2.5,
     });
     hero.abilities.add(passive("Nine lives", "nine_lives", "Her black cat watches over her: once each life, a car that would run her over leaves her alive", Trait{saves: 1}));
     return hero;

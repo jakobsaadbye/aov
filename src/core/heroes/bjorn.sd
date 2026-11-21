@@ -8,14 +8,14 @@ use raylib;
 defineBjorn :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Bjørn", title: "the Shieldbearer", color: {176, 120, 70, 255}, width: 3.8, height: 5.8, moveSpeed: 7.5, hitRadius: 1.0, maxHealth: 60};
     hero.abilities.add(Ability{
-        name: "Leap", icon: "leap", sound: "ability.leap", cooldown: 7, targeting: .point, cast: castLeap, bot: .escape,
+        name:        "Leap", icon: "leap", sound: "ability.leap", cooldown: 7, targeting: .point, cast: castLeap, bot: .escape,
         description: "Leaps to the cursor, up to 16 away, high over the cars and the walls",
-        range: 16, duration: 0.65, delay: 0.65,
+        range:       16, duration: 0.65, delay: 0.65,
     });
     hero.abilities.add(Ability{
-        name: "Shield bash", icon: "shield_bash", sound: "ability.shield_bash", cooldown: 9, cast: castShieldBash, bot: .knockEnemy,
+        name:        "Shield bash", icon: "shield_bash", sound: "ability.shield_bash", cooldown: 9, cast: castShieldBash, bot: .knockEnemy,
         description: "Bashes the nearest enemy within 5 with his shield: stunned for 1.2 seconds, and knocked 9 away",
-        range: 5, duration: 1.2, power: 9,
+        range:       5, duration: 1.2, power: 9,
     });
     hero.abilities.add(passive("Iron hide", "iron_hide", "Takes half the damage from the cars", Trait{damageTaken: 0.5}));
     return hero;

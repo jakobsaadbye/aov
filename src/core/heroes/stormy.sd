@@ -9,27 +9,27 @@ use raylib;
 defineStormy :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Stormy", title: "the Weather Girl", color: {60, 110, 220, 255}, width: 2.3, height: 4.3, moveSpeed: 8, hitRadius: 0.75, maxHealth: 28};
     hero.abilities.add(Ability{
-        name: "Lightning rod", icon: "lightning_rod", sound: "ability.lightning_rod", cooldown: 13, targeting: .point, cast: castLightningRod, bot: .stopCarsAhead,
+        name:        "Lightning rod", icon: "lightning_rod", sound: "ability.lightning_rod", cooldown: 13, targeting: .point, cast: castLightningRod, bot: .stopCarsAhead,
         description: "Plants a lightning rod at the cursor, up to 28 away, for 6 seconds. Every second, lightning strikes the nearest enemy within 5 of it, stunning it for 0.8 seconds, or else the nearest car, which stops dead for 1.2",
-        range: 28, duration: 6, radius: 5, power: 0.8, delay: 1.2,
+        range:       28, duration: 6, radius: 5, power: 0.8, delay: 1.2,
     });
     hero.abilities.add(Ability{
-        name: "Gust", icon: "gust", sound: "ability.gust", cooldown: 9, targeting: .point, cast: castGust, bot: .knockEnemy,
+        name:        "Gust", icon: "gust", sound: "ability.gust", cooldown: 9, targeting: .point, cast: castGust, bot: .knockEnemy,
         description: "A gust towards the cursor: the enemies in a cone 12 long are blown 6 away, and the cars in it are blown a lane over",
-        range: 12, power: 6,
+        range:       12, power: 6,
     });
     hero.abilities.add(passive("Static charge", "static_charge", "Every third spell she casts doesn't cool down", .staticCharge));
     return hero;
 }
 
 LightningRod :: struct {
-    position:  Vector2;
-    timeLeft:  f32;
+    position:   Vector2;
+    timeLeft:   f32;
     nextStrike: f32;
-    radius:    f32;
-    stun:      f32;
-    stop:      f32;
-    owner:     int;
+    radius:     f32;
+    stun:       f32;
+    stop:       f32;
+    owner:      int;
 }
 
 RodStrikeEvery :: 1.0;
@@ -104,7 +104,7 @@ castGust :: (game: *Game, caster: int, ability: *Ability, target: Vector2) -> bo
             if inCone(car.position().xz(), ground, aim, range) { game.traffic.moveToLane(c as int, car.lane + across); }
         }
     }
-    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1.5, 0} + aim.at() * 1.5, 30, tint: {200, 220, 255, 255}, push: aim.at(20));
+    game.effects.particles.emit(.mist, hero.position + Vector3{0, 1.5, 0} +aim.at() * 1.5, 30, tint: {200, 220, 255, 255}, push: aim.at(20));
     return true;
 }
 

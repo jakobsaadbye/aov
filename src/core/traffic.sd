@@ -29,9 +29,9 @@ Car :: struct {
     leakLeft:   f32;        // Seconds it still leaks oil (slicks.sd)
     leakTimer:  f32;        // Seconds to its next drop
     layer:      int;        // 0 to 3, different for cars after each other in a lane. Drawn a bit bigger by it, so two
-                            // cars that drive through each other don't have their faces in the same place (z-fighting)
+    // cars that drive through each other don't have their faces in the same place (z-fighting)
     shift:      f32;        // Across the road, from the middle of its lane: a car that is pushed into another lane
-                            // slides over to it (moveToLane)
+    // slides over to it (moveToLane)
     fromLane:   int = -1;   // The lane it is sliding over from, while it is still partly in it
     hauntedBy:  int = -1;   // The player whose ghost is in it (Ghosty)
 
@@ -52,7 +52,7 @@ Car :: struct {
 
     height :: method () -> f32 {
         return switch self.kind {
-            case .car   => CarHeight;
+            case .car => CarHeight;
             case .van       => VanHeight;
             case .ambulance => VanHeight;
             case .truck => TruckHeight;
@@ -79,7 +79,7 @@ Car :: struct {
 
 length :: method (kind: CarKind) -> f32 {
     return switch kind {
-        case .car   => CarLength;
+        case .car => CarLength;
         case .van       => VanLength;
         case .ambulance => VanLength;
         case .truck => TruckLength;
@@ -119,9 +119,9 @@ ShiftSpeed :: 14.0;     // How fast a car slides over to another lane
 QueueGap :: 1.5;
 
 CarColors :: [
-    Color{236, 240, 241, 255}, Color{ 44,  62,  80, 255}, Color{192,  57,  43, 255}, Color{ 41, 128, 185, 255},
-    Color{243, 156,  18, 255}, Color{ 39, 174,  96, 255}, Color{142,  68, 173, 255}, Color{149, 165, 166, 255},
-    Color{211,  84,   0, 255}, Color{ 22, 160, 133, 255},
+    Color{236, 240, 241, 255}, Color{ 44, 62, 80, 255}, Color{192, 57, 43, 255}, Color{ 41, 128, 185, 255},
+    Color{243, 156, 18, 255}, Color{ 39, 174, 96, 255}, Color{142, 68, 173, 255}, Color{149, 165, 166, 255},
+    Color{211, 84, 0, 255}, Color{ 22, 160, 133, 255},
 ];
 
 laneCenter :: (lane: int) -> f32 {

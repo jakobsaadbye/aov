@@ -48,8 +48,8 @@ update :: method (view: *ConsoleView, dt: f32) -> bool {
     if IsKeyPressed(.f1) {
         now := GetTime();
         if view.target == 0.5 && now - view.lastF1 < DoubleTapTime { view.target = 1; }
-        else if view.isOpen()                                       { view.target = 0; }
-        else                                                        { view.target = 0.5; }
+        else if view.isOpen() { view.target = 0; }
+        else                  { view.target = 0.5; }
         view.lastF1 = now;
     }
     if view.isOpen() && IsKeyPressed(.escape) { view.target = 0; }
@@ -84,8 +84,8 @@ type :: method (view: *ConsoleView) {
     if pressed(.right) { view.cursor = math.min(view.input.count as int, view.cursor + 1); }
     if IsKeyPressed(.home) { view.cursor = 0; }
     if IsKeyPressed(.end)  { view.cursor = view.input.count as int; }
-    if pressed(.up)    { view.browse(-1); }
-    if pressed(.down)  { view.browse(1); }
+    if pressed(.up)   { view.browse(-1); }
+    if pressed(.down) { view.browse(1); }
     if IsKeyPressed(.tab) { view.complete(); }
 
     rows := view.rows();

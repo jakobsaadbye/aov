@@ -128,8 +128,8 @@ drawProjectiles :: (game: *Game) {
         switch projectile.kind {
             case .axe {
                 // A spinning axe: a handle and a head at its end
-                spin := Vector3{math.sinf(projectile.spin), math.cosf(projectile.spin), 0} * 0.9;
-                spin = Vector3{spin.x * direction.z, spin.y, -spin.x * direction.x} + direction * spin.x * 0.2;
+                spin := Vector3{math.sinf(projectile.spin), math.cosf(projectile.spin), 0} *0.9;
+                spin = Vector3{spin.x * direction.z, spin.y, -spin.x * direction.x} +direction * spin.x * 0.2;
                 DrawCylinderEx(at - spin, at + spin, 0.08, 0.08, 6, {120, 80, 40, 255});
                 DrawCube(at + spin * 1.1, 0.5, 0.5, 0.5, {200, 200, 210, 255});
             }

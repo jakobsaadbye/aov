@@ -9,14 +9,14 @@ use raylib;
 defineGudrun :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Gudrun", title: "the Grandmother", color: {170, 110, 170, 255}, width: 2.3, height: 3.6, moveSpeed: 6.2, hitRadius: 0.85, maxHealth: 80, drawExtras: drawGudrun};
     hero.abilities.add(Ability{
-        name: "Granny's crossing", icon: "grannys_crossing", sound: "ability.grannys_crossing", cooldown: 12, cast: castGrannysCrossing, bot: .stopCars,
+        name:        "Granny's crossing", icon: "grannys_crossing", sound: "ability.grannys_crossing", cooldown: 12, cast: castGrannysCrossing, bot: .stopCars,
         description: "Nobody runs over a grandmother: for 4 seconds, the cars that come to her stop and wait until she has gone by",
-        duration: 4,
+        duration:    4,
     });
     hero.abilities.add(Ability{
-        name: "Yarn leash", icon: "yarn_leash", sound: "ability.yarn_leash", cooldown: 12, targeting: .enemy, cast: castYarnLeash, bot: .disableEnemy,
+        name:        "Yarn leash", icon: "yarn_leash", sound: "ability.yarn_leash", cooldown: 12, targeting: .enemy, cast: castYarnLeash, bot: .disableEnemy,
         description: "Ties the enemy nearest the cursor, up to 24 away, to her with yarn for 5 seconds: it can't get further from her than it is now. Where she walks, it comes along",
-        range: 24, duration: 5,
+        range:       24, duration: 5,
     });
     hero.abilities.add(passive("Mind the cane", "mind_the_cane", "Nobody pushes her: who walks into her trips over her cane, and lies still for a second", .tripsShovers));
     return hero;

@@ -51,13 +51,13 @@ Ability :: struct {
     bot:         BotUse;
 
     // What these mean is up to the cast function
-    range:       f32;           // How far it reaches. Shown around the hero while the mouse is on its icon
-    duration:    f32;
-    radius:      f32;
-    power:       f32;
-    count:       int;
-    delay:       f32;           // Seconds before it gets where it goes, e.g a leap, for the bots
-    endsEarly:   ?StatusKind;   // A status it puts on the hero that the hero can end: its key again, or a move order
+    range:     f32;             // How far it reaches. Shown around the hero while the mouse is on its icon
+    duration:  f32;
+    radius:    f32;
+    power:     f32;
+    count:     int;
+    delay:     f32;             // Seconds before it gets where it goes, e.g a leap, for the bots
+    endsEarly: ?StatusKind;     // A status it puts on the hero that the hero can end: its key again, or a move order
 
     isPassive :: method () -> bool {
         return self.cast == null;

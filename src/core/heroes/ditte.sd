@@ -8,14 +8,14 @@ use raylib;
 defineDitte :: () -> HeroDefinition {
     hero := HeroDefinition{name: "Ditte", title: "the Paramedic", color: {230, 230, 235, 255}, width: 2.3, height: 4.3, moveSpeed: 8, hitRadius: 0.75, maxHealth: 35};
     hero.abilities.add(Ability{
-        name: "Call it in", icon: "call_ambulance", sound: "ability.call_ambulance", cooldown: 14, targeting: .point, cast: castCallAmbulance, bot: .disableEnemy,
+        name:        "Call it in", icon: "call_ambulance", sound: "ability.call_ambulance", cooldown: 14, targeting: .point, cast: castCallAmbulance, bot: .disableEnemy,
         description: "Calls an ambulance down the lane at the cursor. It comes fast, from the far end of the road",
-        range: 60,
+        range:       60,
     });
     hero.abilities.add(Ability{
-        name: "Bandage", icon: "bandage", sound: "ability.bandage", cooldown: 12, cast: castBandage, bot: .heal,
+        name:        "Bandage", icon: "bandage", sound: "ability.bandage", cooldown: 12, cast: castBandage, bot: .heal,
         description: "Bandages herself: heals 36% of her health over 3 seconds, while she stands still",
-        duration: 3, power: 0.12,
+        duration:    3, power: 0.12,
     });
     hero.abilities.add(passive("Colleague", "colleague", "The ambulances know her: they never hit her", .ambulanceProof));
     return hero;

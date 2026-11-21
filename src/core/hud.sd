@@ -60,11 +60,11 @@ drawHud :: method (game: *Game, assets: *Assets) {
     if game.canSwitchView() { drawWatching(game); }
     drawBanner(game);
     drawTalentOffer(game, assets);
-    if game.showHelp       { drawHelp(); }
-    if game.debug.overlay  { drawDebug(game); }
+    if game.showHelp      { drawHelp(); }
+    if game.debug.overlay { drawDebug(game); }
     drawInspectorPanel(game);
     drawResults(game);
-    if game.isPaused       { drawPaused(game); }
+    if game.isPaused { drawPaused(game); }
 
     mouse := GetMousePosition();
     DrawTexture(assets.cursor, mouse.x as int - 2, mouse.y as int, White);

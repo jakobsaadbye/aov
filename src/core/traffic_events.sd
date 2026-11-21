@@ -20,12 +20,12 @@ RushPhase :: enum {
     rush,
 }
 
-RushCalmLow     :: 35.0;    // Seconds of calm between two rush hours, at random between these
-RushCalmHigh    :: 55.0;
-RushWarning     :: 5.0;     // Seconds of warning
-RushLengthLow   :: 9.0;     // Seconds a rush hour lasts
-RushLengthHigh  :: 13.0;
-RushGap         :: 0.35;    // Times the room between the cars of a lane in rush hour
+RushCalmLow    :: 35.0;     // Seconds of calm between two rush hours, at random between these
+RushCalmHigh   :: 55.0;
+RushWarning    :: 5.0;      // Seconds of warning
+RushLengthLow  :: 9.0;      // Seconds a rush hour lasts
+RushLengthHigh :: 13.0;
+RushGap        :: 0.35;     // Times the room between the cars of a lane in rush hour
 
 EmergencyEveryLow  :: 30.0; // Seconds between two ambulances, at random between these
 EmergencyEveryHigh :: 55.0;
