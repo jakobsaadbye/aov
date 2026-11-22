@@ -20,6 +20,7 @@
 
 import core;
 import bots;
+import cli;
 import fmt;
 import os;
 import time;
@@ -29,61 +30,83 @@ use raylib;
 GameDt :: 1.0 / 60.0;
 dt: f32 = GameDt;          // The time step of a game: --dt 30 for 30 steps a second
 
-main :: () {
+@cli.Options(about: "The bots play on their own, without a window, as fast as they can, and it says how they did")
+Options :: struct {
+    @cli.Arg(name: "bots", help: "The bots of each game", min: 1, max: 5)
     botCount := 4;
+    @cli.Arg(help: "How many games", min: 1)
     games := 3;
+    @cli.Arg(help: "How long each game is", min: 1)
     seconds := 180;
-    seed: u64 = 1;
-    peaceful := false;
-    mixed := false;         // A bot of each difficulty in each game, and how each difficulty did
+    @cli.Arg(help: "The seed of the first game; the next ones add 1")
+    seed:     u64 = 1;
+    @cli.Arg(help: "They don't cast on each other: how well they cross")
+    peaceful: bool;
+    @cli.Arg(help: "A bot of each difficulty in each game, and how each difficulty did")
+    mixed:    bool;
+    @cli.Arg(help: "The difficulty of the bots")
+    difficulty := core.Difficulty.expert;
+    @cli.Arg(help: "Prints what a bot was doing when a car got it")
+    hits: bool;
+    @cli.Arg(help: "The traffic starts at this level (a level each crossing)", min: 0)
+    level := 0;
+    @cli.Arg(name: "nododge", help: "Without the reflex: what the plans do on their own")
+    noDodge: bool;
+    @cli.Arg(help: "Seconds between searches of a plan that doesn't get across, e.g 0.5; 0 never", min: 0)
+    look:    f32;
+    @cli.Arg(help: "Steps a second", min: 1)
+    dt:      f32 = 60;
+    @cli.Arg(help: "How many lanes to either side a search looks, 0 for all", min: 0)
+    lanes := 8;
+    @cli.Arg(help: "What a bot does each frame, for tools/plot_bot.py")
+    trace:        bool;
+    @cli.Arg(name: "default", help: "With the hand tuned genes instead of the trained ones")
+    defaultGenes: bool;
+    @cli.Arg(help: "With the genome of a file, e.g of bot_train.sd --out")
+    genome:       ?string;
+    @cli.Arg(help: "A gene changed, e.g leadTime=0.2, after --default or --genome")
+    gene:         [..]string;
+}
+
+main :: () {
+    options, err := cli.parseArguments<Options>();
+    if err != null {
+        fmt.print("%", err.message);
+        os.exit(2);
+    }
+    botCount := options.botCount;
+    games := options.games;
+    seconds := options.seconds;
+    seed := options.seed;
+    peaceful := options.peaceful;
+    mixed := options.mixed;
     byDifficulty: [core.Difficulty.count]core.Stats;
     fitnessOf:    [core.Difficulty.count]f32;
-    difficulty := core.Difficulty.expert;
-    level := 0;
-    args := os.args();
-    i := 1;
-    while i < args.count {
-        next := "";
-        if i + 1 < args.count { next = args[i + 1]; }
-        switch args[i] {
-            case "--bots"     { botCount = (next.toInt() ?? 4) as int; i += 1; }
-            case "--games"    { games = (next.toInt() ?? 3) as int; i += 1; }
-            case "--seconds"  { seconds = (next.toInt() ?? 180) as int; i += 1; }
-            case "--seed"     { seed = (next.toInt() ?? 1) as u64; i += 1; }
-            case "--peaceful" { peaceful = true; }
-            case "--mixed"    { mixed = true; }
-            case "--difficulty" {
-                index := core.Difficulty.names.indexOf(next);
-                if index >= 0 { difficulty = index as core.Difficulty; }
-                i += 1;
-            }
-            case "--hits"    { bots.debugHits = true; }
-            case "--level"   { level = (next.toInt() ?? 0) as int; i += 1; }      // The traffic starts at this level
-            case "--nododge" { bots.noDodge = true; }
-            case "--look"    { bots.lookEvery = (next.toFloat() ?? 0) as f32; i += 1; }      // 0.5 for every half second
-            case "--dt"      { dt = 1 / ((next.toFloat() ?? 60) as f32); i += 1; }
-            case "--lanes"   { bots.searchLanes = (next.toInt() ?? 8) as int; i += 1; }      // How far a search looks, 0 for all
-            case "--trace"   { bots.debugTrace = true; bots.debugHits = true; }
-            case "--default" { bots.useGenome(bots.defaultGenome()); }      // The hand tuned genes, not the trained ones
-            case "--genome" {
-                genome := bots.readGenome(next);
-                if genome.hasValue() { bots.useGenome(genome.value()); } else { fmt.print("No genome in '%'", next); }
-                i += 1;
-            }
-            case "--gene" {
-                // e.g --gene leadTime=0.2: one gene of the genome they play with, changed
-                genome := bots.trainedGenome();
-                at := next.indexOf("=");
-                gene := bots.Gene.names.indexOf(next.slice(0, at));
-                value := next.slice(at + 1, next.len).toFloat();
-                if gene >= 0 && value.hasValue() { genome.set(gene as bots.Gene, value.value() as f32); bots.useGenome(genome); }
-                else { fmt.print("Unknown gene '%'", next); }
-                i += 1;
-            }
-            else { fmt.print("Unknown option '%'", args[i]); }
-        }
-        i += 1;
+    difficulty := options.difficulty;
+    level := options.level;
+    dt = 1 / options.dt;
+    bots.debugHits = options.hits || options.trace;
+    bots.debugTrace = options.trace;
+    bots.noDodge = options.noDodge;
+    bots.lookEvery = options.look;
+    bots.searchLanes = options.lanes;
+    genome := bots.trainedGenome();
+    if options.defaultGenes { genome = bots.defaultGenome(); }
+    if options.genome.hasValue() {
+        read := bots.readGenome(options.genome.value());
+        if read.hasValue() { genome = read.value(); } else { fmt.print("No genome in '%'", options.genome.value()); }
     }
+    for text in options.gene {
+        // e.g leadTime=0.2: one gene of the genome they play with, changed
+        at := text.indexOf("=");
+        gene := -1;
+        if at > 0 { gene = bots.Gene.names.indexOf(text.slice(0, at)); }
+        value: ?f64 = null;
+        if at > 0 { value = text.slice(at + 1).toFloat(); }
+        if gene >= 0 && value.hasValue() { genome.set(gene as bots.Gene, value.value() as f32); }
+        else { fmt.print("Unknown gene '%'", text); }
+    }
+    if options.defaultGenes || options.genome.hasValue() || options.gene.count > 0 { bots.useGenome(genome); }
 
     totalCrossings := 0;
     totalDeaths := 0;

@@ -28,6 +28,7 @@
 import net.http;
 import crypto;
 import json;
+import cli;
 import fmt;
 import os;
 import time;
@@ -543,10 +544,10 @@ Soundtracks :: [
 
 Piece :: struct {
     soundtrack: string;    // Of Soundtracks
-    name:    string;    // music.<soundtrack>.<name>, written to data/music/<soundtrack>/<name>.ogg. Not ending in
-                        // _<number>, and no other piece of any soundtrack has the same name: the game finds it by it
-    feel:    string;
-    seconds: int;
+    name:       string; // music.<soundtrack>.<name>, written to data/music/<soundtrack>/<name>.ogg. Not ending in
+    // _<number>, and no other piece of any soundtrack has the same name: the game finds it by it
+    feel:       string;
+    seconds:    int;
 }
 
 Pieces :: [
@@ -807,18 +808,28 @@ describe :: (job: Job) -> string {
     return Lines[job.line].text;
 }
 
+@cli.Options(about: "Makes the sound effects, the voices and the music of the game, the ones that are new or whose prompt changed")
+Options :: struct {
+    @cli.Arg(help: "Makes them again, even when they are there")
+    force: bool;
+    @cli.Arg(help: "Lists what it would make, with the prompts and the lines")
+    list:  bool;
+    @cli.Arg(help: "Takes the files that are there as made from the prompts of now, without making")
+    adopt: bool;
+    @cli.Arg(positional: true, help: "Names of files, or sfx, voices or music for all of a kind; all of it when none")
+    names: [..]string;
+}
+
 main :: () {
-    all := os.args();
-    args := all.slice(1);
-    force := false;
-    list := false;
-    adopt := false;
-    for arg in args {
-        if arg == "--force" { force = true; }
-        if arg == "--list"  { list = true; }
-        if arg == "--adopt" { adopt = true; }
+    options, err := cli.parseArguments<Options>();
+    if err != null {
+        fmt.print("%", err.message);
+        os.exit(2);
     }
-    jobs := jobsFor(args);
+    force := options.force;
+    list := options.list;
+    adopt := options.adopt;
+    jobs := jobsFor(options.names);
     defer jobs.free();
 
     if list {

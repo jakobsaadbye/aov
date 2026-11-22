@@ -6,10 +6,8 @@
 //     saad build bot_train.sd --llvm             the bots think about 10 times as fast with LLVM
 //     build/out.exe --generations 40 --threads 4
 //
-// Options: --generations N, --population N, --games N (games each genome plays a generation), --seconds N (of a game),
-// --threads N, --seed N, --playoff N (games each finalist plays at the end), --levels N (the traffic starts at a level
-// from 0 to N, at random for each round), --from-default (start from the hand tuned genes instead of the trained ones),
-// --out FILE
+// build/out.exe --help lists the options: --generations, --population, --games, --seconds, --threads, --seed, --playoff,
+// --levels, --method, --sigma, --dt, --from-default and --out
 //
 // So that what is trained works for any hero, any traffic and any enemies, and not for the games it happened to play:
 //
@@ -21,6 +19,7 @@
 
 import core;
 import bots;
+import cli;
 import fmt;
 import json;
 import math;
@@ -31,22 +30,46 @@ import time;
 
 Dt :: 1.0 / 60.0;          // The time step of a game, unless --dt says otherwise
 
+@cli.Options(about: "Trains the bots: CMA-ES or a genetic algorithm, over games of the population against each other and the hall of fame")
 Config :: struct {
-    generations: int = 40;
-    population:  int = 24;
-    games:       int = 6;           // Games each genome plays in a generation
-    seconds:     int = 90;          // Of each game
-    threads:     int = 4;
-    seed:        u64 = 1;
-    elite:       int = 4;           // The best, kept as they are (and played again, so luck doesn't keep them)
-    tournament:  int = 3;
-    fromDefault: bool;
-    playoff:     int = 32;          // Games each finalist plays at the end
-    levels:      int = 6;           // The traffic starts at a level up to this, at random each round
-    method:      string = "cmaes";  // cmaes, or ga for the genetic algorithm
-    sigma:       f64 = 0.15;        // How big the cloud of CMA-ES is at first, in the range of a gene
-    dt:          f32 = Dt;          // The time step of the games: --dt 30 is a little quicker, and plays a little worse
-    out:         string;
+    @cli.Arg(help: "How many generations", min: 1)
+    generations:    int = 40;
+    @cli.Arg(help: "Genomes in each generation (rounded down to a multiple of 3)", min: 3)
+    population:     int = 24;
+    @cli.Arg(help: "Games each genome plays in a generation", min: 1)
+    games:          int = 6;
+    @cli.Arg(help: "How long each game is", min: 1)
+    seconds:        int = 90;
+    @cli.Arg(help: "Games played at once", min: 1)
+    threads:        int = 4;
+    @cli.Arg(help: "The seed of the training")
+    seed:           u64 = 1;
+    @cli.Arg(skip: true)
+    elite:          int = 4;        // The best, kept as they are (and played again, so luck doesn't keep them)
+    @cli.Arg(skip: true)
+    tournament:     int = 3;
+    @cli.Arg(name: "from-default", help: "Starts from the hand tuned genes instead of the trained ones")
+    fromDefault:    bool;
+    @cli.Arg(help: "Games each finalist plays at the end, 0 for none", min: 0)
+    playoff:        int = 32;
+    @cli.Arg(help: "The traffic starts at a level up to this, at random each round", min: 0)
+    levels:         int = 6;
+    @cli.Arg(help: "How it trains")
+    method:         Method = .cmaes;
+    @cli.Arg(help: "How big the cloud of CMA-ES is at first, in the range of a gene", min: 0)
+    sigma:          f64 = 0.15;
+    @cli.Arg(name: "dt", help: "Steps a second of the games: fewer is quicker, and plays a little worse", min: 1)
+    stepsPerSecond: f32 = 60;
+    @cli.Arg(skip: true)
+    dt:             f32 = Dt;       // The time step of the games, from stepsPerSecond
+    @cli.Arg(help: "Where the best genome is written (data/bots/genomes.json when not given)")
+    out:            string;
+}
+
+// How it trains
+Method :: enum {
+    cmaes,      // CMA-ES: a cloud of genomes that moves towards the better ones (bots/cmaes.sd)
+    ga,         // A genetic algorithm: the fitter have the children of the next generation
 }
 
 Candidate :: struct {
@@ -133,30 +156,12 @@ playAll :: (jobs: [..]GameJob, threads: int) {
 }
 
 readConfig :: () -> Config {
-    config: Config;
-    args := os.args();
-    i := 1;
-    while i < args.count {
-        next := "";
-        if i + 1 < args.count { next = args[i + 1]; }
-        switch args[i] {
-            case "--generations"  { config.generations = (next.toInt() ?? 40) as int; i += 1; }
-            case "--population"   { config.population = (next.toInt() ?? 24) as int; i += 1; }
-            case "--games"        { config.games = (next.toInt() ?? 6) as int; i += 1; }
-            case "--seconds"      { config.seconds = (next.toInt() ?? 90) as int; i += 1; }
-            case "--threads"      { config.threads = (next.toInt() ?? 4) as int; i += 1; }
-            case "--seed"         { config.seed = (next.toInt() ?? 1) as u64; i += 1; }
-            case "--from-default" { config.fromDefault = true; }
-            case "--playoff"      { config.playoff = (next.toInt() ?? 32) as int; i += 1; }
-            case "--levels"       { config.levels = (next.toInt() ?? 6) as int; i += 1; }
-            case "--method"       { config.method = next; i += 1; }
-            case "--sigma"        { config.sigma = next.toFloat() ?? 0.15; i += 1; }
-            case "--dt"           { config.dt = 1 / ((next.toFloat() ?? 30) as f32); i += 1; }     // Steps a second
-            case "--out"          { config.out = next; i += 1; }
-            else                  { fmt.print("Unknown option '%'", args[i]); }
-        }
-        i += 1;
+    config, err := cli.parseArguments<Config>();
+    if err != null {
+        fmt.print("%", err.message);
+        os.exit(2);
     }
+    config.dt = 1 / config.stepsPerSecond;
     config.population = math.max(config.population - config.population % Candidates, Candidates);
     return config;
 }
@@ -183,7 +188,7 @@ main :: () {
     hallOfFame: [..]bots.Genome;
     hallOfFame.add(start);
 
-    cmaes := config.method == "cmaes";
+    cmaes := config.method == .cmaes;
     es: bots.Cmaes;
     if cmaes { es = bots.newCmaes(start, population.count as int, config.sigma); }
 
