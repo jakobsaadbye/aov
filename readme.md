@@ -251,11 +251,12 @@ can be left out, and a parameter the program gives (`consoleProvide`), e.g the `
 setHero :: (game: *Game, hero: HeroKind) { ... }
 ```
 
-The console itself is `core/console.sd` and knows nothing of the game. Every command of core is in
-`core/console_commands.sd`, so that file lists them all: a command whose work belongs to a part of the game calls a
-function of that part (`spawnSlick` calls `spawnSlickAt` in `slicks.sd`). The ones that start a new game (`setBots`,
-`setSeed`, `spectate`, `setDifficulty`, `replay`, ...) are in `main.sd`, and the two of the bots in `bots/`, as core can't
-see the session or the bots.
+The console is a folder of its own, `src/console/` (namespace `console`): `console.sd` is the console itself and knows
+nothing of the game, `console_view.sd` draws it, `session.sd` is the session (what the game is played with, and the
+game), and `console_commands.sd` has every command of the game, so that file lists them all. A command whose work belongs
+to a part of the game calls a function of that part (`spawnItem` calls `spawnItemAt` in `core/items.sd`); one that prints
+does so itself. Only the console imports core and bots: neither of them imports the console (the reports of the bots go
+to the standard output).
 
 Commands can also be given on the command line, each after a `+`, and run before the game starts. `at <seconds>
 <command>` runs one at a time of the game, so the game can be run and looked at without playing it, e.g by an agent:
@@ -640,9 +641,8 @@ window and runs the loop.
 | `traffic_events.sd`, `slicks.sd` | Rush hour and the ambulances, and the oil slicks |
 | `ui.sd` | The pieces every part of the UI is drawn with, in the style of Warcraft 3 |
 | `temp.sd` | The temporary allocator: memory for one frame, e.g of a text that is drawn, all freed at once |
-| `console.sd`, `console_commands.sd`, `console_view.sd` | The console, every console command of core, and the console on the screen (F1) |
 
-`core/console.sd` is the console itself: it finds the commands, reads what is typed into their
+`console/console.sd` is the console itself: it finds the commands, reads what is typed into their
 parameters, and keeps the lines and the history.
 
 | `src/bots/` | |

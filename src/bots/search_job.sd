@@ -108,9 +108,7 @@ stop :: method (job: *SearchJob) {
     job.arena.free();
 }
 
-@consoleCommand("The bots search for their ways on threads of their own (or on, off), so a frame never waits for them. Off: on the thread of the game, one search a frame, like the tests")
-toggleAsyncBots :: (game: *Game, on: ?bool) {
+// The body of the console command toggleAsyncBots (console/console_commands.sd)
+setAsyncBots :: (game: *Game, on: ?bool) {
     game.asyncBots = on ?? !game.asyncBots;
-    if game.asyncBots { consolePrint("The bots search on threads of their own"); }
-    else              { consolePrint("The bots search on the thread of the game"); }
 }

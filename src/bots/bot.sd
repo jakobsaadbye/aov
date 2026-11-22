@@ -833,10 +833,9 @@ progressOf :: (point: Vector2, startSide: Side) -> f32 {
 // With bot_arena.sd --hits or toggleHitReports: what a bot was doing when a car got it, to find out why
 debugHits := false;
 
-@consoleCommand("Prints what a bot was doing when a car got it, to find out why")
-toggleHitReports :: () {
+// The body of the console command toggleHitReports (console/console_commands.sd)
+toggleHitReportsNow :: () {
     debugHits = !debugHits;
-    if debugHits { consolePrint("Hit reports on"); } else { consolePrint("Hit reports off"); }
 }
 
 wasHit :: method (bot: *Bot, game: *Game, index: int, car: *Car) {
@@ -844,13 +843,13 @@ wasHit :: method (bot: *Bot, game: *Game, index: int, car: *Car) {
     hero := game.players[index].hero;
     rel := game.time - bot.forecastAt;
     newCar := car.age < game.time - bot.searchedAt;
-    consolePrint("HIT mode % reachesGoal % harmedBy % (% s ago) displaced %", BotMode.names[bot.decision.mode], bot.reachesGoal, hero.harmedBy, fmt.fixed(game.time - hero.harmedAt, 2), hero.displacement.hasValue());
-    consolePrint("HIT car new since the plan: % (age % s, plan % s old, forecast % s old)", newCar, fmt.fixed(car.age, 2), fmt.fixed(game.time - bot.searchedAt, 2), fmt.fixed(game.time - bot.forecastAt, 2));
-    consolePrint("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % (from % shift %) z % speed % frozen % braking %",
+    fmt.print("HIT mode % reachesGoal % harmedBy % (% s ago) displaced %", BotMode.names[bot.decision.mode], bot.reachesGoal, hero.harmedBy, fmt.fixed(game.time - hero.harmedAt, 2), hero.displacement.hasValue());
+    fmt.print("HIT car new since the plan: % (age % s, plan % s old, forecast % s old)", newCar, fmt.fixed(car.age, 2), fmt.fixed(game.time - bot.searchedAt, 2), fmt.fixed(game.time - bot.forecastAt, 2));
+    fmt.print("HIT t=% % at (% %) moving % canAct % stun % | forecast % s old, says safe for % | car lane % (from % shift %) z % speed % frozen % braking %",
         fmt.fixed(game.time, 2), game.players[index].name, fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.isMoving, hero.canAct(), fmt.fixed(hero.timeLeft(.stun), 2),
         fmt.fixed(rel, 2), fmt.fixed(bot.forecast.safeFor(hero.ground(), rel), 2), car.lane, car.fromLane, fmt.fixed(car.shift, 1), fmt.fixed(car.z, 1), fmt.fixed(car.speed, 1), fmt.fixed(car.frozenLeft, 1), car.isBraking);
     if bot.next < bot.plan.count {
         w := bot.plan[bot.next];
-        consolePrint("     next waypoint (% %) depart % arrive %, % of % left", fmt.fixed(w.point.x, 1), fmt.fixed(w.point.y, 1), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2), bot.next, bot.plan.count);
+        fmt.print("     next waypoint (% %) depart % arrive %, % of % left", fmt.fixed(w.point.x, 1), fmt.fixed(w.point.y, 1), fmt.fixed(w.depart, 2), fmt.fixed(w.arrive, 2), bot.next, bot.plan.count);
     }
 }

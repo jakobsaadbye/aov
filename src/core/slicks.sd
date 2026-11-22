@@ -295,15 +295,6 @@ drawEllipse :: (center: Vector2, halfWidth: f32, halfLength: f32, y: f32, color:
 // Console commands, to try them out
 //
 
-// The body of the console command spawnSlick (console_commands.sd)
-spawnSlickAt :: (game: *Game, x: ?f32, z: ?f32) {
-    if x.hasValue() && z.hasValue() {
-        game.addSlick(Vector2{x.value(), z.value()}, 2);
-        return;
-    }
-    if !game.leak(&game.slicks.rng) { consoleFail("No car is coming onto the field"); }
-}
-
 // The body of the console command rushHour (console_commands.sd)
 startRushHour :: (game: *Game) {
     game.traffic.rush = .calm;

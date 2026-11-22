@@ -163,19 +163,6 @@ drawResults :: (game: *Game) {
     drawText(note, x + (width - textWidth(note, 17)) / 2, y + height - 34, 17, DimColor);
 }
 
-// The body of the console command winGame (console_commands.sd)
-winGameNow :: (game: *Game, player: ?int) {
-    index := player ?? 0;
-    if !player.hasValue() {
-        for p, i in game.players { if isAhead(p, game.players[index]) { index = i as int; } }
-    }
-    if index < 0 || index >= game.players.count {
-        consoleFail("There is no player %", index);
-        return;
-    }
-    game.win(index);
-}
-
 // Hot Potato: the shover and the shoved swap their oldest items that aren't locked
 swapItems :: method (game: *Game, a: int, b: int) {
     first := &game.players[a];

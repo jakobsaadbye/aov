@@ -1,4 +1,4 @@
-namespace core;
+namespace console;
 
 // The developer console: commands typed in a line, like the console of Counter-Strike, e.g
 //
@@ -17,7 +17,7 @@ namespace core;
 //   * A parameter with a default, or a ?T, can be left out
 //   * A parameter of a type the program gives with provide, e.g *Game, isn't typed: the console passes it
 //
-// What a command prints with consolePrint shows in the console, and on the standard output too, e.g for an agent that
+// What a command prints with print shows in the console, and on the standard output too, e.g for an agent that
 // runs the game with commands on the command line: +setSpeed 8 +at 10 quit. This file knows nothing of the game,
 // or of how the console is drawn (core/console_view.sd).
 
@@ -34,57 +34,57 @@ consoleCommand :: struct {
     help: string;
 }
 
-ConsoleLineKind :: enum {
+LineKind :: enum {
     output,
     input,          // What was typed
     warning,
     error,
 }
 
-ConsoleText :: struct {
+Line :: struct {
     text: string;
-    kind: ConsoleLineKind;
+    kind: LineKind;
 }
 
-ConsoleEntry :: struct {
+Entry :: struct {
     name:     string;
     help:     string;
     function: *AttributedFunction;
 }
 
 // A command to run at a time, see at
-ConsoleScheduled :: struct {
+Scheduled :: struct {
     at:   f32;
     line: string;
 }
 
 @private
-ConsoleContext :: struct {
+Context :: struct {
     type: *Type;
     get:  () -> *void;
 }
 
-ConsoleMaxLines   :: 2000;
-ConsoleMaxHistory :: 100;
+MaxLines   :: 2000;
+MaxHistory :: 100;
 
 @private
-ConsoleState :: struct {
+State :: struct {
     isReady:   bool;
-    commands:  [..]ConsoleEntry;       // Sorted by name
-    lines:     [..]ConsoleText;
+    commands:  [..]Entry;       // Sorted by name
+    lines:     [..]Line;
     history:   [..]string;      // The lines typed, the last one last
-    contexts:  [..]ConsoleContext;
-    scheduled: [..]ConsoleScheduled;
+    contexts:  [..]Context;
+    scheduled: [..]Scheduled;
     now:       f32;             // The time of the program, as update was last given it
     arena:     allocators.Arena;    // The arguments of a call
 }
 
 @private
-state: ConsoleState;
+state: State;
 
 // Finds the commands of the program, once
 @private
-consoleReady :: () {
+ready :: () {
     if state.isReady { return; }
     state.isReady = true;
     previous := mem.setAllocator(mem.heap());
@@ -92,36 +92,36 @@ consoleReady :: () {
     for *f in attributedFunctions() {
         attribute: consoleCommand;
         if !f.attribute(&attribute) { continue; }
-        if consoleLookup(f.name) != null {
-            consoleWarn("There are two commands named %: the one of % is left out", f.name, f.namespaceName);
+        if lookup(f.name) != null {
+            warn("There are two commands named %: the one of % is left out", f.name, f.namespaceName);
             continue;
         }
-        state.commands.add(ConsoleEntry{name: f.name, help: attribute.help, function: f});
+        state.commands.add(Entry{name: f.name, help: attribute.help, function: f});
     }
     state.commands.sort();
 }
 
-operator < :: (a: ConsoleEntry, b: ConsoleEntry) -> bool {
+operator < :: (a: Entry, b: Entry) -> bool {
     return compareText(a.name, b.name) < 0;
 }
 
 // The commands, sorted by name
-consoleCommands :: () -> []ConsoleEntry {
-    consoleReady();
+commands :: () -> []Entry {
+    ready();
     return state.commands;
 }
 
 // The command with the name, in any case, or null
-consoleLookup :: (name: string) -> *ConsoleEntry {
+lookup :: (name: string) -> *Entry {
     for *entry in state.commands {
         if sameText(entry.name, name) { return entry; }
     }
     return null;
 }
 
-// Gives the parameters of the type T to the commands, e.g consoleProvide(currentGame) for the commands that take a *Game. The
+// Gives the parameters of the type T to the commands, e.g provide(currentGame) for the commands that take a *Game. The
 // function is called each time such a command runs, so it can give what is current then, or null when there is none
-consoleProvide :: <T>(get: () -> T) {
+provide :: <T>(get: () -> T) {
     sample: T;
     value: any = sample;
     for *context in state.contexts {
@@ -130,34 +130,34 @@ consoleProvide :: <T>(get: () -> T) {
             return;
         }
     }
-    state.contexts.add(ConsoleContext{type: value.type, get: get as *void as () -> *void});
+    state.contexts.add(Context{type: value.type, get: get as *void as () -> *void});
 }
 
 // The lines of the console, the last one last
-consoleLines :: () -> []ConsoleText {
+lines :: () -> []Line {
     return state.lines;
 }
 
 // The lines that were typed, the last one last
-consoleHistory :: () -> []string {
+history :: () -> []string {
     return state.history;
 }
 
 // A line of output, also on the standard output
-consolePrint :: (format: string, args: ...any) {
-    consoleAddLine(.output, format, ...args);
+print :: (format: string, args: ...any) {
+    addLine(.output, format, ...args);
 }
 
-consoleWarn :: (format: string, args: ...any) {
-    consoleAddLine(.warning, format, ...args);
+warn :: (format: string, args: ...any) {
+    addLine(.warning, format, ...args);
 }
 
-consoleFail :: (format: string, args: ...any) {
-    consoleAddLine(.error, format, ...args);
+fail :: (format: string, args: ...any) {
+    addLine(.error, format, ...args);
 }
 
 @private
-consoleAddLine :: (kind: ConsoleLineKind, format: string, args: ...any) {
+addLine :: (kind: LineKind, format: string, args: ...any) {
     previous := mem.setAllocator(mem.heap());
     defer mem.setAllocator(previous);
     text := fmt.sprint(format, ...args);
@@ -167,22 +167,22 @@ consoleAddLine :: (kind: ConsoleLineKind, format: string, args: ...any) {
         case .warning { fmt.print("WARNING: %", text); }
         case .error   { fmt.print("ERROR: %", text); }
     }
-    if state.lines.count >= ConsoleMaxLines { state.lines.removeAt(0).text.free(); }
-    state.lines.add(ConsoleText{text: text, kind: kind});
+    if state.lines.count >= MaxLines { state.lines.removeAt(0).text.free(); }
+    state.lines.add(Line{text: text, kind: kind});
 }
 
 // Runs a line that was typed: one command, or several separated by ;
-consoleExecute :: (text: string) {
-    consoleReady();
+execute :: (text: string) {
+    ready();
     if isBlank(text) { return; }
-    consoleAddLine(.input, "%", text);
+    addLine(.input, "%", text);
     remember(text);
-    consoleRun(text);
+    run(text);
 }
 
 // Runs a line without echoing it or keeping it in the history, e.g a line of a file or a scheduled one
-consoleRun :: (text: string) {
-    consoleReady();
+run :: (text: string) {
+    ready();
     for part in splitCommands(text) {
         words := splitWords(part);
         defer words.free();
@@ -191,43 +191,43 @@ consoleRun :: (text: string) {
 }
 
 // Runs the commands of the command line of the program, each after a +, e.g +setBots 5 +at 10 quit
-consoleRunArguments :: (args: []string) {
+runArguments :: (args: []string) {
     line := fmt.newStringBuilder(128);
     defer line.free();
     for arg, i in args {
         if i == 0 { continue; }
         if arg.startsWith("+") {
-            if line.cursor > 0 { consoleRun(line.toString()); }
+            if line.cursor > 0 { run(line.toString()); }
             line.cursor = 0;
             line.add("%", arg.slice(1));
             continue;
         }
         if line.cursor == 0 {
-            consoleWarn("'%' on the command line isn't a command: commands start with +, e.g +setSpeed 4", arg);
+            warn("'%' on the command line isn't a command: commands start with +, e.g +setSpeed 4", arg);
             continue;
         }
         if arg.indexOf(" ") >= 0 { line.add(" \"%\"", arg); }
         else                     { line.add(" %", arg); }
     }
-    if line.cursor > 0 { consoleRun(line.toString()); }
+    if line.cursor > 0 { run(line.toString()); }
 }
 
 // Moves the clock of the console on: the commands scheduled with at for now or before run
-updateConsole :: (now: f32) {
+update :: (now: f32) {
     state.now = now;
     i := 0;
     while i < state.scheduled.count {
         if state.scheduled[i].at > now { i += 1; continue; }
         scheduled := state.scheduled.removeAt(i);
-        consoleRun(scheduled.line);
+        run(scheduled.line);
         scheduled.line.free(mem.heap());
     }
 }
 
 // The names of the commands that start with the text, for completion
-consoleComplete :: (prefix: string) -> [..]*ConsoleEntry {
-    consoleReady();
-    result: [..]*ConsoleEntry;
+complete :: (prefix: string) -> [..]*Entry {
+    ready();
+    result: [..]*Entry;
     for *entry in state.commands {
         if startsWithText(entry.name, prefix) { result.add(entry); }
     }
@@ -235,7 +235,7 @@ consoleComplete :: (prefix: string) -> [..]*ConsoleEntry {
 }
 
 // How a command is typed, e.g setSpeed <speed: number>
-consoleUsage :: (entry: *ConsoleEntry) -> string {
+usage :: (entry: *Entry) -> string {
     sb := fmt.newStringBuilder(64);
     sb.add("%", entry.name);
     for p in entry.function.parameters {
@@ -258,61 +258,61 @@ consoleUsage :: (entry: *ConsoleEntry) -> string {
 //
 
 // The body of the console command help (console_commands.sd)
-consoleHelp :: (name: ?string) {
+showHelp :: (name: ?string) {
     if name.hasValue() {
-        entry := consoleLookup(name.value());
+        entry := lookup(name.value());
         if entry == null {
-            consoleFail("No command named %. Try find %", name.value(), name.value());
+            fail("No command named %. Try find %", name.value(), name.value());
             return;
         }
-        consolePrint("%", consoleUsage(entry));
-        if entry.help.len > 0 { consolePrint("    %", entry.help); }
+        print("%", usage(entry));
+        if entry.help.len > 0 { print("    %", entry.help); }
         return;
     }
-    consolePrint("The commands (help <name> for one of them, Tab completes, up and down go through what was typed):");
-    for *entry in state.commands { consolePrint("    %  -  %", entry.name, entry.help); }
+    print("The commands (help <name> for one of them, Tab completes, up and down go through what was typed):");
+    for *entry in state.commands { print("    %  -  %", entry.name, entry.help); }
 }
 
 // The body of the console command find (console_commands.sd)
-consoleFind :: (text: string) {
+findCommands :: (text: string) {
     found := 0;
     for *entry in state.commands {
         if !containsText(entry.name, text) && !containsText(entry.help, text) { continue; }
-        consolePrint("    %  -  %", consoleUsage(entry), entry.help);
+        print("    %  -  %", usage(entry), entry.help);
         found += 1;
     }
-    if found == 0 { consolePrint("No command has '%' in it", text); }
+    if found == 0 { print("No command has '%' in it", text); }
 }
 
 // The body of the console command echo (console_commands.sd)
-consoleEcho :: (text: string) {
-    consolePrint("%", text);
+echoText :: (text: string) {
+    print("%", text);
 }
 
 // The body of the console command clear (console_commands.sd)
-consoleClear :: () {
+clearLines :: () {
     for line in state.lines { line.text.free(mem.heap()); }
     state.lines.clear();
 }
 
 // The body of the console command exec (console_commands.sd)
-consoleExec :: (file: string) {
+runFile :: (file: string) {
     text, err := os.readFile(file);
     if err != null {
-        consoleFail("Couldn't read %: %", file, err.message);
+        fail("Couldn't read %: %", file, err.message);
         return;
     }
     defer text.free();
     for line in text.split("\n") {
         line = trimmed(line);
         if line.len == 0 || line.startsWith("//") || line.startsWith("#") { continue; }
-        consoleRun(line);
+        run(line);
     }
 }
 
 // The body of the console command at (console_commands.sd)
-consoleAt :: (seconds: f32, line: string) {
-    state.scheduled.add(ConsoleScheduled{at: seconds, line: line.copy(mem.heap())});
+runAt :: (seconds: f32, line: string) {
+    state.scheduled.add(Scheduled{at: seconds, line: line.copy(mem.heap())});
 }
 
 //
@@ -321,9 +321,9 @@ consoleAt :: (seconds: f32, line: string) {
 
 @private
 runWords :: (words: []string) {
-    entry := consoleLookup(words[0]);
+    entry := lookup(words[0]);
     if entry == null {
-        consoleFail("Unknown command '%'. help lists them", words[0]);
+        fail("Unknown command '%'. help lists them", words[0]);
         return;
     }
     f := entry.function;
@@ -336,7 +336,7 @@ runWords :: (words: []string) {
         if context != null {
             value := context.get();
             if value == null {
-                consoleFail("% can't run now: there is no %", entry.name, p.type.name);
+                fail("% can't run now: there is no %", entry.name, p.type.name);
                 return;
             }
             call.setFrom(i as int, &value);
@@ -345,7 +345,7 @@ runWords :: (words: []string) {
         if next >= words.count {
             if p.hasDefault && p.defaultValue != null { call.setFrom(i as int, p.defaultValue); continue; }
             if p.hasDefault || isOptional(p.type) { continue; }
-            consoleFail("% needs %. Usage: %", entry.name, p.name, consoleUsage(entry));
+            fail("% needs %. Usage: %", entry.name, p.name, usage(entry));
             return;
         }
 
@@ -360,26 +360,26 @@ runWords :: (words: []string) {
         }
         argument := call.argument(i as int);
         if !assign(argument.data, p.type, text) {
-            consoleFail("'%' doesn't fit % (%). Usage: %", text, p.name, kindName(p.type), consoleUsage(entry));
+            fail("'%' doesn't fit % (%). Usage: %", text, p.name, kindName(p.type), usage(entry));
             return;
         }
     }
     if next < words.count {
-        consoleFail("% takes no more than that. Usage: %", entry.name, consoleUsage(entry));
+        fail("% takes no more than that. Usage: %", entry.name, usage(entry));
         return;
     }
 
     call.invoke();
     err := call.error();
-    if err != null { consoleFail("%", err.message); }
+    if err != null { fail("%", err.message); }
     for r, i in f.results {
         if r.type.name == "error" { continue; }
-        consolePrint("%", call.result(i as int));
+        print("%", call.result(i as int));
     }
 }
 
 @private
-contextOf :: (type: *Type) -> *ConsoleContext {
+contextOf :: (type: *Type) -> *Context {
     for *context in state.contexts {
         if context.type == type { return context; }
     }
@@ -540,7 +540,7 @@ joinWords :: (words: []string, from: int) -> string {
 @private
 remember :: (text: string) {
     if state.history.count > 0 && state.history[state.history.count - 1] == text { return; }
-    if state.history.count >= ConsoleMaxHistory { state.history.removeAt(0).free(mem.heap()); }
+    if state.history.count >= MaxHistory { state.history.removeAt(0).free(mem.heap()); }
     state.history.add(text.copy(mem.heap()));
 }
 
