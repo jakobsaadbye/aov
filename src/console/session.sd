@@ -14,7 +14,7 @@ Session :: struct {
     game:        *core.Game;
     isStale:     bool = true;       // The game must be made again, with the settings
     bots:        int = StartBots;
-    difficulty:  core.Difficulty = .normal;
+    difficulty:  core.Difficulty = .expert;
     length:      core.GameLength = .medium;
     spectate:    bool;
     seed:        ?u64;

@@ -230,7 +230,7 @@ StopSign :: struct {
 // namespace makes the brains, e.g with bots.newGame
 gamesMade: u64;
 
-newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
+newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, difficulty := Difficulty.expert) -> *Game {
     game := new(Game);
     gamesMade += 1;
     game.serial = gamesMade;
