@@ -7,6 +7,7 @@ namespace core;
 //     game.traffic.update(...);
 //     profileEnd(.traffic);
 
+import console;
 import fmt;
 import math;
 import time;
@@ -78,3 +79,12 @@ profileLines :: () -> [..]string {
     return lines;
 }
 
+// The body of the console command profile (console_commands.sd)
+printProfile :: () {
+    lines := profileLines();
+    defer lines.free();
+    fps := 0;
+    if profiler.average[ProfileSection.frame] > 0 { fps = (1 / profiler.average[ProfileSection.frame]) as int; }
+    console.print("About % frames a second", fps);
+    for line in lines { console.print("    %", line); }
+}

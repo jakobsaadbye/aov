@@ -263,9 +263,7 @@ effect :: (game: *core.Game, fx: core.Fx, count: int = 30) {
 
 @consoleCommand("How many particles there are, and what they cost")
 particles :: (game: *core.Game) {
-    system := &game.effects.particles;
-    print("% particles, % stains. Update % ms, draw % ms", system.count(), math.min(system.stainCount, core.MaxStains),
-        fmt.fixed((system.updateSeconds * 1000) as f32, 3), fmt.fixed((system.drawSeconds * 1000) as f32, 3));
+    core.printParticleStats(game);
 }
 
 @consoleCommand("Makes a lot of particles at once, to see what they cost")
@@ -284,34 +282,12 @@ spawnItem :: (game: *core.Game, kind: ?core.ItemKind, z: ?f32) {
 
 @consoleCommand("Puts an item in the backpack of a player, you when no player is given. In a full backpack it takes the place of the oldest that isn't locked")
 giveItem :: (game: *core.Game, kind: core.ItemKind, player: ?int) {
-    index := player ?? game.watched;
-    if index < 0 || index >= game.players.count {
-        fail("There is no player %. status lists them", index);
-        return;
-    }
-    if !game.players[index].backpack.canTake() {
-        fail("The backpack of % is full of locked items", game.players[index].name);
-        return;
-    }
-    game.pickUp(index, kind);
+    core.giveItemTo(game, kind, player);
 }
 
 @consoleCommand("The items there are, and what is in each backpack")
 items :: (game: *core.Game) {
-    for kind in core.ItemKind.values {
-        definition := kind.itemDefinition();
-        print("    %  -  %: %", core.ItemKind.names[kind], definition.name, definition.description);
-    }
-    for player, i in game.players {
-        names := "empty";
-        for item, k in player.backpack.list() {
-            if k == 0 { names = item.itemDefinition().name; }
-            else      { names = core.tprint("%, %", names, item.itemDefinition().name); }
-        }
-        print("    %. %: %", i, player.name, names);
-    }
-    if game.items.onRoad.hasValue() { print("On the road: %", game.items.onRoad.value().kind.itemDefinition().name); }
-    else                            { print("The next item in % s", fmt.fixed(game.items.nextIn, 1)); }
+    core.printItems(game);
 }
 
 //
@@ -320,15 +296,7 @@ items :: (game: *core.Game) {
 
 @consoleCommand("Ends the game now, with a player as the winner, the one ahead when none is given")
 winGame :: (game: *core.Game, player: ?int) {
-    index := player ?? 0;
-    if !player.hasValue() {
-        for p, i in game.players { if core.isAhead(p, game.players[index]) { index = i as int; } }
-    }
-    if index < 0 || index >= game.players.count {
-        fail("There is no player %", index);
-        return;
-    }
-    game.win(index);
+    core.winGameNow(game, player);
 }
 
 //
@@ -337,12 +305,7 @@ winGame :: (game: *core.Game, player: ?int) {
 
 @consoleCommand("What each part of a frame costs, in milliseconds: on average, and at the worst of the last 2 seconds")
 profile :: () {
-    lines := core.profileLines();
-    defer lines.free();
-    fps := 0;
-    if core.profiler.average[core.ProfileSection.frame] > 0 { fps = (1 / core.profiler.average[core.ProfileSection.frame]) as int; }
-    print("About % frames a second", fps);
-    for line in lines { print("    %", line); }
+    core.printProfile();
 }
 
 //
@@ -351,11 +314,7 @@ profile :: () {
 
 @consoleCommand("Makes a car that is coming onto the field leak oil, or drops a blob at x and z")
 spawnSlick :: (game: *core.Game, x: ?f32, z: ?f32) {
-    if x.hasValue() && z.hasValue() {
-        game.addSlick(Vector2{x.value(), z.value()}, 2);
-        return;
-    }
-    if !game.leak(&game.slicks.rng) { fail("No car is coming onto the field"); }
+    core.spawnSlickAt(game, x, z);
 }
 
 @consoleCommand("Starts a rush hour now, after its warning")
@@ -453,12 +412,9 @@ quit :: (session: *Session) {
 @consoleCommand("Prints what a bot was doing when a car got it, to find out why")
 toggleHitReports :: () {
     bots.toggleHitReportsNow();
-    if bots.debugHits { print("Hit reports on (on the standard output)"); } else { print("Hit reports off"); }
 }
 
 @consoleCommand("The bots search for their ways on threads of their own (or on, off), so a frame never waits for them. Off: on the thread of the game, one search a frame, like the tests")
 toggleAsyncBots :: (game: *core.Game, on: ?bool) {
     bots.setAsyncBots(game, on);
-    if game.asyncBots { print("The bots search on threads of their own"); }
-    else              { print("The bots search on the thread of the game"); }
 }

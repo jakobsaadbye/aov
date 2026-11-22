@@ -254,9 +254,8 @@ setHero :: (game: *Game, hero: HeroKind) { ... }
 The console is a folder of its own, `src/console/` (namespace `console`): `console.sd` is the console itself and knows
 nothing of the game, `console_view.sd` draws it, `session.sd` is the session (what the game is played with, and the
 game), and `console_commands.sd` has every command of the game, so that file lists them all. A command whose work belongs
-to a part of the game calls a function of that part (`spawnItem` calls `spawnItemAt` in `core/items.sd`); one that prints
-does so itself. Only the console imports core and bots: neither of them imports the console (the reports of the bots go
-to the standard output).
+to a part of the game calls a function of that part (`spawnItem` calls `spawnItemAt` in `core/items.sd`, `items` calls
+`printItems`, which prints to the console). The console imports core and bots, and they import it back to print to it.
 
 Commands can also be given on the command line, each after a `+`, and run before the game starts. `at <seconds>
 <command>` runs one at a time of the game, so the game can be run and looked at without playing it, e.g by an agent:

@@ -11,6 +11,7 @@ use core;
 // fields (planner.sd), which each thread keeps, are made once. The search works on a forecast and an arena of its own,
 // as the bot's own forecast is made again while it searches.
 
+import console;
 import allocators;
 import mem;
 import thread;
@@ -111,4 +112,6 @@ stop :: method (job: *SearchJob) {
 // The body of the console command toggleAsyncBots (console/console_commands.sd)
 setAsyncBots :: (game: *Game, on: ?bool) {
     game.asyncBots = on ?? !game.asyncBots;
+    if game.asyncBots { console.print("The bots search on threads of their own"); }
+    else              { console.print("The bots search on the thread of the game"); }
 }

@@ -8,6 +8,7 @@ namespace core;
 // it is in the backpack, and an item that is used has an Ability, like a hero's, cast with 1, 2 or 3
 // (item_abilities.sd).
 
+import console;
 import fmt;
 import math;
 import random;
@@ -367,3 +368,34 @@ spawnItemAt :: (game: *Game, kind: ?ItemKind, z: ?f32) {
     game.placeItem(item, Vector2{0, at});
 }
 
+// The body of the console command giveItem (console_commands.sd)
+giveItemTo :: (game: *Game, kind: ItemKind, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        console.fail("There is no player %. status lists them", index);
+        return;
+    }
+    if !game.players[index].backpack.canTake() {
+        console.fail("The backpack of % is full of locked items", game.players[index].name);
+        return;
+    }
+    game.pickUp(index, kind);
+}
+
+// The body of the console command items (console_commands.sd)
+printItems :: (game: *Game) {
+    for kind in ItemKind.values {
+        definition := kind.itemDefinition();
+        console.print("    %  -  %: %", ItemKind.names[kind], definition.name, definition.description);
+    }
+    for player, i in game.players {
+        names := "empty";
+        for item, k in player.backpack.list() {
+            if k == 0 { names = item.itemDefinition().name; }
+            else      { names = tprint("%, %", names, item.itemDefinition().name); }
+        }
+        console.print("    %. %: %", i, player.name, names);
+    }
+    if game.items.onRoad.hasValue() { console.print("On the road: %", game.items.onRoad.value().kind.itemDefinition().name); }
+    else                            { console.print("The next item in % s", fmt.fixed(game.items.nextIn, 1)); }
+}
