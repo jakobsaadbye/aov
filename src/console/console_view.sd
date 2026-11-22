@@ -1,6 +1,6 @@
-namespace core;
+namespace console;
 
-// The console on the screen (console/console.sd runs the commands): F1 drops it down over half of the screen, F1 twice
+// The console on the screen (console/sd runs the commands): F1 drops it down over half of the screen, F1 twice
 // quickly over all of it, and F1 or Esc closes it. While it is open it has the keyboard: the game reads no keys.
 //
 //     Enter          runs the line
@@ -8,6 +8,7 @@ namespace core;
 //     Up, Down       the lines typed before
 //     Page up, down  scrolls, and so does the wheel
 
+import core;
 import math;
 import mem;
 use raylib;
@@ -93,7 +94,7 @@ type :: method (view: *ConsoleView) {
     if pressed(.pageDown) { view.scroll -= rows / 2; }
     wheel := GetMouseWheelMove();
     if wheel != 0 { view.scroll += (wheel * 3) as int; }
-    view.scroll = math.clamp(view.scroll, 0, math.max(0, consoleLines().count as int - rows));
+    view.scroll = math.clamp(view.scroll, 0, math.max(0, lines().count as int - rows));
 
     if IsKeyPressed(.enter) || IsKeyPressed(.kpEnter) {
         line := view.text().copy(mem.heap());
@@ -103,7 +104,7 @@ type :: method (view: *ConsoleView) {
         view.browsing = -1;
         view.scroll = 0;
         view.edited();
-        consoleExecute(line);
+        execute(line);
     }
 }
 
@@ -136,7 +137,7 @@ edited :: method (view: *ConsoleView) {
 // Up and down: the lines typed before, the last one first
 @private
 browse :: method (view: *ConsoleView, step: int) {
-    history := consoleHistory();
+    history := console.history();
     if history.count == 0 { return; }
     if view.browsing < 0 {
         if step > 0 { return; }
@@ -162,7 +163,7 @@ complete :: method (view: *ConsoleView) {
     prefix: string;
     prefix.data = view.prefix.data;
     prefix.len = view.prefix.count;
-    matches := consoleComplete(prefix);
+    matches := complete(prefix);
     defer matches.free();
     if matches.count == 0 { return; }
     view.completing = (view.completing + 1) % matches.count as int;
@@ -180,7 +181,7 @@ rows :: method (view: *ConsoleView) -> int {
 
 drawConsole :: (view: *ConsoleView) {
     if view.shown <= 0.001 { return; }
-    previous := useTemp();
+    previous := core.useTemp();
     defer mem.setAllocator(previous);
 
     width := GetScreenWidth();
@@ -190,7 +191,7 @@ drawConsole :: (view: *ConsoleView) {
 
     // The log, the last line at the bottom
     inputY := height - 30;
-    lines := consoleLines();
+    lines := console.lines();
     rows := view.rows();
     BeginScissorMode(0, 0, width, inputY - 4);
     last := lines.count as int - 1 - view.scroll;
@@ -199,21 +200,21 @@ drawConsole :: (view: *ConsoleView) {
         if index < 0 { break; }
         line := lines[index];
         y := inputY - 8 - (k as int + 1) * ConsoleLine;
-        drawText(line.text, 14, y, ConsoleFontSize, lineColor(line.kind));
+        core.drawText(line.text, 14, y, ConsoleFontSize, lineColor(line.kind));
     }
     EndScissorMode();
     if view.scroll > 0 {
-        note := tprint("^ % more below ^", view.scroll);
-        drawText(note, width - textWidth(note, ConsoleFontSize) - 14, inputY - 26, ConsoleFontSize, DimColor);
+        note := core.tprint("^ % more below ^", view.scroll);
+        core.drawText(note, width - core.textWidth(note, ConsoleFontSize) - 14, inputY - 26, ConsoleFontSize, core.DimColor);
     }
 
     // What is typed, with the cursor blinking
     DrawRectangle(0, inputY - 6, width, 28, {255, 255, 255, 12});
-    drawText("]", 14, inputY, ConsoleFontSize, InputColor);
+    core.drawText("]", 14, inputY, ConsoleFontSize, InputColor);
     text := view.text();
-    drawText(text, 30, inputY, ConsoleFontSize, TextColor);
+    core.drawText(text, 30, inputY, ConsoleFontSize, core.TextColor);
     if (GetTime() * 2) as int % 2 == 0 {
-        x := 30 + textWidth(text.slice(0, view.cursor), ConsoleFontSize);
+        x := 30 + core.textWidth(text.slice(0, view.cursor), ConsoleFontSize);
         DrawRectangle(x + 1, inputY, 2, ConsoleFontSize + 2, InputColor);
     }
 
@@ -235,20 +236,20 @@ drawMatches :: method (view: *ConsoleView, top: int) {
         space := word.indexOf(" ");
         if space >= 0 {
             // Typing the arguments of a command: only that command
-            entry := consoleLookup(word.slice(0, space));
+            entry := lookup(word.slice(0, space));
             if entry != null { view.drawMatchRows(top, [entry], -1); }
             return;
         }
     }
     if word.len == 0 && selected < 0 { return; }
-    matches := consoleComplete(word);
+    matches := complete(word);
     if matches.count > 0 { view.drawMatchRows(top, matches, selected); }
 }
 
 MaxMatches :: 8;
 
 @private
-drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*ConsoleEntry, selected: int) {
+drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*Entry, selected: int) {
     // A window of the matches that has the selected one in it
     first := 0;
     if selected >= MaxMatches { first = selected - MaxMatches + 1; }
@@ -257,7 +258,7 @@ drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*ConsoleEntry,
     width := 0;
     for i in first..first + shown {
         entry := matches[i];
-        width = math.max(width, textWidth(consoleUsage(entry), ConsoleFontSize) + textWidth(entry.help, ConsoleFontSize) + 60);
+        width = math.max(width, core.textWidth(usage(entry), ConsoleFontSize) + core.textWidth(entry.help, ConsoleFontSize) + 60);
     }
     width = math.min(width, GetScreenWidth() - 28);
     rows := shown;
@@ -267,24 +268,24 @@ drawMatchRows :: method (view: *ConsoleView, top: int, matches: []*ConsoleEntry,
         i := first + k as int;
         entry := matches[i];
         y := top + 10 + k as int * ConsoleLine;
-        usage := consoleUsage(entry);
-        color := TextColor;
+        usage := console.usage(entry);
+        color := core.TextColor;
         if i == selected {
             DrawRectangle(16, y - 2, width - 4, ConsoleLine, ColorAlpha(InputColor, 0.25));
             color = InputColor;
         }
-        drawText(usage, 24, y, ConsoleFontSize, color);
-        drawText(entry.help, 24 + textWidth(usage, ConsoleFontSize) + 24, y, ConsoleFontSize, DimColor);
+        core.drawText(usage, 24, y, ConsoleFontSize, color);
+        core.drawText(entry.help, 24 + core.textWidth(usage, ConsoleFontSize) + 24, y, ConsoleFontSize, core.DimColor);
     }
     if matches.count > first + shown {
-        drawText(tprint("and % more (Tab)", matches.count - first - shown), 24, top + 10 + shown * ConsoleLine, ConsoleFontSize, DimColor);
+        core.drawText(core.tprint("and % more (Tab)", matches.count - first - shown), 24, top + 10 + shown * ConsoleLine, ConsoleFontSize, core.DimColor);
     }
 }
 
 @private
-lineColor :: (kind: ConsoleLineKind) -> Color {
+lineColor :: (kind: LineKind) -> Color {
     return switch kind {
-        case .output  => TextColor;
+        case .output  => core.TextColor;
         case .input   => InputColor;
         case .warning => Color{255, 170, 70, 255};
         case .error   => Color{255, 90, 80, 255};

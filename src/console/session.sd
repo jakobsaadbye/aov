@@ -1,0 +1,98 @@
+namespace console;
+
+// The session: what the game is played with, set by the commands of console_commands.sd, and the game it is. A command
+// that changes how a game starts makes a new game before the next frame. main.sd runs it
+
+import core;
+import bots;
+import time;
+use raylib;
+
+StartBots :: bots.DefaultBots;     // The bots of a session until setBots says otherwise
+
+Session :: struct {
+    game:        *core.Game;
+    isStale:     bool = true;       // The game must be made again, with the settings
+    bots:        int = StartBots;
+    difficulty:  core.Difficulty = .normal;
+    length:      core.GameLength = .medium;
+    spectate:    bool;
+    seed:        ?u64;
+    replayFile:  ?string;
+    recordFile:  ?string;
+    speed:       f32 = 1;
+    muted:       bool;
+    hasSounds:   bool;              // The sounds were loaded, which is done once
+    screenshot:  ?string;           // Taken at the end of the frame
+    quit:        bool;
+    replayClock: f32;
+    view:        ConsoleView;  // The console on the screen
+}
+
+session: Session;
+
+// The game the commands work on: the one there is, or a new one when the settings changed
+currentGame :: () -> *core.Game {
+    session.ensureGame();
+    return session.game;
+}
+
+currentSession :: () -> *Session {
+    return &session;
+}
+
+ensureGame :: method (session: *Session) {
+    if session.game != null && !session.isStale { return; }
+    session.isStale = false;
+
+    game: *core.Game = null;
+    if session.replayFile.hasValue() {
+        recording, err := core.loadRecording(session.replayFile.value());
+        if err != null {
+            fail("Couldn't read the recording %: %", session.replayFile.value(), err.message);
+            session.replayFile = null;
+        } else {
+            game = bots.newReplay(recording);
+            session.difficulty = recording.difficulty;
+            session.length = recording.length;
+        }
+    }
+    if game == null {
+        seed := session.seed ?? time.now().unixMilli() as u64;
+        humans := 1;
+        if session.spectate { humans = 0; }
+        game = bots.newGame(seed, bots: session.bots, humans: humans, difficulty: session.difficulty);
+        game.setLength(session.length);
+    }
+
+    old := session.game;
+    if old != null {
+        session.saveRecording(old);
+        game.sounds = old.sounds;       // The sounds are loaded once, and go on with the next game
+        old.sounds = core.SoundPlayer{};
+        game.showHelp = old.showHelp;
+        game.debug = old.debug;
+        old.free();
+    }
+    game.effects.particles.isOn = true;      // Only shown in a window: headless games (tests, training) skip them
+    game.asyncBots = game.replay == null;
+    session.game = game;
+    session.replayClock = 0;
+}
+
+// With record: saves the recording of a game that is over
+saveRecording :: method (session: *Session, game: *core.Game) {
+    if !session.recordFile.hasValue() || game.replay != null { return; }
+    err := game.saveRecording(session.recordFile.value());
+    if err != null { fail("Couldn't save the recording to %: %", session.recordFile.value(), err.message); }
+    else           { print("Saved the recording to %", session.recordFile.value()); }
+}
+
+loadSounds :: method (session: *Session) {
+    if session.hasSounds { return; }
+    session.hasSounds = true;
+    game := currentGame();
+    game.sounds.load(core.dataFolder());
+    _ := game.sounds.playSoundtrack(core.Soundtrack, 0.45);
+    game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
+}

@@ -5,6 +5,7 @@ namespace core;
 // the oil again. Walk around it, or cross it on purpose, in a straight line. The cars drive over it. After a while it
 // dries up.
 
+import console;
 import math;
 import random;
 use raylib;
@@ -301,7 +302,7 @@ spawnSlickAt :: (game: *Game, x: ?f32, z: ?f32) {
         game.addSlick(Vector2{x.value(), z.value()}, 2);
         return;
     }
-    if !game.leak(&game.slicks.rng) { consoleFail("No car is coming onto the field"); }
+    if !game.leak(&game.slicks.rng) { console.fail("No car is coming onto the field"); }
 }
 
 // The body of the console command rushHour (console_commands.sd)

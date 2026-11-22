@@ -4,7 +4,7 @@
 //     saad run main.sd                                       from this folder
 //     saad run main.sd -- +setBots 5 +setSeed 7              console commands after --, each after a +
 //
-// Everything that can be set is a command of the console (F1, console/console.sd), e.g setSpeed 8 or toggleMute. help
+// Everything that can be set is a command of the console (F1, console/console_commands.sd), e.g setSpeed 8 or toggleMute. help
 // in the console lists them. The commands on the command line run before the game starts, in their order, and at
 // <seconds> <command> runs one at a time of the game, e.g for an agent that can't play:
 //
@@ -12,6 +12,7 @@
 //
 // data/autoexec.cfg, when there is one, runs first: a command a line.
 
+import console;
 import core;
 import bots;
 import bots.DefaultBots;
@@ -20,173 +21,6 @@ import math;
 import os;
 import time;
 use raylib;
-
-// What the game is played with, set by the commands below. A command that changes how a game starts makes a new game
-// before the next frame
-Session :: struct {
-    game:        *core.Game;
-    isStale:     bool = true;       // The game must be made again, with the settings
-    bots:        int = DefaultBots;
-    difficulty:  core.Difficulty = .normal;
-    length:      core.GameLength = .medium;
-    spectate:    bool;
-    seed:        ?u64;
-    replayFile:  ?string;
-    recordFile:  ?string;
-    speed:       f32 = 1;
-    muted:       bool;
-    hasSounds:   bool;              // The sounds were loaded, which is done once
-    screenshot:  ?string;           // Taken at the end of the frame
-    quit:        bool;
-    replayClock: f32;
-    view:        core.ConsoleView;  // The console on the screen
-}
-
-session: Session;
-
-// The game the commands work on: the one there is, or a new one when the settings changed
-currentGame :: () -> *core.Game {
-    session.ensureGame();
-    return session.game;
-}
-
-currentSession :: () -> *Session {
-    return &session;
-}
-
-ensureGame :: method (session: *Session) {
-    if session.game != null && !session.isStale { return; }
-    session.isStale = false;
-
-    game: *core.Game = null;
-    if session.replayFile.hasValue() {
-        recording, err := core.loadRecording(session.replayFile.value());
-        if err != null {
-            core.consoleFail("Couldn't read the recording %: %", session.replayFile.value(), err.message);
-            session.replayFile = null;
-        } else {
-            game = bots.newReplay(recording);
-            session.difficulty = recording.difficulty;
-            session.length = recording.length;
-        }
-    }
-    if game == null {
-        seed := session.seed ?? time.now().unixMilli() as u64;
-        humans := 1;
-        if session.spectate { humans = 0; }
-        game = bots.newGame(seed, bots: session.bots, humans: humans, difficulty: session.difficulty);
-        game.setLength(session.length);
-    }
-
-    old := session.game;
-    if old != null {
-        session.saveRecording(old);
-        game.sounds = old.sounds;       // The sounds are loaded once, and go on with the next game
-        old.sounds = core.SoundPlayer{};
-        game.showHelp = old.showHelp;
-        game.debug = old.debug;
-        old.free();
-    }
-    game.effects.particles.isOn = true;      // Only shown in a window: headless games (tests, training) skip them
-    game.asyncBots = game.replay == null;
-    session.game = game;
-    session.replayClock = 0;
-}
-
-// With record: saves the recording of a game that is over
-saveRecording :: method (session: *Session, game: *core.Game) {
-    if !session.recordFile.hasValue() || game.replay != null { return; }
-    err := game.saveRecording(session.recordFile.value());
-    if err != null { core.consoleFail("Couldn't save the recording to %: %", session.recordFile.value(), err.message); }
-    else           { core.consolePrint("Saved the recording to %", session.recordFile.value()); }
-}
-
-loadSounds :: method (session: *Session) {
-    if session.hasSounds { return; }
-    session.hasSounds = true;
-    game := currentGame();
-    game.sounds.load(core.dataFolder());
-    _ := game.sounds.playSoundtrack(core.Soundtrack, 0.45);
-    game.sounds.playMusic("traffic", 0.3, pausesWithGame: true);
-}
-
-//
-// The commands of the session
-//
-
-@core.consoleCommand("Runs the game this many times as fast, e.g 4 to see a lot quickly, or 0.25 to see it slowly")
-setSpeed :: (session: *Session, speed: f32) {
-    session.speed = math.clamp(speed, 0.05, 32);
-}
-
-@core.consoleCommand("Turns all sound off or on")
-toggleMute :: (session: *Session) {
-    session.muted = !session.muted;
-    if !session.muted { session.loadSounds(); }
-    if session.muted { SetMasterVolume(0); } else { SetMasterVolume(1); }
-}
-
-@core.consoleCommand("How many bots there are, 0 to 5. Starts a new game")
-setBots :: (session: *Session, count: int) {
-    session.bots = math.clamp(count, 0, core.MaxPlayers - 1);
-    newGame(session);
-}
-
-@core.consoleCommand("The seed of the next games: the same seed gives the same game. Starts a new game")
-setSeed :: (session: *Session, seed: int) {
-    session.seed = seed as u64;
-    newGame(session);
-}
-
-@core.consoleCommand("How good the bots are. Starts a new game")
-setDifficulty :: (session: *Session, difficulty: core.Difficulty) {
-    session.difficulty = difficulty;
-    newGame(session);
-}
-
-@core.consoleCommand("How many crossings win: short (5), medium (10) or long (15). Starts a new game")
-setGameLength :: (session: *Session, length: core.GameLength) {
-    session.length = length;
-    newGame(session);
-}
-
-@core.consoleCommand("No hero of your own: the camera follows the first bot (or on, off). Starts a new game")
-spectate :: (session: *Session, on: ?bool) {
-    session.spectate = on ?? !session.spectate;
-    newGame(session);
-}
-
-@core.consoleCommand("A new game, with the settings")
-newGame :: (session: *Session) {
-    session.replayFile = null;
-    session.isStale = true;
-}
-
-@core.consoleCommand("Plays a recording back (made with record, F8 or writeRecording)")
-replay :: (session: *Session, file: string) {
-    session.replayFile = file.copy();
-    session.isStale = true;
-}
-
-@core.consoleCommand("Saves the recording of the game to the file when the game is over or the window closes")
-record :: (session: *Session, file: string) {
-    session.recordFile = file.copy();
-}
-
-@core.consoleCommand("Saves a picture of the screen to the file, at the end of the frame. raylib saves it in the folder of the game")
-screenshot :: (session: *Session, file: string) {
-    session.screenshot = file.copy();
-}
-
-@core.consoleCommand("Opens or closes the console, over half of the screen or all of it (F1, twice for all)")
-toggleConsole :: (session: *Session, full: ?bool) {
-    session.view.toggle(full ?? false);
-}
-
-@core.consoleCommand("Closes the game")
-quit :: (session: *Session) {
-    session.quit = true;
-}
 
 main :: () {
     SetConfigFlags(.msaa4xHint | .windowResizable | .vsyncHint);
@@ -198,39 +32,39 @@ main :: () {
     assets := core.loadAssets();
     defer assets.unload();
 
-    core.consoleProvide(currentGame);
-    core.consoleProvide(currentSession);
+    console.provide(console.currentGame);
+    console.provide(console.currentSession);
     autoexec := core.tprint("%autoexec.cfg", core.dataFolder());
-    if os.fileExists(autoexec) { core.consoleExec(autoexec); }
-    core.consoleRunArguments(os.args());
-    session.ensureGame();
-    if !session.muted { session.loadSounds(); }
+    if os.fileExists(autoexec) { console.runFile(autoexec); }
+    console.runArguments(os.args());
+    console.session.ensureGame();
+    if !console.session.muted { console.session.loadSounds(); }
     defer {
-        session.saveRecording(session.game);
-        session.game.sounds.unload();
-        session.game.free();
+        console.session.saveRecording(console.session.game);
+        console.session.game.sounds.unload();
+        console.session.game.free();
     }
     HideCursor();       // The game draws its own cursor
 
-    view := &session.view;
-    while !WindowShouldClose() && !session.quit {
+    view := &console.session.view;
+    while !WindowShouldClose() && !console.session.quit {
         // A long frame, e.g while the window is dragged, mustn't throw the hero through a car. Faster with setSpeed, in
         // steps that are no longer. A replay plays its recorded frames as fast as they were played, times the speed
         dt := math.min(GetFrameTime(), 0.05);
         keyboardTaken := view.update(dt);           // May run commands
-        core.updateConsole(session.game.time);          // The commands of at
-        session.ensureGame();
-        game := session.game;
+        console.update(console.session.game.time);          // The commands of at
+        console.session.ensureGame();
+        game := console.session.game;
         game.keyboardTaken = keyboardTaken;
 
         game.handleKeys();
-        speed := session.speed;
+        speed := console.session.speed;
         if game.replay != null {
-            session.replayClock += dt * speed;
+            console.session.replayClock += dt * speed;
             while !game.isPaused && !game.replay.isFinished() {
                 next := game.replay.recording.frames[game.replay.frame].dt;
-                if session.replayClock < next { break; }
-                session.replayClock -= next;
+                if console.session.replayClock < next { break; }
+                console.session.replayClock -= next;
                 game.advance(next);
             }
         } else {
@@ -248,16 +82,16 @@ main :: () {
         game.drawScene(&assets);
         core.profileBegin(.hud);
         game.drawHud(&assets);
-        core.drawConsole(view);
+        console.drawConsole(view);
         core.profileEnd(.hud);
         EndDrawing();
         core.profileEnd(.frame);
         core.profileFrame();
         core.profileBegin(.frame);
 
-        if session.screenshot.hasValue() {
-            TakeScreenshot(core.tempCString(session.screenshot.value()));
-            session.screenshot = null;
+        if console.session.screenshot.hasValue() {
+            TakeScreenshot(core.tempCString(console.session.screenshot.value()));
+            console.session.screenshot = null;
         }
         core.freeTemp();            // What was allocated for this frame only (core/temp.sd)
     }

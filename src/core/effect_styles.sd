@@ -3,6 +3,7 @@ namespace core;
 // The particle effects of the game: a ParticleStyle each (particles.sd), named by Fx. To change how something looks,
 // change its numbers here; to try one, effect <name> in the console makes it at the hero you watch.
 
+import console;
 import fmt;
 import math;
 use raylib;
@@ -205,7 +206,7 @@ emitEffectAtWatched :: (game: *Game, fx: Fx, count: int = 30) {
 // The body of the console command particles (console_commands.sd)
 printParticleStats :: (game: *Game) {
     system := &game.effects.particles;
-    consolePrint("% particles, % stains. Update % ms, draw % ms", system.count(), math.min(system.stainCount, MaxStains),
+    console.print("% particles, % stains. Update % ms, draw % ms", system.count(), math.min(system.stainCount, MaxStains),
         fmt.fixed((system.updateSeconds * 1000) as f32, 3), fmt.fixed((system.drawSeconds * 1000) as f32, 3));
 }
 

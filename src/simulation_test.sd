@@ -3,6 +3,7 @@
 //
 //     saad run simulation_test.sd        from src
 
+import console;
 import core;
 import bots;
 import fmt;
@@ -833,40 +834,40 @@ getConsoleGame :: () -> *core.Game {
 testConsole :: () {
     consoleGame = bots.newGame(12, bots: 1);
     defer consoleGame.free();
-    core.consoleProvide(getConsoleGame);
+    console.provide(getConsoleGame);
     game := consoleGame;
 
-    core.consoleExecute("toggleWireframes; toggleHitboxes");
+    console.execute("toggleWireframes; toggleHitboxes");
     assert(game.debug.wireframes && game.debug.hitboxes);
 
     // An enum by its name, in any case, and the change of hero is recorded
-    core.consoleExecute("SETHERO Butcher");
+    console.execute("SETHERO Butcher");
     assert(game.pendingHero.hasValue() && game.pendingHero.value() == .butcher);
     game.step(Dt);
     assert(game.you().hero.kind == .butcher);
     assert(game.recording.frames[game.recording.frames.count - 1].hero.hasValue());
 
     // Wrong input is an error in the console, and changes nothing
-    lines := core.consoleLines().count;
-    core.consoleExecute("setHero nobody");
-    core.consoleExecute("inspect 0");             // You, not a bot
-    core.consoleExecute("noSuchCommand 1 2");
-    assert(core.consoleLines().count == lines + 6);       // Each line typed, and its error
-    assert(core.consoleLines()[core.consoleLines().count - 1].kind == .error);
+    lines := console.lines().count;
+    console.execute("setHero nobody");
+    console.execute("inspect 0");             // You, not a bot
+    console.execute("noSuchCommand 1 2");
+    assert(console.lines().count == lines + 6);       // Each line typed, and its error
+    assert(console.lines()[console.lines().count - 1].kind == .error);
     assert(game.you().hero.kind == .butcher);
 
     // An optional parameter, and at, which runs a command at a time
-    core.consoleExecute("inspect 1");
+    console.execute("inspect 1");
     assert(game.inspector.isOpen && game.inspector.player == 1);
-    core.consoleExecute("at 2 toggleWireframes");
-    core.updateConsole(1);
+    console.execute("at 2 toggleWireframes");
+    console.update(1);
     assert(game.debug.wireframes);
-    core.updateConsole(2);
+    console.update(2);
     assert(!game.debug.wireframes);
 
     // Every command has a line of help
-    for entry in core.consoleCommands() { assert(entry.help.len > 0); }
-    fmt.print("Console: % commands", core.consoleCommands().count);
+    for entry in console.commands() { assert(entry.help.len > 0); }
+    fmt.print("Console: % commands", console.commands().count);
 }
 
 // Items: picked up by walking over them, two at most, and they boost every hero of the player after

@@ -1,0 +1,420 @@
+namespace console;
+
+// Every console command of the game, in one place (F1, console.sd): each is a function with @consoleCommand, named as it
+// is typed, which gets what it works on from the console: the game (main.sd provides it) or the session (session.sd). A
+// command whose work belongs to a part of the game calls a function of that part, e.g spawnSlick calls spawnSlickAt in
+// core/slicks.sd, so this file is the list of them all.
+
+import core;
+import bots;
+import fmt;
+import math;
+use raylib;
+
+@consoleCommand("Shows the edges of the triangles of the models")
+toggleWireframes :: (game: *core.Game) {
+    game.debug.wireframes = !game.debug.wireframes;
+}
+
+@consoleCommand("Shows the boxes the heroes and the cars collide with")
+toggleHitboxes :: (game: *core.Game) {
+    game.debug.hitboxes = !game.debug.hitboxes;
+}
+
+@consoleCommand("Shows the frames a second, where the camera and the hero are, and the number of cars")
+toggleDebugOverlay :: (game: *core.Game) {
+    game.debug.overlay = !game.debug.overlay;
+}
+
+@consoleCommand("Shows or hides the keys in the corner (H)")
+toggleHelp :: (game: *core.Game) {
+    game.showHelp = !game.showHelp;
+}
+
+@consoleCommand("Pauses the game, or goes on (P)")
+togglePause :: (game: *core.Game) {
+    game.isPaused = !game.isPaused;
+    game.sounds.setPaused(game.isPaused);
+}
+
+@consoleCommand("Starts the game again, with the same players (F5)")
+restartGame :: (game: *core.Game) {
+    game.restartPending = true;
+}
+
+@consoleCommand("Your hero becomes another one, e.g setHero butcher. It is recorded, so a replay does the same")
+setHero :: (game: *core.Game, hero: core.HeroKind) {
+    if game.replay != null {
+        fail("A replay plays what was recorded");
+        return;
+    }
+    if !game.hasLocal() {
+        fail("You have no hero: you are spectating");
+        return;
+    }
+    game.pendingHero = hero;
+}
+
+@consoleCommand("Your hero becomes the next one")
+nextHero :: (game: *core.Game) {
+    if !game.hasLocal() {
+        fail("You have no hero: you are spectating");
+        return;
+    }
+    setHero(game, ((game.players[game.local].hero.kind as int + 1) % core.HeroKind.count) as core.HeroKind);
+}
+
+@consoleCommand("Opens the inspector (F4) on a player, e.g inspect 1 for the first bot of a game with you. Without one, opens or closes it")
+inspect :: (game: *core.Game, player: ?int) {
+    if !player.hasValue() {
+        game.inspector.isOpen = !game.inspector.isOpen;
+        if game.inspector.isOpen && !game.inspectedIsBot() { game.inspectNextBot(); }
+        return;
+    }
+    index := player.value();
+    if index < 0 || index >= game.players.count || !game.players[index].isBot() {
+        fail("Player % isn't a bot. status lists the players", index);
+        return;
+    }
+    game.inspector = core.Inspector{isOpen: true, player: index};
+}
+
+@consoleCommand("Saves what was played so far to a file, or to recordings/<time>.json (F8)")
+writeRecording :: (game: *core.Game, file: ?string) {
+    if !file.hasValue() {
+        game.saveRecordingNow();
+        return;
+    }
+    err := game.saveRecording(file.value());
+    if err != null { fail("Couldn't save %: %", file.value(), err.message); }
+    else           { print("Saved the recording to %", file.value()); }
+}
+
+@consoleCommand("Turns the music on or off (M)")
+toggleMusic :: (game: *core.Game) {
+    game.sounds.toggleSoundtrack();
+}
+
+@consoleCommand("Plays another soundtrack, e.g folk, or lists them")
+soundtrack :: (game: *core.Game, name: ?string) {
+    if name.hasValue() && game.sounds.playSoundtrack(name.value(), game.sounds.soundtrackVolume) {
+        print("Playing the soundtrack %", name.value());
+        return;
+    }
+    if name.hasValue() { fail("There is no soundtrack named %", name.value()); }
+    for info in core.Soundtracks {
+        mark := " ";
+        if info.name == game.sounds.soundtrackName { mark = ">"; }
+        print("% %: %", mark, info.name, info.about);
+    }
+}
+
+@consoleCommand("The time of the game, and how each player is doing")
+status :: (game: *core.Game) {
+    state := "playing";
+    if game.isPaused { state = "paused"; }
+    if game.replay != null { state = fmt.sprint("replaying, frame % of %", game.replay.frame, game.replay.recording.frames.count); }
+    print("% s, level %, bots %, seed %, %", fmt.fixed(game.time, 1), game.level() + 1, core.Difficulty.names[game.difficulty],
+        game.recording.seed, state);
+    focus := game.camera.focus;
+    print("    The camera looks at (% %), % m away", fmt.fixed(focus.x, 1), fmt.fixed(focus.z, 1), game.camera.distance as int);
+    for player, i in game.players {
+        who := "bot";
+        if !player.isBot() { who = "you"; }
+        hero := player.hero;
+        print("    %. % (%) % at (% %), health %, % across, % run over, % kills", i, player.name, who,
+            core.HeroKind.names[hero.kind], fmt.fixed(hero.position.x, 1), fmt.fixed(hero.position.z, 1), hero.health as int,
+            player.stats.crossings, player.stats.deaths, player.stats.kills);
+    }
+}
+
+@consoleCommand("The heroes there are, for setHero")
+heroes :: () {
+    for kind in core.HeroKind.values {
+        print("    %  -  %", core.HeroKind.names[kind], kind.definition().name);
+    }
+}
+
+@consoleCommand("Moves the camera to a point on the ground and unlocks it from the hero (Y locks it again)")
+cameraTo :: (game: *core.Game, x: f32, z: f32, distance: ?f32) {
+    game.camera.isLocked = false;
+    game.camera.focus = Vector3{x, 0, z};
+    if distance.hasValue() { game.camera.targetDistance = math.clamp(distance.value(), core.CameraMinDistance, core.CameraMaxDistance); }
+}
+
+@consoleCommand("Watches a player, when spectating or in a replay (Tab, 1 to 6)")
+watch :: (game: *core.Game, player: int) {
+    if !game.canSwitchView() {
+        fail("You are playing: spectate to watch the others");
+        return;
+    }
+    if player < 0 || player >= game.players.count {
+        fail("There is no player %. status lists them", player);
+        return;
+    }
+    game.watch(player);
+}
+
+@consoleCommand("Casts an ability (0 is Q) of a player's hero at a point x z, or where it stands. You when no player is given, e.g cast 0 -80 10. It is an order, so it is recorded")
+cast :: (game: *core.Game, slot: int, x: ?f32, z: ?f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        fail("There is no player %. status lists them", index);
+        return;
+    }
+    hero := &game.players[index].hero;
+    abilities := hero.abilities();
+    if slot < 0 || slot >= abilities.count {
+        fail("% has abilities 0 to %", hero.info().name, abilities.count - 1);
+        return;
+    }
+    target := hero.ground();
+    if x.hasValue() && z.hasValue() { target = Vector2{x.value(), z.value()}; }
+    if !hero.abilityReady(slot) { fail("% isn't ready", abilities[slot].name); }
+    game.players[index].order(core.Command{cast: {slot: slot, target: target}});
+}
+
+@consoleCommand("Walks a player's hero to a point x z, you when no player is given")
+walk :: (game: *core.Game, x: f32, z: f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        fail("There is no player %. status lists them", index);
+        return;
+    }
+    game.players[index].order(core.Command{move: Vector2{x, z}});
+}
+
+@consoleCommand("Uses the item in a slot of the backpack (0 is the first) at a point x z, or where the hero stands. You when no player is given")
+useItemNow :: (game: *core.Game, slot: int, x: ?f32, z: ?f32, player: ?int) {
+    index := player ?? game.watched;
+    if index < 0 || index >= game.players.count {
+        fail("There is no player %. status lists them", index);
+        return;
+    }
+    target := game.players[index].hero.ground();
+    if x.hasValue() && z.hasValue() { target = Vector2{x.value(), z.value()}; }
+    if !game.itemReady(index, slot) { fail("There is no item to use in slot %, or it isn't ready", slot); }
+    game.players[index].order(core.Command{useItem: {slot: slot, target: target}});
+}
+
+@consoleCommand("Offers every player three talents to pick one of, as after a crossing")
+offerTalentsNow :: (game: *core.Game) {
+    game.offerTalents();
+}
+
+@consoleCommand("The talents there are, and the ones each player has")
+talents :: (game: *core.Game) {
+    for kind in core.TalentKind.values {
+        definition := kind.talentDefinition();
+        print("    %  -  %: %", core.TalentKind.names[kind], definition.name, definition.description);
+    }
+    for player, i in game.players {
+        names := "none";
+        for pick, k in player.talents {
+            if k == 0 { names = pick.taken().talentDefinition().name; }
+            else      { names = core.tprint("%, %", names, pick.taken().talentDefinition().name); }
+        }
+        print("    %. %: %", i, player.name, names);
+    }
+}
+
+//
+// The console itself
+//
+
+@consoleCommand("Lists the commands, or says how one is used, e.g help setSpeed")
+help :: (name: ?string) {
+    showHelp(name);
+}
+
+@consoleCommand("The commands whose name or help has the text in it")
+find :: (text: string) {
+    findCommands(text);
+}
+
+@consoleCommand("Prints the text")
+echo :: (text: string) {
+    echoText(text);
+}
+
+@consoleCommand("Clears the console")
+clear :: () {
+    clearLines();
+}
+
+@consoleCommand("Runs the commands of a file, a line each. Lines that start with // are left out")
+exec :: (file: string) {
+    runFile(file);
+}
+
+@consoleCommand("Runs a command at a time of the game, in seconds, e.g at 10 screenshot shot.png")
+at :: (seconds: f32, line: string) {
+    runAt(seconds, line);
+}
+
+//
+// Particles (effect_styles.sd)
+//
+
+@consoleCommand("Makes a particle effect at the hero that is watched, e.g effect blood 60")
+effect :: (game: *core.Game, fx: core.Fx, count: int = 30) {
+    core.emitEffectAtWatched(game, fx, count);
+}
+
+@consoleCommand("How many particles there are, and what they cost")
+particles :: (game: *core.Game) {
+    core.printParticleStats(game);
+}
+
+@consoleCommand("Makes a lot of particles at once, to see what they cost")
+particleStorm :: (game: *core.Game, count: int = 5000) {
+    core.makeParticleStorm(game, count);
+}
+
+//
+// Items (items.sd)
+//
+
+@consoleCommand("Puts an item on the road, a random one without a name, at z along the road or anywhere")
+spawnItem :: (game: *core.Game, kind: ?core.ItemKind, z: ?f32) {
+    core.spawnItemAt(game, kind, z);
+}
+
+@consoleCommand("Puts an item in the backpack of a player, you when no player is given. In a full backpack it takes the place of the oldest that isn't locked")
+giveItem :: (game: *core.Game, kind: core.ItemKind, player: ?int) {
+    core.giveItemTo(game, kind, player);
+}
+
+@consoleCommand("The items there are, and what is in each backpack")
+items :: (game: *core.Game) {
+    core.printItems(game);
+}
+
+//
+// The match (match.sd)
+//
+
+@consoleCommand("Ends the game now, with a player as the winner, the one ahead when none is given")
+winGame :: (game: *core.Game, player: ?int) {
+    core.winGameNow(game, player);
+}
+
+//
+// The profiler (core.profiler.sd)
+//
+
+@consoleCommand("What each part of a frame costs, in milliseconds: on average, and at the worst of the last 2 seconds")
+profile :: () {
+    core.printProfile();
+}
+
+//
+// Oil and traffic events (slicks.sd)
+//
+
+@consoleCommand("Makes a car that is coming onto the field leak oil, or drops a blob at x and z")
+spawnSlick :: (game: *core.Game, x: ?f32, z: ?f32) {
+    core.spawnSlickAt(game, x, z);
+}
+
+@consoleCommand("Starts a rush hour now, after its warning")
+rushHour :: (game: *core.Game) {
+    core.startRushHour(game);
+}
+
+@consoleCommand("Sounds the siren of the ambulances, around a lane or a random one")
+ambulance :: (game: *core.Game, lane: ?int) {
+    core.soundSirenNow(game, lane);
+}
+
+//
+// The commands of the session
+//
+
+@consoleCommand("Runs the game this many times as fast, e.g 4 to see a lot quickly, or 0.25 to see it slowly")
+setSpeed :: (session: *Session, speed: f32) {
+    session.speed = math.clamp(speed, 0.05, 32);
+}
+
+@consoleCommand("Turns all sound off or on")
+toggleMute :: (session: *Session) {
+    session.muted = !session.muted;
+    if !session.muted { session.loadSounds(); }
+    if session.muted { SetMasterVolume(0); } else { SetMasterVolume(1); }
+}
+
+@consoleCommand("How many bots there are, 0 to 5. Starts a new game")
+setBots :: (session: *Session, count: int) {
+    session.bots = math.clamp(count, 0, core.MaxPlayers - 1);
+    newGame(session);
+}
+
+@consoleCommand("The seed of the next games: the same seed gives the same game. Starts a new game")
+setSeed :: (session: *Session, seed: int) {
+    session.seed = seed as u64;
+    newGame(session);
+}
+
+@consoleCommand("How good the bots are. Starts a new game")
+setDifficulty :: (session: *Session, difficulty: core.Difficulty) {
+    session.difficulty = difficulty;
+    newGame(session);
+}
+
+@consoleCommand("How many crossings win: short (5), medium (10) or long (15). Starts a new game")
+setGameLength :: (session: *Session, length: core.GameLength) {
+    session.length = length;
+    newGame(session);
+}
+
+@consoleCommand("No hero of your own: the camera follows the first bot (or on, off). Starts a new game")
+spectate :: (session: *Session, on: ?bool) {
+    session.spectate = on ?? !session.spectate;
+    newGame(session);
+}
+
+@consoleCommand("A new game, with the settings")
+newGame :: (session: *Session) {
+    session.replayFile = null;
+    session.isStale = true;
+}
+
+@consoleCommand("Plays a recording back (made with record, F8 or writeRecording)")
+replay :: (session: *Session, file: string) {
+    session.replayFile = file.copy();
+    session.isStale = true;
+}
+
+@consoleCommand("Saves the recording of the game to the file when the game is over or the window closes")
+record :: (session: *Session, file: string) {
+    session.recordFile = file.copy();
+}
+
+@consoleCommand("Saves a picture of the screen to the file, at the end of the frame. raylib saves it in the folder of the game")
+screenshot :: (session: *Session, file: string) {
+    session.screenshot = file.copy();
+}
+
+@consoleCommand("Opens or closes the console, over half of the screen or all of it (F1, twice for all)")
+toggleConsole :: (session: *Session, full: ?bool) {
+    session.view.toggle(full ?? false);
+}
+
+@consoleCommand("Closes the game")
+quit :: (session: *Session) {
+    session.quit = true;
+}
+
+//
+// The bots (bots/)
+//
+
+@consoleCommand("Prints what a bot was doing when a car got it, to find out why")
+toggleHitReports :: () {
+    bots.toggleHitReportsNow();
+}
+
+@consoleCommand("The bots search for their ways on threads of their own (or on, off), so a frame never waits for them. Off: on the thread of the game, one search a frame, like the tests")
+toggleAsyncBots :: (game: *core.Game, on: ?bool) {
+    bots.setAsyncBots(game, on);
+}
