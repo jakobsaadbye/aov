@@ -106,7 +106,7 @@ planCrossing :: (forecast: *Forecast, request: PlanRequest) -> PlanResult {
         leaveStartBy = forecast.safe[startInterval].end;
     } else {
         // Too close to a car for the margins of the forecast: it may still leave until the car really gets there
-        leaveStartBy = math.max(request.startAt + 0.15, forecast.hitTime(request.start, request.startAt) - 0.05);
+        leaveStartBy = math.max(request.startAt + 0.15, forecast.hitTime(request.start, request.startAt) - 0.05 + forecast.options.contact);
     }
     while best.count < forecast.safe.count { best.add(Forever); }
     states.add(SearchState{cell: start, interval: startInterval, arrive: request.startAt, until: leaveStartBy, parent: -1});

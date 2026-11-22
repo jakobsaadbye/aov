@@ -27,6 +27,7 @@ Stats :: struct {
     deaths:    int;
     kills:     int;                         // Enemies a car got soon after this player hooked, bashed or locked them
     bestTime:  ?f32;                        // The fastest crossing, in seconds
+    crossTime: f32;                         // The seconds of all the crossings, from the hero's start to across
     items:     int;                         // Items picked up
     deathsBy:  [HeroKind.count]int;         // How many of each hero the road has taken
 }
@@ -1015,6 +1016,7 @@ heroCrossed :: method (game: *Game, index: int) {
     time := hero.timeAlive;
 
     player.stats.crossings += 1;
+    player.stats.crossTime += time;
     isRecord := !player.stats.bestTime.hasValue() || time < player.stats.bestTime.value();
     if isRecord { player.stats.bestTime = time; }
 

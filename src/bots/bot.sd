@@ -164,6 +164,13 @@ gene :: method (bot: *Bot, gene: Gene) -> f32 {
     return bot.personality.genome.get(gene);
 }
 
+// How long a car may be on the hero as it slips past it: the share of its health that it lets a car take, more the
+// longer the hero has been at it without getting across, at what an ordinary car takes a second
+contactTime :: method (bot: *Bot, hero: *Hero) -> f32 {
+    share := math.clamp(bot.gene(.contact) + bot.gene(.desperation) * hero.timeAlive / 30, 0, 1);
+    return share * hero.health / (CarDamagePerSecond * math.max(hero.damageTaken(), 0.01));
+}
+
 plannedPath :: method (bot: *Bot) -> []Waypoint {
     return bot.plan;
 }
@@ -310,7 +317,7 @@ dodge :: method (bot: *Bot, game: *Game, me: int) -> bool {
     if hit - now > bot.gene(.dodgeTime) && !stranded { return false; }
 
     // The plan moves on before the car gets here: it leaves for its next point in time
-    if hasPlan && bot.plan[bot.next].depart - bot.forecastAt < hit - 0.1 {
+    if hasPlan && bot.plan[bot.next].depart - bot.forecastAt < hit - 0.1 + bot.forecast.options.contact {
         return false;
     }
 
@@ -388,6 +395,7 @@ replan :: method (bot: *Bot, game: *Game, me: int) {
         margin:         bot.gene(.margin),
         leadTime:       bot.gene(.leadTime),
         trailTime:      bot.gene(.trailTime),
+        contact:        bot.contactTime(hero),
         me:             me,
         heroMargin:     bot.gene(.heroMargin),
         heroPredict:    bot.gene(.heroPredict),

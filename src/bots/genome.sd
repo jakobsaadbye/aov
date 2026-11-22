@@ -30,6 +30,9 @@ Gene :: enum {
     planSlack,              // How much a plan may be off in a new forecast before it plans again
     heroMargin,             // Room it keeps to the other heroes, so they don't shove each other in front of a car
     heroPredict,            // Seconds it counts on another hero walking on the way it walks
+    contact,                // The share of its health it lets a car take, to slip past it narrowly instead of waiting
+    desperation,            // and how much more for every 30 s of the hero's life without getting across: a hero that
+    // isn't getting anywhere had better get across or be run over, and the next one may be better
 
     // Tactics: when to cast. A score of each ability is compared with castBar
     castBar,
@@ -70,6 +73,8 @@ GeneRanges :: [
     GeneRange{0.02, 0.4, 0.15},     // planSlack
     GeneRange{0, 2, 0.5},           // heroMargin
     GeneRange{0, 3, 1.2},           // heroPredict
+    GeneRange{0, 0.6, 0.15},        // contact
+    GeneRange{0, 1, 0.15},          // desperation
     GeneRange{0.1, 1.0, 0.51},      // castBar
     GeneRange{0.2, 1.5, 0.6},       // dangerTime
     GeneRange{0, 1, 1.0},           // escape
@@ -152,31 +157,32 @@ fromJson :: (values: GenomeJson) -> Genome {
     return genome;
 }
 
-// How well a player did in a game, for training: crossings, few deaths, enemies it got run over, how far across its
-// heroes got, and how fast its best crossing was. The weights are what training aims for. How far each hero got counts
-// for a lot, as on a road this wide a crossing is rare in a game: without it, keeping off the road (and alive) wins
+// How well a player did in a game, for training: what counts is getting across, often and quickly. A death costs little
+// more than the time it took, as the next hero may well be a better one. How far the hero it has at the end got counts
+// too, as on a road this wide a crossing is rare in a game: without it, keeping off the road wins. Of the heroes that
+// were run over, how far they got counts a little, so that going for it is better than waiting for ever
 FitnessWeights :: struct {
-    crossing: f32 = 10;
-    death:    f32 = 4;
-    kill:     f32 = 4;
-    progress: f32 = 8;      // For each hero, from 0 at its start to 1 across, as far as it got
-    fastest:  f32 = 2;      // For a best crossing of 20 seconds, less for a slower one
+    crossing:     f32 = 10;
+    quick:        f32 = 4;      // More for each crossing, for one of 20 seconds or less, and less for a slower one
+    death:        f32 = 1;
+    kill:         f32 = 2;
+    progress:     f32 = 8;      // From 0 at the start to 1 across, of the hero it has at the end
+    lostProgress: f32 = 1;      // For each hero that was run over, of how far it got
 }
 
 fitnessOf :: (game: *Game, index: int, weights: FitnessWeights = FitnessWeights{}) -> f32 {
     player := &game.players[index];
     stats := player.stats;
     fitness := weights.crossing * stats.crossings as f32 - weights.death * stats.deaths as f32 + weights.kill * stats.kills as f32;
-    // A bot keeps how far each of its heroes got (the bots of the games of training are all Bots); of a human, only the
-    // hero it has now counts
-    progress: f32 = 0;
+    if stats.crossings > 0 { fitness += weights.quick * stats.crossings as f32 * math.min(1, 20 / (stats.crossTime / stats.crossings as f32)); }
+    // A bot keeps how far each of its heroes got (the bots of the games of training are all Bots), the ones that got
+    // across too; of a human, only the hero it has now counts
     if player.isBot() {
         profile := (player.brain as *Bot).stats;
-        progress = profile.progress + profile.lifeProgress;
+        fitness += weights.progress * profile.lifeProgress;
+        fitness += weights.lostProgress * math.max(0, profile.progress - stats.crossings as f32);
     } else if player.isPlaying() {
-        progress = progressOf(player.hero.ground(), player.startSide);
+        fitness += weights.progress * progressOf(player.hero.ground(), player.startSide);
     }
-    fitness += weights.progress * progress;
-    if stats.bestTime.hasValue() { fitness += weights.fastest * math.min(1, 20 / stats.bestTime.value()); }
     return fitness;
 }

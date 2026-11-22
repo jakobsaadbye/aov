@@ -110,6 +110,7 @@ main :: () {
 
     totalCrossings := 0;
     totalDeaths := 0;
+    totalCrossTime: f32 = 0;
     worstFrame: f64 = 0;
     thinking: f64 = 0;
     frames := 0;
@@ -165,6 +166,7 @@ main :: () {
             }
             totalCrossings += player.stats.crossings;
             totalDeaths += player.stats.deaths;
+            totalCrossTime += player.stats.crossTime;
         }
     }
 
@@ -176,6 +178,9 @@ main :: () {
     }
     fmt.print("");
     fmt.print("Crossings %, run over % (% crossings for each death)", totalCrossings, totalDeaths, fmt.fixed(totalCrossings as f32 / atLeastOne(totalDeaths) as f32, 2));
+    botMinutes := games as f32 * seconds as f32 * botCount as f32 / 60;
+    fmt.print("% crossings a minute for each bot, % s a crossing on average", fmt.fixed(totalCrossings as f32 / botMinutes, 3),
+        fmt.fixed(totalCrossTime / atLeastOne(totalCrossings) as f32, 1));
     fmt.print("A frame took % ms on average, % ms at most", fmt.fixed((thinking / frames as f64 * 1000) as f32, 3), fmt.fixed((worstFrame * 1000) as f32, 2));
 }
 

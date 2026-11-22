@@ -86,6 +86,8 @@ ForecastOptions :: struct {
     leadTime:     f32 = 0.5;    // Seconds before a car gets to a cell that it isn't taken to be safe any more. Long, so a
     // hero never runs just in front of a car, with no time left to step aside
     trailTime:    f32 = 0.1;    // Seconds after a car has left a cell that it is safe again: right behind a car is safe
+    contact:      f32;          // Seconds a car may be on the hero, as it comes or as it goes, for the health it costs:
+    // to slip past a car narrowly instead of waiting for it. Not of the cars that aren't known yet
 
     // A cell isn't safe from when a car that hasn't been spawned yet could get to it at the earliest: that is where what
     // is known ends. Without it, the road looks empty once the cars of now have gone, and a plan waits for that
@@ -240,7 +242,8 @@ Forecast :: struct {
                     }
                     if leave <= 0 { continue; }        // Gone past already
                     if count == MaxHitsPerCell { break; }
-                    hit := TimeInterval{math.max(enter - self.options.leadTime, 0), leave + self.options.trailTime};
+                    hit := TimeInterval{math.max(enter - self.options.leadTime + self.options.contact, 0), leave + self.options.trailTime - self.options.contact};
+                    if hit.end <= hit.start { continue; }       // So quickly past that it is worth it
                     at := count;
                     while at > 0 && hit.start < hits[at - 1].start {
                         hits[at] = hits[at - 1];
