@@ -1,6 +1,6 @@
 // Trains the bots with a genetic algorithm: a population of genomes (bots/genome.sd) plays games against each other and
-// against the best of earlier generations (the hall of fame), and the fitter ones (bots.fitnessOf: crossings, deaths,
-// kills, progress, speed) have the children of the next generation. The best genome is written to
+// against the best of earlier generations (the hall of fame), and the fitter ones (bots.fitnessOf: crossings and how
+// quick they are, most of all, then progress, kills and a little for deaths) have the children of the next generation. The best genome is written to
 // data/bots/genomes.json after each generation, which the game plays with (bots/difficulty.sd).
 //
 //     saad build bot_train.sd --llvm             the bots think about 10 times as fast with LLVM

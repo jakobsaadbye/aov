@@ -11,7 +11,7 @@ DefaultBots :: 3;
 
 // A game with you and a number of bots of a difficulty. Without you (humans: 0), the bots play on their own, e.g in
 // bot_arena.sd, and the camera follows the first of them
-newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
+newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1, difficulty := Difficulty.expert) -> *Game {
     rng := random.newRandom(seed ^ 0x5bd1e995);
     personalities: [..]BotPersonality;
     defer personalities.free();
@@ -20,7 +20,7 @@ newGame :: (seed: u64, bots: int = DefaultBots, humans: int = 1, difficulty := D
 }
 
 // A game with bots of these personalities, e.g of genomes that are being trained (bot_train.sd)
-newGameWith :: (seed: u64, personalities: []BotPersonality, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
+newGameWith :: (seed: u64, personalities: []BotPersonality, humans: int = 1, difficulty := Difficulty.expert) -> *Game {
     brains: [..]Brain;
     defer brains.free();
     names: [..]string;

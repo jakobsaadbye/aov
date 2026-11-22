@@ -27,6 +27,7 @@ Stats :: struct {
     deaths:    int;
     kills:     int;                         // Enemies a car got soon after this player hooked, bashed or locked them
     bestTime:  ?f32;                        // The fastest crossing, in seconds
+    crossTime: f32;                         // The seconds of all the crossings, from the hero's start to across
     items:     int;                         // Items picked up
     deathsBy:  [HeroKind.count]int;         // How many of each hero the road has taken
 }
@@ -230,7 +231,7 @@ StopSign :: struct {
 // namespace makes the brains, e.g with bots.newGame
 gamesMade: u64;
 
-newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, difficulty := Difficulty.normal) -> *Game {
+newGame :: (seed: u64, brains: []Brain, names: []string, humans: int = 1, difficulty := Difficulty.expert) -> *Game {
     game := new(Game);
     gamesMade += 1;
     game.serial = gamesMade;
@@ -1015,6 +1016,7 @@ heroCrossed :: method (game: *Game, index: int) {
     time := hero.timeAlive;
 
     player.stats.crossings += 1;
+    player.stats.crossTime += time;
     isRecord := !player.stats.bestTime.hasValue() || time < player.stats.bestTime.value();
     if isRecord { player.stats.bestTime = time; }
 
